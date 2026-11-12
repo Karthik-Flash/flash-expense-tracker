@@ -1,11 +1,10 @@
 import logging
 import secrets
 import time
-from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import DateTime, bindparam, text
+from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -16,11 +15,11 @@ from app.db import get_session
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-# Same SQL works on Postgres and SQLite.
+# The database sets the time. Same SQL works on Postgres and SQLite.
 UPSERT_HEARTBEAT = text(
-    "INSERT INTO heartbeat (id, last_seen) VALUES (1, :now) "
-    "ON CONFLICT (id) DO UPDATE SET last_seen = excluded.last_seen"
-).bindparams(bindparam("now", type_=DateTime(timezone=True)))
+    "INSERT INTO heartbeat (id, last_seen) VALUES (1, CURRENT_TIMESTAMP) "
+    "ON CONFLICT (id) DO UPDATE SET last_seen = CURRENT_TIMESTAMP"
+)
 
 
 @router.get("/health")
@@ -31,18 +30,22 @@ def health() -> dict[str, str]:
 
 @router.get("/health/db")
 def health_db(
-    session: Annotated[Session, Depends(get_session)], token: str = ""
+    session: Annotated[Session, Depends(get_session)],
+    x_ping_token: Annotated[str | None, Header()] = None,
 ) -> dict[str, str | int]:
     """Write the heartbeat row. Pinged daily so Supabase does not pause the project."""
-    expected = settings.ping_token.encode()
-    if not expected or not secrets.compare_digest(token.encode(), expected):
-        raise HTTPException(status_code=401, detail="Invalid or missing token")
+    if not settings.ping_token:
+        raise HTTPException(status_code=503, detail="ping token not configured")
+    if x_ping_token is None or not secrets.compare_digest(
+        x_ping_token.encode(), settings.ping_token.encode()
+    ):
+        raise HTTPException(status_code=401, detail="invalid or missing X-Ping-Token")
 
     start = time.perf_counter()
     try:
-        session.execute(UPSERT_HEARTBEAT, {"now": datetime.now(UTC)})
+        session.execute(UPSERT_HEARTBEAT)
         session.commit()
     except SQLAlchemyError:
         log.exception("Heartbeat write failed")
-        raise HTTPException(status_code=503, detail="Database unavailable") from None
+        raise HTTPException(status_code=503, detail="database unavailable") from None
     return {"db": "ok", "latency_ms": round((time.perf_counter() - start) * 1000)}
