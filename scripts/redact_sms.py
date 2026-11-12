@@ -1,27 +1,29 @@
-"""Redact an SMS Backup & Restore XML export into a shareable JSON sample.
+r"""Redact an SMS Backup & Restore XML export into a shareable JSON sample.
 
-- Streams the XML, so 250 MB+ files are fine. <mms> elements are skipped.
-- Keeps only allowlisted bank/card/UPI/wallet senders. The operator prefix
-  (VM-, AD-, JD-, ...) and TRAI suffix (-S/-T/-P/-G) are ignored when matching.
-  Promotional (-P) messages and OTP messages are dropped.
-- Pseudonymises people's names in P2P UPI/IMPS/NEFT messages (PERSON_001, ...).
-- Replaces UPI/IMPS/NEFT reference numbers with stable fakes of the same shape,
-  so deduplication can still be tested on the sample.
-- Masks account/card numbers (last 4 kept), UPI IDs, emails and phone numbers.
+Default-deny: every counterparty name and every UPI ID local part is replaced
+unless it is on the keep-list (scripts/keep_names.txt plus an optional
+keep_names.txt in --private-dir). It never guesses person vs merchant.
 
-The name and reference maps live in data/private/ (gitignored, blocked for
-agents) and are reused on every run: the same real value always gets the same
-fake. If a merchant was mistaken for a person, open data/private/name_map.json,
-set that entry's value to the name itself, and re-run.
+- Streams the XML (250 MB+ is fine) and skips <mms>.
+- Keeps allowlisted bank/card/UPI/wallet senders only. The operator prefix
+  (VM-, AD-, ...) and TRAI suffix (-S/-T/-P/-G) are ignored when matching.
+  Promotional (-P) and OTP messages are dropped.
+- Names become PARTY_001, PARTY_002, ... via name_map.json in --private-dir.
+- References, phone numbers and UPI local parts get fakes of the same shape,
+  derived with HMAC-SHA256 and a random key (redaction.key in --private-dir,
+  created on first run). The same input gives the same fake on every run.
+- Account/card numbers keep the bank's mask style and only the last 4 digits.
 
-Standard library only. Run it yourself; agents must never read data/raw/.
+Real data lives outside the repo. Run this yourself; agents never do.
 
-    python scripts/redact_sms.py --list-senders     # sender IDs + counts only
-    python scripts/redact_sms.py --limit 50         # every data/raw/*.xml
-    python scripts/redact_sms.py data/raw/x.xml --senders HDFCBK,MYBANK
-"""
+  python scripts/redact_sms.py --input D:/FlashPrivate/raw --private-dir D:/FlashPrivate/private --list-senders
+  python scripts/redact_sms.py --input D:/FlashPrivate/raw --private-dir D:/FlashPrivate/private --list-counterparties
+  python scripts/redact_sms.py --input D:/FlashPrivate/raw --private-dir D:/FlashPrivate/private --output data/sample/redacted_sample.json --limit 50
+"""  # noqa: E501
 
 import argparse
+import hashlib
+import hmac
 import json
 import os
 import random
@@ -36,11 +38,11 @@ from datetime import UTC, datetime
 from itertools import pairwise
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_INPUT_DIR = ROOT / "data" / "raw"
-DEFAULT_OUTPUT = ROOT / "data" / "sample" / "redacted_sample.json"
-DEFAULT_PRIVATE_DIR = ROOT / "data" / "private"
 PROGRESS_EVERY = 5_000
+KEEP_FILE = Path(__file__).with_name("keep_names.txt")
+PRIVATE_KEEP_FILE = "keep_names.txt"
+NAME_MAP_FILE = "name_map.json"
+KEY_FILE = "redaction.key"
 
 # DLT sender headers, without operator prefix or TRAI suffix.
 # Grow this list with --list-senders.
@@ -61,18 +63,16 @@ OTP_WARNING_RE = re.compile(
 )
 OTP_RE = re.compile(r"\b(?:otp|one[\s-]?time[\s-]?password|verification\s+code)\b", re.IGNORECASE)
 
-# --- Masking ------------------------------------------------------------------
-UPI_ID_RE = re.compile(r"\b[\w.\-]+@([a-zA-Z][a-zA-Z0-9]+)\b")  # UPI IDs and emails
-PHONE_RE = re.compile(r"(?<!\d)(?:\+?91[\s-]?|0)?[6-9]\d{9}(?!\d)")
+# --- Identifiers --------------------------------------------------------------
+UPI_ID_RE = re.compile(r"\b(?P<local>[\w.\-]+)@(?P<handle>[a-zA-Z][a-zA-Z0-9]+)\b")  # + emails
+PHONE_RE = re.compile(r"(?<!\d)(?P<prefix>(?:\+?91[\s-]?|0)?)(?P<num>[6-9]\d{9})(?!\d)")
 ACCOUNT_RE = re.compile(
     r"(?P<prefix>\b(?:a/c|ac|acct|account|card)\b\.?"
     r"(?:\s*(?:no|number|ending(?:\s+(?:with|in))?)\b\.?)?\s*[:\-]?\s*)"
     r"(?P<num>[Xx*\d]+(?:[ -][Xx*\d]{4})*)(?!\w)",
     re.IGNORECASE,
 )
-LONG_DIGITS_RE = re.compile(r"(?<!\d)\d{9,}(?!\d)")
-
-# --- Reference numbers ----------------------------------------------------------
+LONG_DIGITS_RE = re.compile(r"(?<!\d)\d{9,}(?!\d)")  # unlabelled account numbers
 REF_RES = (
     # UPI/P2P/612345678901/NAME, IMPS/P2A/..., NEFT/SBIN326317123456/NAME
     re.compile(r"\b(?:UPI|IMPS|NEFT|RTGS)/(?:P2[PAM]/)?(?P<ref>[A-Z0-9]{6,22})(?=/)", re.I),
@@ -85,61 +85,70 @@ REF_RES = (
     # UPI:612345678901, IMPS 612345678901
     re.compile(r"\b(?:UPI|IMPS|NEFT|RTGS)[: -]+(?P<ref>\d{9,22})\b", re.I),
 )
-# Private-use characters never appear in SMS, so refs hide safely between them.
-PH_OPEN, PH_CLOSE = "\ue000", "\ue001"
+# Private-use characters never appear in SMS; masked values hide between them
+# so later patterns cannot touch them.
+PH_OPEN, PH_CLOSE = chr(0xE000), chr(0xE001)
 PLACEHOLDER_RE = re.compile(f"{PH_OPEN}(\\d+){PH_CLOSE}")
 
-# --- People's names -----------------------------------------------------------
-# ponytail: context heuristic, tuned to common Indian bank formats. It errs
-# toward pseudonymising; a merchant hit by mistake is fixed in name_map.json.
+# --- Counterparty names -------------------------------------------------------
+# Positions where a counterparty name appears. Whatever is found there is
+# pseudonymised unless keep-listed. Names outside these positions are not
+# detected, so review the output (and --list-counterparties) before sharing.
 NAME_WORD = r"[A-Za-z][A-Za-z.']*"
 NAME = rf"{NAME_WORD}(?:[ ]+{NAME_WORD}){{0,3}}"
-P2P_HINT_RE = re.compile(r"\b(?:upi|imps|neft|rtgs|vpa|p2p|p2a|trf|sent)\b|transfer", re.I)
-ALWAYS_NAME_RES = (
-    # UPI/P2P/<ref>/RAHUL KUMAR (P2M is a merchant payment, so it is skipped)
-    re.compile(rf"\b(?:UPI|IMPS|NEFT|RTGS)/(?!P2M/)(?:P2[PA]/)?[^/\s]+/(?P<name>{NAME})", re.I),
-    # ICICI style: "...; RAHUL KUMAR credited"
-    re.compile(rf";[ ]*(?P<name>{NAME})[ ]+credited\b", re.I),
-    # Greeting with the account holder's own name
+COUNTERPARTY_RES = (
+    re.compile(rf"\b(?:UPI|IMPS|NEFT|RTGS)/(?:P2[PAM]/)?[^/\s]+/(?P<name>{NAME})", re.I),
+    re.compile(rf";[ ]*(?P<name>{NAME})[ ]+credited\b", re.I),  # ICICI: "; NAME credited"
     re.compile(rf"\bdear[ ]+(?P<name>{NAME})", re.I),
+    # Lookahead keeps "by IMPS from Mr. X" from hiding "from Mr. X".
+    re.compile(
+        rf"\b(?:to|from|by|at|towards)[ ]+(?=(?:(?:mr|mrs|ms|dr)\.?[ ]+)?(?P<name>{NAME}))",
+        re.I,
+    ),
 )
-# "to/from/by NAME" only counts in messages that look like transfers.
-# The name sits in a lookahead so "by IMPS from Mr. X" still finds "from Mr. X".
-TRANSFER_NAME_RE = re.compile(
-    rf"\b(?:to|from|by)[ ]+(?=(?:(?:mr|mrs|ms|dr)\.?[ ]+)?(?P<name>{NAME}))", re.I
-)
+# Words that end a name. They describe message structure, not people/merchants.
 STOP_WORDS = set(
     """
     A AC ACCT ACCOUNT AND AT ATM AVL BAL BALANCE BENEFICIARY BLOCK BY CALL CARDHOLDER
     CASH CHEQUE CLICK CREDIT CREDITED CUSTOMER DATE DATED DEAR DEBIT DEBITED DISPUTE
-    FOR FRAUD FROM HAS ID IF IMPS IN INFO INR INTEREST IS KINDLY LINKED LOAN MADAM
-    MEMBER MERCHANT MOBILE NEFT NO NOT OF ON OTP PAID PLEASE PLS RECEIVED REF REFNO
-    REFERENCE REPORT RRN RS RTGS SAVINGS SELF SENT SIR SMS THANK THANKS THE TO TRANSFER
+    EMI FOR FRAUD FROM HAS ID IF IMPS IN INFO INR INTEREST IS KINDLY LINKED LOAN MADAM
+    MEMBER MOBILE NEFT NO NOT OF ON OTP PAID PLEASE PLS RECEIVED REF REFNO REFERENCE
+    REPORT RRN RS RTGS SAVINGS SELF SENT SIR SMS THANK THANKS THE TO TOWARDS TRANSFER
     TRANSFERRED TRF TXN TRANSACTION UPI UR USER USING UTR VALUED VIA VPA WALLET WAS
     WITH YOU YOUR
-    """.split()
-)
-NOT_PERSON = set(
-    """
-    AGENCIES AGENCY BAKERY BANK CAFE CAPITAL CARD CENTER CENTRE CHEMIST CLINIC CLUB
-    COLLEGE COMPANY CORP CORPORATION DIGITAL ELECTRONICS ENTERPRISE ENTERPRISES FASTAG
-    FINANCE FITNESS FOOD FOODS GLOBAL GROUP GYM HOSPITAL HOTEL INDIA INDUSTRIES
-    INSURANCE INTERNATIONAL KITCHEN LIMITED LLP LTD MART MEDICAL MEDICALS MOTORS ONLINE
-    PAY PAYMENTS PETROL PETROLEUM PHARMA PHARMACY PRIVATE PVT RESTAURANT RETAIL SALON
-    SCHOOL SECURITIES SERVICE SERVICES SHOP SOLUTIONS STATION STORE STORES SUPERMARKET
-    SWEETS TECH TECHNOLOGIES TECHNOLOGY TELECOM TRADERS TRADING TRAVELS TRUST
-    UNIVERSITY VENTURES
-    AXIS BOB CANARA CITI FEDERAL HDFC HSBC ICICI IDFC INDUSIND KOTAK PNB RBL SBI YES
-    AIRTEL AMAZON BIGBASKET BLINKIT BOOKMYSHOW DOMINOS DUNZO FLIPKART GOOGLE IRCTC JIO
-    MAKEMYTRIP MCDONALDS MYNTRA NETFLIX NYKAA OLA PAYTM PHONEPE RAPIDO SPOTIFY
-    STARBUCKS SWIGGY UBER ZEPTO ZOMATO
     """.split()
 )
 WORD_RE = re.compile(r"[A-Za-z]+")
 
 
+def norm(text: str) -> str:
+    """'Amazon.Pay' -> 'AMAZON PAY'. Used for keep-list and name-map keys."""
+    return " ".join(WORD_RE.findall(text.upper()))
+
+
+def name_key(raw: str) -> str:
+    """Leading words up to the first stop word: 'Rahul Kumar on' -> 'RAHUL KUMAR'."""
+    words = []
+    for w in WORD_RE.findall(raw.upper()):
+        if w in STOP_WORDS:
+            break
+        words.append(w)
+    return " ".join(words)
+
+
+def find_names(body: str) -> list[str]:
+    """Counterparty names in a body whose IDs/refs/phones are already placeholders."""
+    names = []
+    for rx in COUNTERPARTY_RES:
+        for m in rx.finditer(body):
+            key = name_key(m.group("name"))
+            if len(key.replace(" ", "")) >= 2:
+                names.append(key)
+    return names
+
+
 def keep_last4(s: str) -> str:
-    """Replace every digit except the last four with 'X', keeping separators."""
+    """Mask every digit except the last four with 'X', keeping the bank's own style."""
     n_digits = sum(c.isdigit() for c in s)
     out, seen = [], 0
     for c in s:
@@ -149,16 +158,6 @@ def keep_last4(s: str) -> str:
         else:
             out.append(c)
     return "".join(out)
-
-
-def name_key(raw: str) -> str:
-    """Leading words of raw up to the first stop word, e.g. 'Rahul Kumar on' -> 'RAHUL KUMAR'."""
-    words = []
-    for w in WORD_RE.findall(raw.upper()):
-        if w in STOP_WORDS or set(w) == {"X"}:
-            break
-        words.append(w)
-    return " ".join(words)
 
 
 def is_otp(body: str) -> bool:
@@ -181,112 +180,168 @@ def is_phone_number(header: str) -> bool:
     return sum(c.isdigit() for c in header) >= 7 or not header
 
 
+def load_keep(private_dir: Path) -> set[str]:
+    keep: set[str] = set()
+    for path in (KEEP_FILE, private_dir / PRIVATE_KEEP_FILE):
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                entry = norm(line.split("#", 1)[0])
+                if entry:
+                    keep.add(entry)
+    return keep
+
+
+def _hold(held: list[str], text: str) -> str:
+    held.append(text)
+    return f"{PH_OPEN}{len(held) - 1}{PH_CLOSE}"
+
+
+def scan(body: str) -> tuple[list[str], list[str]]:
+    """(names, UPI IDs) in a raw body, for --list-counterparties. Nothing is faked."""
+    upi_ids = [m.group(0) for m in UPI_ID_RE.finditer(body)]
+    for rx in (*REF_RES, UPI_ID_RE, PHONE_RE):
+        body = rx.sub(PH_OPEN + PH_CLOSE, body)
+    return find_names(body), upi_ids
+
+
 class Redactor:
-    """Masks message bodies and keeps the stable name/reference pseudonym maps."""
+    """Masks bodies. Holds the name map, HMAC key and keep-list for one run."""
 
     def __init__(self, private_dir: Path) -> None:
-        self.names_path = private_dir / "name_map.json"
-        self.refs_path = private_dir / "ref_map.json"
+        private_dir.mkdir(parents=True, exist_ok=True)
+        self.keep = load_keep(private_dir)
+        self.key = _load_or_create_key(private_dir / KEY_FILE)
+        self.names_path = private_dir / NAME_MAP_FILE
         self.names: dict[str, str] = _load_json(self.names_path)
-        self.refs: dict[str, str] = _load_json(self.refs_path)
-        self._fakes = set(self.refs.values())
+        self.seen: dict[str, set[str]] = {
+            k: set() for k in ("names_kept", "names_pseudonymised", "upi_kept", "upi_pseudonymised")
+        }
         self._people: dict[str, str] = {}
-        self._first_words: set[str] = set()
-        self._next_person = 1
+        self._first_words: set[str] = {k.split()[0] for k in self.keep}
+        self._next = 1
         for key, token in self.names.items():
             self._remember(key, token)
 
     def mask(self, body: str) -> str:
-        """Fake refs; mask UPI IDs, phones, accounts; note names (replaced by pseudonymise)."""
-        fakes: list[str] = []
+        """Fake refs, UPI IDs and phones; mask accounts; record names for pseudonymise()."""
+        held: list[str] = []
 
-        def stash(m: re.Match) -> str:
-            ref = m.group("ref")
-            if sum(c.isdigit() for c in ref) < 6:
+        def ref(m: re.Match) -> str:
+            value = m.group("ref")
+            if sum(c.isdigit() for c in value) < 6:
                 return m.group(0)
-            fakes.append(self._fake_ref(ref))
             i = m.start("ref") - m.start()
-            head, tail = m.group(0)[:i], m.group(0)[i + len(ref) :]
-            return f"{head}{PH_OPEN}{len(fakes) - 1}{PH_CLOSE}{tail}"
+            fake = _hold(held, self._fake("ref", value))
+            return m.group(0)[:i] + fake + m.group(0)[i + len(value) :]
 
         for rx in REF_RES:
-            body = rx.sub(stash, body)
-        body = UPI_ID_RE.sub(lambda m: f"xxxx@{m.group(1)}", body)
-        body = PHONE_RE.sub(lambda m: re.sub(r"\d", "X", m.group()), body)
-        self._note_names(body)
-        body = ACCOUNT_RE.sub(lambda m: m.group("prefix") + keep_last4(m.group("num")), body)
+            body = rx.sub(ref, body)
+        body = UPI_ID_RE.sub(lambda m: _hold(held, self._upi(m["local"], m["handle"])), body)
+        body = PHONE_RE.sub(lambda m: m["prefix"] + _hold(held, self._phone(m["num"])), body)
+        for key in find_names(body):
+            self._note_name(key)
+        body = ACCOUNT_RE.sub(lambda m: m["prefix"] + keep_last4(m["num"]), body)
         body = LONG_DIGITS_RE.sub(lambda m: keep_last4(m.group()), body)
-        return PLACEHOLDER_RE.sub(lambda m: fakes[int(m.group(1))], body)
+        return PLACEHOLDER_RE.sub(lambda m: held[int(m.group(1))], body)
 
     def pseudonymise(self, body: str) -> str:
-        """Replace every known person's name (any case, 1-N words) with their token."""
+        """Replace every mapped name (any case, any position) with its token.
+
+        Keep-listed phrases are matched first and skipped, so a brand such as
+        "AMAZON PAY" survives even if "AMAZON" alone were mapped.
+        """
         words = list(WORD_RE.finditer(body))
         out, pos, i = [], 0, 0
         while i < len(words):
+            step = 1
             if words[i].group().upper() in self._first_words:
                 for n in range(min(len(words) - i, 8), 0, -1):
                     span = words[i : i + n]
-                    if any(body[a.end() : b.start()].strip(" .'") for a, b in pairwise(span)):
+                    gaps = (body[a.end() : b.start()] for a, b in pairwise(span))
+                    if any(gap.strip(" .'") for gap in gaps):
                         continue
-                    token = self._people.get(" ".join(w.group().upper() for w in span))
-                    if token:
-                        out += [body[pos : span[0].start()], token]
-                        pos = span[-1].end()
-                        i += n
+                    key = " ".join(w.group().upper() for w in span)
+                    if key in self.keep:
+                        step = n
                         break
-                else:
-                    i += 1
-            else:
-                i += 1
+                    if key in self._people:
+                        out += [body[pos : span[0].start()], self._people[key]]
+                        pos, step = span[-1].end(), n
+                        break
+            i += step
         return "".join(out) + body[pos:]
 
     def redact(self, body: str) -> str:
         return self.pseudonymise(self.mask(body))
 
     def save(self) -> None:
-        _save_json(self.names_path, self.names)
-        _save_json(self.refs_path, self.refs)
+        _save_text(self.names_path, json.dumps(self.names, indent=2, sort_keys=True))
 
-    def _note_names(self, body: str) -> None:
-        regexes = ALWAYS_NAME_RES + ((TRANSFER_NAME_RE,) if P2P_HINT_RE.search(body) else ())
-        for rx in regexes:
-            for m in rx.finditer(body):
-                key = name_key(m.group("name"))
-                if len(key.replace(" ", "")) < 3 or key in self.names:
-                    continue
-                if set(key.split()) & NOT_PERSON or key.replace(" ", "") in NOT_PERSON:
-                    continue
-                self.names[key] = f"PERSON_{self._next_person:03d}"
-                self._remember(key, self.names[key])
+    def _note_name(self, key: str) -> None:
+        if key in self.keep:
+            self.seen["names_kept"].add(key)
+            return
+        self.seen["names_pseudonymised"].add(key)
+        if key not in self.names:
+            self.names[key] = f"PARTY_{self._next:03d}"
+            self._remember(key, self.names[key])
 
     def _remember(self, key: str, token: str) -> None:
-        if not token.startswith("PERSON_") or not key.split():
-            return  # manual override: value == name means "keep as is"
+        if key in self.keep or not key:
+            return  # keep-listed since the map was written
         self._people[key] = token
         self._first_words.add(key.split()[0])
-        if token[7:].isdigit():
-            self._next_person = max(self._next_person, int(token[7:]) + 1)
+        digits = token.rpartition("_")[2]
+        if digits.isdigit():
+            self._next = max(self._next, int(digits) + 1)
 
-    def _fake_ref(self, ref: str) -> str:
-        key = ref.upper()
-        if key not in self.refs:
-            while True:
-                fake = "".join(secrets.choice(string.digits) if c.isdigit() else c for c in key)
-                if fake != key and fake not in self._fakes:
-                    break
-            self.refs[key] = fake
-            self._fakes.add(fake)
-        return self.refs[key]
+    def _upi(self, local: str, handle: str) -> str:
+        if norm(local) in self.keep:
+            self.seen["upi_kept"].add(local.lower())
+            return f"{local}@{handle}"
+        self.seen["upi_pseudonymised"].add(local.lower())
+        is_phone = re.fullmatch(r"[6-9]\d{9}", local)
+        fake = self._phone(local) if is_phone else self._fake("upi", local)
+        return f"{fake}@{handle}"
+
+    def _phone(self, num: str) -> str:
+        """10 digits in, 10 digits out, still starting with 6-9."""
+        fake = self._fake("phone", num)
+        return "6789"[int(fake[0]) % 4] + fake[1:]
+
+    def _fake(self, kind: str, value: str) -> str:
+        """Same length and character type per position: digit, A-Z, a-z; others kept."""
+        stream = b""
+        out = []
+        for i, c in enumerate(value):
+            while len(stream) <= i:
+                msg = f"{kind}:{value.upper()}:{len(stream)}".encode()
+                stream += hmac.new(self.key, msg, hashlib.sha256).digest()
+            b = stream[i]
+            if c in string.digits:
+                out.append(string.digits[b % 10])
+            elif c in string.ascii_uppercase:
+                out.append(string.ascii_uppercase[b % 26])
+            elif c in string.ascii_lowercase:
+                out.append(string.ascii_lowercase[b % 26])
+            else:
+                out.append(c)
+        return "".join(out)
+
+
+def _load_or_create_key(path: Path) -> bytes:
+    if not path.exists():
+        _save_text(path, secrets.token_hex(32))
+    return bytes.fromhex(path.read_text(encoding="utf-8").strip())
 
 
 def _load_json(path: Path) -> dict[str, str]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
-def _save_json(path: Path, data: dict[str, str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True), "utf-8")
+def _save_text(path: Path, text: str) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text + "\n", encoding="utf-8", newline="\n")
     os.replace(tmp, path)
 
 
@@ -351,37 +406,27 @@ def iter_files(paths: Iterable[Path]) -> Iterator[tuple[str, dict[str, str] | No
                 yield item
 
 
-# --- Modes --------------------------------------------------------------------
-def collect(
-    paths: Iterable[Path], senders: set[str], redactor: Redactor
-) -> tuple[dict[str, list[dict]], Counter]:
-    kept: dict[str, list[dict]] = defaultdict(list)
-    dropped: Counter = Counter()
+def iter_relevant(
+    paths: Iterable[Path], senders: set[str], dropped: Counter
+) -> Iterator[tuple[str, dict[str, str]]]:
+    """Allowlisted, non-promotional, non-OTP SMS. Counts every drop by reason."""
     for _, sms in iter_files(paths):
         if sms is None:
             dropped["mms (skipped)"] += 1
             continue
         header, suffix = parse_sender(sms.get("address", ""))
-        body = sms.get("body", "")
         if header not in senders:
             dropped["sender not allowlisted"] += 1
         elif suffix == "P":
             dropped["promotional (-P)"] += 1
-        elif is_otp(body):
+        elif is_otp(sms.get("body", "")):
             dropped["otp"] += 1
         else:
-            date_ms = int(sms.get("date") or 0)
-            kept[header].append(
-                {
-                    "sender": header,
-                    "date_utc": datetime.fromtimestamp(date_ms / 1000, UTC).isoformat(),
-                    "body": redactor.mask(body),
-                }
-            )
-    return kept, dropped
+            yield header, sms
 
 
-def list_senders(paths: Iterable[Path], senders: set[str]) -> None:
+# --- Modes --------------------------------------------------------------------
+def list_senders(paths: list[Path], senders: set[str]) -> None:
     totals: Counter = Counter()
     promo: Counter = Counter()
     phones: Counter = Counter()
@@ -403,32 +448,35 @@ def list_senders(paths: Iterable[Path], senders: set[str]) -> None:
     print(f"MMS (skipped): {mms:,}")
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("inputs", nargs="*", type=Path, help="XML files (default: data/raw/*.xml)")
-    ap.add_argument("-o", "--output", type=Path, default=DEFAULT_OUTPUT)
-    ap.add_argument("--private-dir", type=Path, default=DEFAULT_PRIVATE_DIR)
-    ap.add_argument("--senders", default=DEFAULT_SENDERS, help="comma-separated sender IDs")
-    ap.add_argument("--limit", type=int, help="random sample of N messages per sender")
-    ap.add_argument("--seed", type=int, default=0, help="seed for --limit sampling")
-    ap.add_argument("--list-senders", action="store_true", help="print sender IDs and counts only")
-    args = ap.parse_args(argv)
+def list_counterparties(paths: list[Path], senders: set[str], keep: set[str]) -> None:
+    names: Counter = Counter()
+    upi_ids: Counter = Counter()
+    for _, sms in iter_relevant(paths, senders, Counter()):
+        found_names, found_upi = scan(sms.get("body", ""))
+        names.update(found_names)
+        upi_ids.update(u.lower() for u in found_upi)
+    for title, counts, to_key in (
+        ("COUNTERPARTY NAME", names, lambda k: k),
+        ("UPI ID", upi_ids, lambda k: norm(k.split("@")[0])),
+    ):
+        print(f"\n{'MESSAGES':>8}  KEPT  {title}")
+        for value, n in counts.most_common():
+            print(f"{n:>8,}  {'yes ' if to_key(value) in keep else '    '}  {value}")
 
-    paths = args.inputs or sorted(DEFAULT_INPUT_DIR.glob("*.xml"))
-    if not paths:
-        print(f"No XML files given and none found in {DEFAULT_INPUT_DIR}", file=sys.stderr)
-        return 1
-    senders = {s.strip().upper() for s in args.senders.split(",") if s.strip()}
 
-    try:
-        if args.list_senders:
-            list_senders(paths, senders)
-            return 0
-        redactor = Redactor(args.private_dir)
-        kept, dropped = collect(paths, senders, redactor)
-    except ET.ParseError as e:
-        print(f"XML parse error: {e}", file=sys.stderr)
-        return 1
+def redact_to_file(args: argparse.Namespace, paths: list[Path], senders: set[str]) -> None:
+    redactor = Redactor(args.private_dir)
+    dropped: Counter = Counter()
+    kept: dict[str, list[dict]] = defaultdict(list)
+    for header, sms in iter_relevant(paths, senders, dropped):
+        date_ms = int(sms.get("date") or 0)
+        kept[header].append(
+            {
+                "sender": header,
+                "date_utc": datetime.fromtimestamp(date_ms / 1000, UTC).isoformat(),
+                "body": redactor.mask(sms.get("body", "")),
+            }
+        )
 
     rng = random.Random(args.seed)
     out: list[dict] = []
@@ -437,7 +485,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.limit is not None and len(msgs) > args.limit:
             msgs = rng.sample(msgs, args.limit)
         out.extend(sorted(msgs, key=lambda m: m["date_utc"]))
-    for msg in out:  # after the full pass, so every name found anywhere is replaced
+    for msg in out:  # after the full pass, so a name found anywhere is replaced everywhere
         msg["body"] = redactor.pseudonymise(msg["body"])
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -445,6 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     redactor.save()
 
     n_kept = sum(len(v) for v in kept.values())
+    s = {k: len(v) for k, v in redactor.seen.items()}
     print(f"\nRead {n_kept + dropped.total():,} messages. Kept {n_kept:,}.")
     print("Dropped:")
     for reason, n in dropped.most_common():
@@ -452,9 +501,55 @@ def main(argv: list[str] | None = None) -> int:
     print("Kept per sender:")
     for header, msgs in sorted(kept.items(), key=lambda kv: -len(kv[1])):
         print(f"  {header:<24}{len(msgs):>10,}")
-    people = sum(v.startswith("PERSON_") for v in redactor.names.values())
+    print("Distinct values this run:")
+    print(f"  {'names kept (keep-list)':<24}{s['names_kept']:>10,}")
+    print(f"  {'names pseudonymised':<24}{s['names_pseudonymised']:>10,}")
+    print(f"  {'UPI IDs kept':<24}{s['upi_kept']:>10,}")
+    print(f"  {'UPI IDs pseudonymised':<24}{s['upi_pseudonymised']:>10,}")
     print(f"Wrote {len(out):,} messages to {args.output}")
-    print(f"Pseudonyms: {people:,} people, {len(redactor.refs):,} references in {args.private_dir}")
+
+
+def resolve_inputs(inputs: list[Path]) -> list[Path]:
+    """Files as given; folders expand to their *.xml files."""
+    paths: list[Path] = []
+    for p in inputs:
+        paths.extend(sorted(p.glob("*.xml")) if p.is_dir() else [p])
+    return paths
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    ap.add_argument("--input", type=Path, nargs="+", required=True, help="XML files or folders")
+    ap.add_argument("--private-dir", type=Path, required=True, help="name map, key, keep-list")
+    ap.add_argument("--output", type=Path, help="JSON sample to write (required unless listing)")
+    ap.add_argument("--senders", default=DEFAULT_SENDERS, help="comma-separated sender IDs")
+    ap.add_argument("--limit", type=int, help="random sample of N messages per sender")
+    ap.add_argument("--seed", type=int, default=0, help="seed for --limit sampling")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--list-senders", action="store_true", help="sender IDs and counts only")
+    mode.add_argument(
+        "--list-counterparties", action="store_true", help="names and UPI IDs with counts only"
+    )
+    args = ap.parse_args(argv)
+    if not (args.list_senders or args.list_counterparties or args.output):
+        ap.error("--output is required unless --list-senders or --list-counterparties is used")
+
+    paths = resolve_inputs(args.input)
+    if not paths:
+        print("No XML files found in --input", file=sys.stderr)
+        return 1
+    senders = {s.strip().upper() for s in args.senders.split(",") if s.strip()}
+
+    try:
+        if args.list_senders:
+            list_senders(paths, senders)
+        elif args.list_counterparties:
+            list_counterparties(paths, senders, load_keep(args.private_dir))
+        else:
+            redact_to_file(args, paths, senders)
+    except ET.ParseError as e:
+        print(f"XML parse error: {e}", file=sys.stderr)
+        return 1
     return 0
 
 

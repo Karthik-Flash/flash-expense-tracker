@@ -1,4 +1,4 @@
-"""Tests for redact_sms.py. Synthetic messages only; never real data."""
+"""Tests for redact_sms.py. Synthetic messages in temp folders only; never real data."""
 
 import json
 import re
@@ -9,12 +9,8 @@ from xml.sax.saxutils import quoteattr
 import pytest
 import redact_sms as r
 
-SENDERS = {"HDFCBK", "ICICIT", "AXISBK", "SBIUPI", "PAYTM"}
-
-
-@pytest.fixture
-def redactor(tmp_path: Path) -> r.Redactor:
-    return r.Redactor(tmp_path / "private")
+SENDERS = "HDFCBK,ICICIT,AXISBK,SBIUPI,KOTAKB"
+REPLACEMENT_CHAR = chr(0xFFFD)
 
 
 def write_backup(path: Path, rows: list[tuple[str, str]], mms: int = 0) -> Path:
@@ -31,32 +27,43 @@ def write_backup(path: Path, rows: list[tuple[str, str]], mms: int = 0) -> Path:
     return path
 
 
-# --- Masking ------------------------------------------------------------------
-def test_masks_ids_and_keeps_amounts_dates_merchant(redactor: r.Redactor) -> None:
-    out = redactor.redact(
-        "Rs.1,250.00 debited from A/c no. 50100123456789 on 03-11-26 to SWIGGY via UPI "
-        "card 4111 1111 1111 1234. VPA rahul.k@okhdfcbank. Mail me@example.com. "
-        "Call +91 9876543210"
-    )
-    assert "Rs.1,250.00" in out and "03-11-26" in out and "SWIGGY" in out
-    assert "A/c no. XXXXXXXXXX6789" in out
-    assert "card XXXX XXXX XXXX 1234" in out
-    assert "xxxx@okhdfcbank" in out and "rahul" not in out
-    assert "xxxx@example.com" in out
-    assert "9876543210" not in out
+def run(xml: Path, private: Path, out: Path, *extra: str) -> list[dict]:
+    args = ["--input", str(xml), "--private-dir", str(private), "--output", str(out)]
+    assert r.main([*args, "--senders", SENDERS, *extra]) == 0
+    return json.loads(out.read_text(encoding="utf-8"))
 
 
-def test_already_masked_account_is_unchanged(redactor: r.Redactor) -> None:
-    assert redactor.redact("A/c XX1234 credited") == "A/c XX1234 credited"
+P2P_ROWS = [
+    (
+        "VM-HDFCBK",
+        "Sent Rs.500.00\nFrom HDFC Bank A/C *1234\nTo RAHUL KUMAR\nOn 12/11/26\n"
+        "Ref 612345678901\nNot You?\nCall 18002586161/SMS BLOCK UPI to 7308080808",
+    ),
+    (
+        "JD-ICICIT-T",
+        "ICICI Bank Acct XX123 debited for Rs 500.00 on 12-Nov-26; Rahul Kumar credited.",
+    ),
+    ("AD-AXISBK-S", "INR 200.00 debited A/c no. XX1234 UPI/P2A/612345678903/PRIYA S Not you?"),
+    ("VM-SBIUPI", "Rs 900 credited to a/c XX1234 by IMPS from Mr. ANIL VERMA. Ref 612345678904"),
+    ("VM-KOTAKB", "Rs 120 paid via UPI to CHAI POINT on 12-11-26. UPI Ref 612345678905"),
+    ("VM-HDFCBK", "Rs 99 spent on HDFC Bank Card XX9876 at ZOMATO LTD on 2026-11-12"),
+    ("VM-HDFCBK", "Dear Asha, Rs 5 debited from A/c XX1234"),
+]
+REAL_NAMES = ("RAHUL", "KUMAR", "PRIYA", "ANIL", "VERMA", "CHAI", "POINT", "ZOMATO LTD", "ASHA")
 
 
-def test_otp_detection_keeps_alerts_with_share_warning() -> None:
-    assert r.is_otp("123456 is your OTP for txn of Rs 500 at AMAZON")
-    assert r.is_otp("Your one-time password is 4321")
-    assert not r.is_otp("Rs 500 debited from A/c XX1234. Never share your OTP with anyone.")
+# --- CLI ----------------------------------------------------------------------
+def test_input_private_dir_and_output_are_required(tmp_path: Path) -> None:
+    xml = write_backup(tmp_path / "a.xml", [("VM-HDFCBK", "Rs 5 debited")])
+    with pytest.raises(SystemExit):
+        r.main([])
+    with pytest.raises(SystemExit):
+        r.main(["--input", str(xml)])
+    with pytest.raises(SystemExit):
+        r.main(["--input", str(xml), "--private-dir", str(tmp_path / "p")])
 
 
-# --- Senders ------------------------------------------------------------------
+# --- Filtering ----------------------------------------------------------------
 @pytest.mark.parametrize(
     ("address", "expected"),
     [
@@ -72,72 +79,101 @@ def test_parse_sender(address: str, expected: tuple[str, str]) -> None:
     assert r.parse_sender(address) == expected
 
 
-# --- References ---------------------------------------------------------------
-def test_refs_get_stable_fakes_of_same_shape(tmp_path: Path) -> None:
-    first = r.Redactor(tmp_path)
-    a = first.redact("Sent Rs.50 Ref 612345678901 via UPI")
-    b = first.redact("ICICI Bank Acct XX123 debited; UPI:612345678901.")
-    c = first.redact("NEFT credit UTR No. SBIN326317123456 to A/c XX1234")
-    fake = re.search(r"Ref (\d{12})", a).group(1)
-
-    assert fake != "612345678901" and len(fake) == 12
-    assert f"UPI:{fake}" in b  # same real ref, same fake: dedupe stays testable
-    utr = re.search(r"UTR No\. (\S+)", c).group(1)
-    assert utr.startswith("SBIN") and len(utr) == 16 and utr != "SBIN326317123456"
-
-    first.save()
-    again = r.Redactor(tmp_path).redact("Ref 612345678901")
-    assert again == f"Ref {fake}"  # stable across runs via ref_map.json
+def test_otp_detection_keeps_alerts_with_share_warning() -> None:
+    assert r.is_otp("123456 is your OTP for txn of Rs 500 at AMAZON")
+    assert r.is_otp("Your one-time password is 4321")
+    assert not r.is_otp("Rs 500 debited from A/c XX1234. Never share your OTP with anyone.")
 
 
-# --- Names --------------------------------------------------------------------
-def test_p2p_names_get_consistent_tokens(redactor: r.Redactor) -> None:
-    hdfc = (
-        "Sent Rs.500.00\nFrom HDFC Bank A/C *1234\nTo RAHUL KUMAR\nOn 12/11/26\n"
-        "Ref 612345678901\nNot You?\nCall 18002586161/SMS BLOCK UPI to 7308080808"
+# --- Names: default-deny ------------------------------------------------------
+def test_unlisted_names_never_appear_in_output(tmp_path: Path) -> None:
+    xml = write_backup(tmp_path / "p2p.xml", P2P_ROWS)
+    data = run(xml, tmp_path / "private", tmp_path / "out.json")
+
+    text = json.dumps(data).upper()
+    assert not [n for n in REAL_NAMES if n in text]
+    assert "PARTY_" in text
+    bodies = [m["body"] for m in data]
+    assert any("To PARTY_" in b and "\nOn 12/11/26" in b for b in bodies)
+    assert any(re.search(r"; PARTY_\d{3} credited", b) for b in bodies)
+
+
+def test_same_name_gets_same_token_across_runs(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    first = run(write_backup(tmp_path / "1.xml", P2P_ROWS[:1]), private, tmp_path / "1.json")
+    second = run(write_backup(tmp_path / "2.xml", P2P_ROWS[1:2]), private, tmp_path / "2.json")
+
+    token = re.search(r"To (PARTY_\d{3})", first[0]["body"]).group(1)
+    assert f"; {token} credited" in second[0]["body"]  # RAHUL KUMAR, new run, same token
+    names = json.loads((private / "name_map.json").read_text(encoding="utf-8"))
+    assert names["RAHUL KUMAR"] == token
+
+
+def test_keep_listed_brands_survive(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    private.mkdir()
+    (private / "keep_names.txt").write_text("Chai Point  # local favourite\n", encoding="utf-8")
+    rows = [
+        ("VM-HDFCBK", "Rs 250 debited from A/c XX1234 to SWIGGY via UPI"),
+        ("VM-HDFCBK", "Rs 99 spent on HDFC Bank Card XX9876 at Amazon on 2026-11-12"),
+        ("VM-HDFCBK", "Paid via UPI to amazon.pay@apl and to CHAI POINT on 12-11-26"),
+        ("VM-HDFCBK", "Rs 10 sent via UPI to RAHUL KUMAR"),
+    ]
+    data = run(write_backup(tmp_path / "k.xml", rows), private, tmp_path / "out.json")
+    text = json.dumps(data)
+
+    assert "to SWIGGY via" in text and "at Amazon on" in text and "HDFC Bank Card" in text
+    assert "amazon.pay@apl" in text and "to CHAI POINT on" in text
+    assert "RAHUL" not in text
+
+
+# --- Shapes and keys ----------------------------------------------------------
+@pytest.fixture
+def redactor(tmp_path: Path) -> r.Redactor:
+    return r.Redactor(tmp_path / "private")
+
+
+def test_masked_values_keep_their_shape(redactor: r.Redactor) -> None:
+    out = redactor.redact(
+        "A/c no. 50100123456789, card 4111 1111 1111 1234, A/c *4321, Acct XX123. "
+        "UPI Ref No 612345678901. UTR No. SBIN326317123456. "
+        "VPA rahul.k99@okhdfcbank. Call +91 9876543210 or 9876543210@ybl."
     )
-    icici = "ICICI Bank Acct XX123 debited for Rs 500.00 on 12-Nov-26; Rahul Kumar credited."
-    axis = "INR 200.00 debited A/c no. XX1234 UPI/P2A/612345678903/PRIYA S Not you?"
-    imps = "Rs 900 credited to a/c XX1234 by IMPS from Mr. ANIL VERMA. Ref 612345678904"
-    merchant = "Rs 250 debited from A/c XX1234 to SWIGGY via UPI. UPI/P2M/612345678905/ZOMATO LTD"
+    assert "A/c no. XXXXXXXXXX6789" in out
+    assert "card XXXX XXXX XXXX 1234" in out
+    assert "A/c *4321" in out and "Acct XX123" in out  # bank's own mask kept
 
-    out = [redactor.redact(m) for m in (hdfc, icici, axis, imps, merchant)]
+    ref = re.search(r"Ref No (\S+)\.", out).group(1)
+    assert re.fullmatch(r"\d{12}", ref) and ref != "612345678901"
+    utr = re.search(r"UTR No\. (\S+)\.", out).group(1)
+    assert re.fullmatch(r"[A-Z]{4}\d{12}", utr) and utr != "SBIN326317123456"
 
-    assert "To PERSON_001\nOn" in out[0]
-    assert "; PERSON_001 credited" in out[1]
-    assert "/PERSON_002 Not you?" in out[2]
-    assert "from Mr. PERSON_003." in out[3]
-    assert "SWIGGY" in out[4] and "ZOMATO LTD" in out[4]
-    joined = " ".join(out).upper()
-    assert all(n not in joined for n in ("RAHUL", "KUMAR", "PRIYA", "ANIL", "VERMA"))
-    assert "HDFC Bank" in out[0]
+    local = re.search(r"VPA (\S+)@okhdfcbank", out).group(1)  # real handle kept
+    assert re.fullmatch(r"[a-z]{5}\.[a-z]\d\d", local) and local != "rahul.k99"
 
-
-def test_greeting_name_is_pseudonymised_but_customer_is_not(redactor: r.Redactor) -> None:
-    assert redactor.redact("Dear Customer, Rs 5 debited") == "Dear Customer, Rs 5 debited"
-    assert redactor.redact("Dear Rahul, Rs 5 debited") == "Dear PERSON_001, Rs 5 debited"
+    phone = re.search(r"\+91 (\d+)", out).group(1)
+    assert re.fullmatch(r"[6-9]\d{9}", phone) and phone != "9876543210"
+    assert f"{phone}@ybl" in out  # same number in a UPI ID gets the same fake
 
 
-def test_name_map_is_reused_and_override_keeps_merchant(tmp_path: Path) -> None:
-    first = r.Redactor(tmp_path)
-    first.redact("Rs 100 sent via UPI to CHAI POINT on 12-11-26")
-    first.redact("Rs 100 sent via UPI to RAHUL on 12-11-26")
-    first.save()
-    names = json.loads((tmp_path / "name_map.json").read_text(encoding="utf-8"))
-    assert names == {"CHAI POINT": "PERSON_001", "RAHUL": "PERSON_002"}
+def test_fakes_come_from_a_secret_key_not_a_bare_hash(tmp_path: Path) -> None:
+    msg = "UPI Ref No 612345678901"
+    a1 = r.Redactor(tmp_path / "a").redact(msg)
+    a2 = r.Redactor(tmp_path / "a").redact(msg)
+    b = r.Redactor(tmp_path / "b").redact(msg)
 
-    names["CHAI POINT"] = "CHAI POINT"  # user marks it as a merchant
-    (tmp_path / "name_map.json").write_text(json.dumps(names), encoding="utf-8")
-    second = r.Redactor(tmp_path)
-    assert "to CHAI POINT on" in second.redact("Rs 9 sent via UPI to CHAI POINT on 13-11-26")
-    assert second.redact("Rs 9 sent via UPI to Asha on 13-11-26").count("PERSON_003") == 1
+    assert a1 == a2  # same key file, same fake
+    assert a1 != b  # different random key, different fake
+    key = (tmp_path / "a" / "redaction.key").read_text(encoding="utf-8").strip()
+    assert re.fullmatch(r"[0-9a-f]{64}", key)
 
 
-# --- Streaming / end to end ---------------------------------------------------
+# --- Streaming ----------------------------------------------------------------
 def test_invalid_char_refs_do_not_break_parsing(tmp_path: Path) -> None:
     xml = write_backup(tmp_path / "emoji.xml", [("VM-HDFCBK", "Paid Rs 5 &#55357;&#56832; &#1;")])
     [(tag, sms)] = list(r.iter_files([xml]))
-    assert tag == "sms" and sms["body"] == "Paid Rs 5 \ufffd\ufffd \ufffd"
+    c = REPLACEMENT_CHAR
+    assert tag == "sms" and sms["body"] == f"Paid Rs 5 {c}{c} {c}"
 
 
 def test_char_ref_split_across_chunks_is_fixed() -> None:
@@ -153,7 +189,7 @@ def test_char_ref_split_across_chunks_is_fixed() -> None:
     assert data == b"<a>x &#65533; y</a>"
 
 
-def test_streams_20k_messages_with_flat_memory(tmp_path: Path, capsys) -> None:
+def test_streams_20k_messages_with_bounded_memory(tmp_path: Path, capsys) -> None:
     rows = []
     for i in range(20_000):
         if i % 4 == 0:
@@ -173,27 +209,25 @@ def test_streams_20k_messages_with_flat_memory(tmp_path: Path, capsys) -> None:
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     assert n == 20_020
-    # Measured on this file: streaming ~0.1x file size, iterparse without
-    # root.clear() ~0.7x, ET.parse ~4x. So /4 fails both non-streaming versions.
+    # Measured: streaming ~0.1x file size, iterparse without root.clear() ~0.7x,
+    # ET.parse ~4x. So /4 fails both non-streaming versions.
     assert peak < xml.stat().st_size / 4
 
-    out = tmp_path / "out.json"
-    args = [str(xml), "-o", str(out), "--private-dir", str(tmp_path / "p")]
-    assert r.main([*args, "--senders", ",".join(SENDERS), "--limit", "50"]) == 0
-
-    data = json.loads(out.read_text(encoding="utf-8"))
+    data = run(xml, tmp_path / "private", tmp_path / "out.json", "--limit", "50")
     assert len(data) == 50 and {m["sender"] for m in data} == {"HDFCBK"}
     text = json.dumps(data)
-    assert "RAHUL" not in text and "PERSON_001" in text
-    assert "612000000000" not in text
+    assert "RAHUL" not in text and "612000000000" not in text
+
     summary = capsys.readouterr().out
     assert "Kept 5,000" in summary
-    assert re.search(r"promotional \(-P\)\s+5,000", summary)
-    assert re.search(r"otp\s+5,000", summary)
-    assert re.search(r"sender not allowlisted\s+5,000", summary)
+    for reason in (r"promotional \(-P\)", "otp", "sender not allowlisted"):
+        assert re.search(rf"{reason}\s+5,000", summary)
     assert re.search(r"mms \(skipped\)\s+20", summary)
+    assert re.search(r"names pseudonymised\s+1\b", summary)
+    assert re.search(r"names kept \(keep-list\)\s+0\b", summary)
 
 
+# --- Listing modes ------------------------------------------------------------
 def test_list_senders_prints_counts_but_no_bodies_or_numbers(tmp_path: Path, capsys) -> None:
     xml = write_backup(
         tmp_path / "s.xml",
@@ -204,9 +238,29 @@ def test_list_senders_prints_counts_but_no_bodies_or_numbers(tmp_path: Path, cap
             ("+919876543210", "secret body four"),
         ],
     )
-    assert r.main([str(xml), "--list-senders", "--senders", "HDFCBK"]) == 0
+    args = ["--input", str(xml), "--private-dir", str(tmp_path / "p"), "--list-senders"]
+    assert r.main([*args, "--senders", "HDFCBK"]) == 0
     out = capsys.readouterr().out
     assert re.search(r"HDFCBK\s+2\s+1\s+yes", out)
     assert re.search(r"NEWBNK\s+1\s+0", out)
     assert "secret" not in out and "9876543210" not in out
     assert "1 messages from 1 numbers" in out
+
+
+def test_list_counterparties_prints_names_and_upi_ids_only(tmp_path: Path, capsys) -> None:
+    xml = write_backup(
+        tmp_path / "c.xml",
+        [
+            ("VM-HDFCBK", "Rs 10 sent via UPI to RAHUL KUMAR on 12-11-26. secret one"),
+            ("VM-HDFCBK", "Rs 20 sent via UPI to RAHUL KUMAR on 13-11-26. secret two"),
+            ("VM-HDFCBK", "Rs 30 paid to SWIGGY via UPI from rahul.k@okaxis secret three"),
+        ],
+    )
+    args = ["--input", str(xml), "--private-dir", str(tmp_path / "p"), "--list-counterparties"]
+    assert r.main([*args, "--senders", "HDFCBK"]) == 0
+    out = capsys.readouterr().out
+    assert re.search(r"\s2\s+RAHUL KUMAR", out)
+    assert re.search(r"\s1\s+yes\s+SWIGGY", out)
+    assert re.search(r"\s1\s+rahul\.k@okaxis", out)
+    assert "secret" not in out.lower() and "Rs 10" not in out
+    assert not (tmp_path / "p" / "redaction.key").exists()  # listing writes nothing

@@ -1,0 +1,117 @@
+# Keep-list for scripts/redact_sms.py: well-known PUBLIC brands only.
+# Every counterparty name or UPI ID local part NOT listed here is pseudonymised.
+# One name per line, case-insensitive. Punctuation counts as a space, so
+# "Amazon.Pay" and "AMAZON PAY" are the same entry. Never add a person's name
+# here; put private additions in keep_names.txt inside --private-dir.
+
+# Banks
+HDFC
+HDFC Bank
+ICICI
+ICICI Bank
+SBI
+State Bank of India
+Axis
+Axis Bank
+Kotak
+Kotak Bank
+Kotak Mahindra Bank
+Yes Bank
+IndusInd Bank
+IDFC First Bank
+Punjab National Bank
+PNB
+Bank of Baroda
+Canara Bank
+Union Bank of India
+Federal Bank
+RBL Bank
+AU Small Finance Bank
+Bandhan Bank
+Citibank
+HSBC
+Standard Chartered
+American Express
+Amex
+
+# Payments and wallets
+Paytm
+PhonePe
+Google Pay
+GPay
+Amazon Pay
+MobiKwik
+Freecharge
+CRED
+BHIM
+NPCI
+Razorpay
+Cashfree
+PayU
+BillDesk
+
+# Shopping and food
+Amazon
+Flipkart
+Myntra
+Ajio
+Nykaa
+Meesho
+Swiggy
+Instamart
+Zomato
+Blinkit
+Zepto
+BigBasket
+Dunzo
+DMart
+Croma
+Reliance Digital
+Decathlon
+IKEA
+Dominos
+McDonalds
+McDonald's
+KFC
+Starbucks
+Pizza Hut
+Burger King
+
+# Travel and transport
+Uber
+Ola
+Rapido
+IRCTC
+MakeMyTrip
+Goibibo
+Cleartrip
+redBus
+IndiGo
+Air India
+FASTag
+Indian Oil
+HPCL
+BPCL
+
+# Subscriptions, telecom, utilities
+Netflix
+Spotify
+YouTube
+Google
+Apple
+Microsoft
+JioHotstar
+Hotstar
+BookMyShow
+Airtel
+Jio
+Vi
+Vodafone Idea
+BSNL
+Tata Play
+
+# Investing and insurance
+LIC
+Zerodha
+Groww
+Upstox
