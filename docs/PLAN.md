@@ -8,16 +8,20 @@ NOTES.md entry.
 
 Monorepo, Python 3.12 venv, FastAPI `/health`, Vite React PWA that shows
 backend status and survives cold starts, CI (ruff, pytest, typecheck, build),
-Render Blueprint, hosting guide, `scripts/redact_sms.py`.
+Render Blueprint, hosting guide, `scripts/redact_sms.py` (default-deny).
+
+Done in the Phase 0 closeout:
+
+- `/health/db` keep-alive: `X-Ping-Token` header, upserts the `heartbeat` row
+  with the database clock (migration `0001`), pinged daily by cron-job.org.
 
 ## Phase 1: Data model and idempotent ingestion
 
 - Schema: `raw_messages` (sender, body, received_at UTC, dedupe_key UNIQUE),
   `transactions` (amount_paise, direction, account_last4, merchant_raw,
   occurred_at UTC, parser_version, raw_message_id), `accounts`.
-- First Alembic migration. Supabase and Render deploy.
+- Alembic migration for this schema (after `0001` heartbeat).
 - `POST /ingest/sms` batch endpoint. Re-sending the same batch is a no-op.
-- `/health/db` (runs `SELECT 1`) for the Supabase keep-alive.
 
 ## Phase 2: SMS parsing engine
 

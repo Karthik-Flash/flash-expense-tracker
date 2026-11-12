@@ -43,6 +43,8 @@ adds tools. Upgrade on purpose, in a dedicated `chore/deps` branch.
 Raw SMS exports stay in gitignored `data/raw/`. Tools and agents never read
 them. Development uses the redacted sample from `scripts/redact_sms.py`.
 
+Superseded by D-015: real data now lives outside the repo.
+
 ## D-009 LF line endings everywhere (2026-11-12)
 
 `.gitattributes` forces LF in the repo, so Windows and Linux (CI) checkouts do
@@ -62,13 +64,14 @@ genuine database activity. A shared `PING_TOKEN` protects it; it returns 401
 when the token is missing or unset and 503 when the DB is unavailable.
 `/health` stays DB-free so liveness never depends on Supabase.
 
+Auth details superseded by D-017 (header token, 503 when unset).
+
 ## D-012 Daily ping, not keep-warm (2026-11-13)
 
 One monitored cron-job.org call per day to `/health/db`, with failure emails.
 Render is allowed to sleep; the UI handles cold starts. A wake-up call to
 `/health` two minutes earlier keeps the monitored call under cron-job.org's
-30-second timeout. Migrations run in the start command because the free plan
-has no pre-deploy command.
+30-second timeout. (Where migrations run: see D-018.)
 
 ## D-013 Co-locate in Singapore (2026-11-13)
 
@@ -82,3 +85,47 @@ users.
 tokens (`PERSON_001`) and transaction references with stable fakes of the same
 shape. Maps live in gitignored, agent-blocked `data/private/`, so re-runs agree
 and deduplication can be tested on the sample without real identifiers.
+
+Superseded by D-016: default-deny, no person-vs-merchant guessing.
+
+## D-015 Real data lives outside the repo (2026-11-13)
+
+SMS exports live in `D:\FlashPrivate\raw\`; the name map, redaction key and
+aw`; the name map, redaction key and
+private keep-list live in `D:\FlashPrivate\private\`. `redact_sms.py` has no
+default paths: `--input`, `--private-dir` and `--output` are explicit. Agents
+are denied that folder and run the script only on synthetic test files.
+
+## D-016 Default-deny redaction with a keep-list (2026-11-13)
+
+Every counterparty name and UPI ID local part is pseudonymised unless it is
+on `scripts/keep_names.txt` (public brands, committed) or the private
+keep-list. No guessing person vs merchant. Masked values keep their shape.
+Consistent fakes come from `name_map.json` or HMAC-SHA256 with a random key
+created on first run, never a bare hash, so fakes cannot be reversed by
+hashing guesses.
+
+## D-017 /health/db token in a header (2026-11-13)
+
+The token travels in `X-Ping-Token`, compared with `secrets.compare_digest`,
+so it never lands in URLs or access logs. Missing or wrong: 401. `PING_TOKEN`
+unset: 503 "ping token not configured". The heartbeat time comes from the
+database clock.
+
+## D-018 Migrations in the build step (2026-11-13)
+
+Render's free plan has no pre-deploy command. `alembic upgrade head` runs in
+the build command after `pip install`, so it runs once per deploy, and a
+failed migration fails the deploy while the previous version keeps serving.
+The start command only starts uvicorn.
+
+## D-019 No agent access to .env files (2026-11-13)
+
+`.claude/settings.json` denies reads of `.env` and its variants anywhere on
+disk; `.env.example` stays readable. Agents never print environment variable
+values.
+
+## D-020 UI direction (2026-11-13)
+
+Minimalist and professional; it must not look AI-generated. The detailed
+design spec comes in Phase 3.
