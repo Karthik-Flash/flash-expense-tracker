@@ -5,11 +5,14 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
 
-# Fail fast instead of hanging when Postgres is unreachable.
+# Small pool: one Render free instance against the Supabase session pooler.
+# connect_timeout makes an unreachable Postgres fail fast instead of hanging.
 _is_postgres = make_url(settings.database_url).get_backend_name() == "postgresql"
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
+    pool_size=2,
+    max_overflow=2,
     connect_args={"connect_timeout": 5} if _is_postgres else {},
 )
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
