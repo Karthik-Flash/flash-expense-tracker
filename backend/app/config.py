@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{(BACKEND_DIR / 'flash.db').as_posix()}"
     # Comma-separated list, easy to set as a single env var on Render.
     cors_origins: str = "http://localhost:5173"
+    # Shared secret for /health/db. Empty means the endpoint always returns 401.
+    ping_token: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:
