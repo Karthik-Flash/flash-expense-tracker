@@ -1,45 +1,57 @@
 # data/
 
-Everything in this folder except this README is gitignored.
+Real data never lives in this repo. Everything in this folder except this
+README is gitignored.
 
-| Path                               | What                                       | Who reads it          |
-| ---------------------------------- | ------------------------------------------ | --------------------- |
-| `data/raw/`                        | SMS Backup & Restore XML exports (private) | Only you, never tools |
-| `data/private/`                    | `name_map.json`, `ref_map.json` (real to fake) | Only you, never tools |
-| `data/sample/redacted_sample.json` | Output of `scripts/redact_sms.py`          | You, then the team    |
+| Path                               | What                                        | Who reads it          |
+| ---------------------------------- | ------------------------------------------- | --------------------- |
+| `D:\FlashPrivate\raw\`             | SMS Backup & Restore XML exports            | Only you, never tools |
+| `D:\FlashPrivate\private\`         | `name_map.json`, `redaction.key`, optional `keep_names.txt` | Only you, never tools |
+| `data/sample/redacted_sample.json` | Output of `scripts/redact_sms.py`           | You, then the team    |
 
-Agents are blocked from `data/raw/` and `data/private/` by
-`.claude/settings.json`.
+Agents are blocked from `D:\FlashPrivate\`, `data/raw/`, `data/private/` and
+every `.env` file by `.claude/settings.json`. Agents run the redaction script
+only on synthetic files that tests create in a temp folder.
 
 ## Make a redacted sample
 
-Run these from the repo root in PowerShell.
+Run these yourself, from the repo root, in PowerShell.
 
-1. Put the `.xml` export in `data/raw/`.
-2. See which senders exist (IDs and counts only, no message text):
+1. See which senders exist (IDs and counts only, no message text):
 
    ```powershell
-   backend\.venv\Scripts\python.exe scripts\redact_sms.py --list-senders
+   backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --list-senders
    ```
 
-   Add any missing bank, card, UPI or wallet IDs to `DEFAULT_SENDERS` in
-   `scripts/redact_sms.py`, or pass `--senders ID1,ID2,...` (this replaces the
-   default list).
+   Add missing bank, card, UPI or wallet IDs to `DEFAULT_SENDERS` in
+   `scripts/redact_sms.py`, or pass `--senders ID1,ID2,...` (this replaces
+   the default list).
+
+2. See which counterparties will be pseudonymised (names and UPI IDs with
+   counts, no message text). Everything not marked `yes` becomes a token:
+
+   ```powershell
+   backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --list-counterparties
+   ```
+
+   - Public brands you want kept (Swiggy, your bank): add them to
+     `scripts/keep_names.txt` (committed, public brands only).
+   - Anything private you still want kept (a local shop): add it to
+     `D:\FlashPrivate\private\keep_names.txt` (never committed).
+
 3. Make the sample:
 
    ```powershell
-   backend\.venv\Scripts\python.exe scripts\redact_sms.py --limit 50
+   backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --output data\sample\redacted_sample.json --limit 50
    ```
 
-   It prints progress every 5,000 messages, then a summary of kept and dropped
-   counts.
-4. Review before sharing:
-   - Open `data/sample/redacted_sample.json` and skim it.
-   - Open `data/private/name_map.json`. If a merchant was mistaken for a
-     person, set its value to the name itself (for example
-     `"CHAI POINT": "CHAI POINT"`) and run step 3 again.
-5. Tell the team the sample exists. Only the sample is shared, never
-   `data/raw/` or `data/private/`.
+   The first run creates `redaction.key` and `name_map.json` in the private
+   folder. Keep both: later runs reuse them, so the same name or reference
+   always gets the same fake. Losing the key changes every fake.
 
-Run `--help` for all options (`--senders`, `--limit`, `--seed`, `-o`,
-`--private-dir`).
+4. Skim `data\sample\redacted_sample.json`. Names are detected where bank
+   messages put them (to/from/by/at, `UPI/P2P/.../NAME`, `; NAME credited`,
+   `Dear NAME`). A name written anywhere else is not detected, so check.
+5. Tell the team the sample exists. Only the sample is shared.
+
+`--help` lists every option.

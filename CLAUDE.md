@@ -6,13 +6,20 @@ and [docs/PLAN.md](docs/PLAN.md) for the phase you are in.
 
 ## Hard rules
 
-- **Never read, open, list, grep, copy or run anything on `data/raw/` or
-  `data/private/`.** They hold private SMS exports and the real-to-fake
-  pseudonym maps. Work only from `data/sample/redacted_sample.json`, and only
-  after the user says it exists. Never run `scripts/redact_sms.py` on real
-  data; the user does. `.claude/settings.json` denies these reads, plus `*.xml`
-  everywhere except `mobile/`. A new top-level folder needs its own XML deny
-  rule there.
+- **Real data lives outside the repo, in `D:\FlashPrivate\` (`raw\` for SMS
+  exports, `private\` for the name map, redaction key and private keep-list).
+  Never read, open, list, grep, copy or run anything there**, nor in
+  `data/raw/` or `data/private/`. Work only from
+  `data/sample/redacted_sample.json`, and only after the user says it exists.
+- Run `scripts/redact_sms.py` **only on synthetic files that tests create in a
+  temp folder**. The user runs it on real data (command in `data/README.md`).
+- **Never read any `.env` file and never print environment variable values.**
+  `.env.example` files are fine.
+- `.claude/settings.json` denies all of the above, plus `*.xml` everywhere except
+  `mobile/`. A new top-level folder needs its own XML deny rule there.
+- Redaction is **default-deny**: every counterparty name and UPI ID local part
+  is pseudonymised unless keep-listed. Never add guessing logic that decides
+  "this looks like a merchant". `scripts/keep_names.txt` holds public brands only.
 - Money is an **integer number of paise**. Never use floats for money.
 - Store timestamps in **UTC**. Convert to **IST (Asia/Kolkata)** only for display
   and for day/month bucketing.
@@ -25,6 +32,11 @@ and [docs/PLAN.md](docs/PLAN.md) for the phase you are in.
   Every non-trivial algorithm ships with a pytest test.
 - No scheduled GitHub workflows. Keep-alive pings live on cron-job.org.
 - Never install a package you cannot verify (PyPI owner, source repo). Ask first.
+- Exact dependency pins only (`==` in requirements, exact versions in
+  `package.json`, `frontend/.npmrc` has `save-exact=true`); commit lockfiles.
+- Never skip tests or loosen lint to get CI green. If stuck, stop and report.
+- UI: minimalist and professional; it must not look AI-generated. The detailed
+  design spec arrives in Phase 3.
 
 ## Layout
 
