@@ -1,0 +1,41 @@
+# --- Secrets -----------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Personal data: only data/README.md is tracked ----------------------------
+data/*
+!data/README.md
+# SMS Backup & Restore exports. Android XML (mobile phase) will need a
+# negation such as !mobile/android/**/*.xml when it arrives.
+*.xml
+
+# --- Python ------------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.db
+*.sqlite3
+
+# --- Node / Vite -------------------------------------------------------------
+node_modules/
+dist/
+dev-dist/
+*.tsbuildinfo
+*.local
+*.log
+
+# --- Editors / OS ------------------------------------------------------------
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+.DS_Store
+Thumbs.db
+.claude/settings.local.json
