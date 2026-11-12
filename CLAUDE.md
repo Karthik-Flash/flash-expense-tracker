@@ -6,9 +6,13 @@ and [docs/PLAN.md](docs/PLAN.md) for the phase you are in.
 
 ## Hard rules
 
-- **Never read, open, list, grep or copy anything in `data/raw/`.** It holds
-  private SMS exports. Work only from `data/sample/redacted_sample.json`, and
-  only after the user says it exists. `.claude/settings.json` denies reads too.
+- **Never read, open, list, grep, copy or run anything on `data/raw/` or
+  `data/private/`.** They hold private SMS exports and the real-to-fake
+  pseudonym maps. Work only from `data/sample/redacted_sample.json`, and only
+  after the user says it exists. Never run `scripts/redact_sms.py` on real
+  data; the user does. `.claude/settings.json` denies these reads, plus `*.xml`
+  everywhere except `mobile/`. A new top-level folder needs its own XML deny
+  rule there.
 - Money is an **integer number of paise**. Never use floats for money.
 - Store timestamps in **UTC**. Convert to **IST (Asia/Kolkata)** only for display
   and for day/month bucketing.
@@ -20,6 +24,7 @@ and [docs/PLAN.md](docs/PLAN.md) for the phase you are in.
 - Small, tested modules. `ruff check .` and `ruff format --check .` stay clean.
   Every non-trivial algorithm ships with a pytest test.
 - No scheduled GitHub workflows. Keep-alive pings live on cron-job.org.
+- Never install a package you cannot verify (PyPI owner, source repo). Ask first.
 
 ## Layout
 
@@ -61,6 +66,7 @@ Config comes from env vars (`backend/.env`, `frontend/.env`); copy the
 - Conventional Commits (`feat(backend): ...`, `fix(scripts): ...`, `ci: ...`).
 - Commit identity: `Karthik-Flash <karthikeyareddy1905@gmail.com>`. Check with
   `git var GIT_AUTHOR_IDENT` before committing.
-- Update `NOTES.md` at the end of each session. Record lasting decisions in
+- Update `NOTES.md` after **every task**: tick what is done, add any new
+  commands to its cheat sheet, list what is still open. Record lasting decisions in
   `docs/DECISIONS.md`. The planner owns `docs/PLAN.md`; propose changes there,
   do not silently rewrite it.
