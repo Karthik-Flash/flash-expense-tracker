@@ -1,5 +1,6 @@
-# Render Blueprint for the backend. When creating the Blueprint in the Render
-# dashboard, set "Blueprint Path" to infra/render.yaml. See infra/README.md.
+# Render Blueprint for the backend. Optional: infra/README.md describes the
+# same service as manual dashboard clicks. Keep both in sync.
+# To use it: Render > New > Blueprint, Blueprint Path = infra/render.yaml.
 services:
   - type: web
     name: flash-api
@@ -8,13 +9,16 @@ services:
     region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # Free plan has no pre-deploy command, so migrations run at start.
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.12
       # Set these in the dashboard; sync: false keeps values out of git.
-      - key: CORS_ORIGINS
-        sync: false
       - key: DATABASE_URL
+        sync: false
+      - key: PING_TOKEN
+        sync: false
+      - key: CORS_ORIGINS
         sync: false
