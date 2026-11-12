@@ -15,6 +15,7 @@ from app.main import app
 from app.models import Heartbeat
 
 TOKEN = "test-token"
+GOOD = {"X-Ping-Token": TOKEN}
 
 
 def use_engine(engine: Engine) -> None:
@@ -44,9 +45,9 @@ def engine() -> Engine:
     return engine
 
 
-def test_upserts_one_heartbeat_row(client: TestClient, engine: Engine) -> None:
+def test_correct_token_upserts_one_row_with_db_time(client: TestClient, engine: Engine) -> None:
     for _ in range(2):
-        res = client.get("/health/db", params={"token": TOKEN})
+        res = client.get("/health/db", headers=GOOD)
         assert res.status_code == 200
         body = res.json()
         assert body["db"] == "ok" and isinstance(body["latency_ms"], int)
@@ -54,24 +55,34 @@ def test_upserts_one_heartbeat_row(client: TestClient, engine: Engine) -> None:
     with sessionmaker(engine)() as session:
         rows = session.scalars(select(Heartbeat)).all()
     assert [row.id for row in rows] == [1]
+    assert rows[0].last_seen is not None
 
 
-@pytest.mark.parametrize("params", [{}, {"token": "wrong"}])
-def test_bad_or_missing_token_is_401(client: TestClient, engine: Engine, params: dict) -> None:
-    assert client.get("/health/db", params=params).status_code == 401
+def test_missing_header_is_401(client: TestClient, engine: Engine) -> None:
+    assert client.get("/health/db").status_code == 401
 
 
-def test_unset_ping_token_disables_endpoint(
+def test_wrong_token_is_401(client: TestClient, engine: Engine) -> None:
+    assert client.get("/health/db", headers={"X-Ping-Token": "wrong"}).status_code == 401
+
+
+def test_query_string_token_is_not_accepted(client: TestClient, engine: Engine) -> None:
+    assert client.get("/health/db", params={"token": TOKEN}).status_code == 401
+
+
+def test_unset_ping_token_is_503(
     client: TestClient, engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "ping_token", "")
-    assert client.get("/health/db", params={"token": ""}).status_code == 401
+    res = client.get("/health/db", headers={"X-Ping-Token": ""})
+    assert res.status_code == 503
+    assert res.json() == {"detail": "ping token not configured"}
 
 
-def test_unreachable_db_is_503_and_health_stays_up(client: TestClient, tmp_path: Path) -> None:
+def test_db_down_is_503_and_health_stays_up(client: TestClient, tmp_path: Path) -> None:
     use_engine(create_engine(f"sqlite:///{(tmp_path / 'missing' / 'x.db').as_posix()}"))
 
-    res = client.get("/health/db", params={"token": TOKEN})
+    res = client.get("/health/db", headers=GOOD)
     assert res.status_code == 503
-    assert res.json() == {"detail": "Database unavailable"}
+    assert res.json() == {"detail": "database unavailable"}
     assert client.get("/health").status_code == 200  # /health never touches the DB

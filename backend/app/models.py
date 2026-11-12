@@ -7,7 +7,11 @@ from app.db import Base
 
 
 class Heartbeat(Base):
-    """Single row (id=1) written by /health/db so Supabase sees regular activity."""
+    """Single row (id=1) written by /health/db so Supabase sees regular activity.
+
+    last_seen is set by the database clock (CURRENT_TIMESTAMP, i.e. now() on
+    Postgres) in the upsert, never by the app.
+    """
 
     __tablename__ = "heartbeat"
 
