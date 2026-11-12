@@ -2,7 +2,20 @@
   "permissions": {
     "deny": [
       "Read(./data/raw/**)",
-      "Edit(./data/raw/**)"
+      "Edit(./data/raw/**)",
+      "Read(./data/private/**)",
+      "Edit(./data/private/**)",
+      "Read(/*.xml)",
+      "Read(./.claude/**/*.xml)",
+      "Read(./.github/**/*.xml)",
+      "Read(./.vscode/**/*.xml)",
+      "Read(./backend/**/*.xml)",
+      "Read(./data/**/*.xml)",
+      "Read(./docs/**/*.xml)",
+      "Read(./frontend/**/*.xml)",
+      "Read(./infra/**/*.xml)",
+      "Read(./scripts/**/*.xml)",
+      "Read(~/**/*.xml)"
     ]
   }
 }
