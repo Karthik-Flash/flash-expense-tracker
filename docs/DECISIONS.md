@@ -129,3 +129,27 @@ values.
 
 Minimalist and professional; it must not look AI-generated. The detailed
 design spec comes in Phase 3.
+
+## D-021 CORS_ORIGINS format (2026-11-13)
+
+One comma-separated string of exact origins, no spaces needed, no trailing
+slashes: `http://localhost:5173,https://flash-expense-tracker.vercel.app`.
+Vercel preview URLs are not allowed unless added.
+
+## D-022 Database password: letters and digits only (2026-11-13)
+
+Characters such as `#` and `%` broke `DATABASE_URL` parsing on first deploy.
+Rather than relying on percent-encoding, the Supabase password uses letters
+and digits only, made long for strength.
+
+## D-023 Cron schedule (2026-11-13)
+
+cron-job.org, time zone Asia/Kolkata. "Flash wake-up": `GET /health` at 03:27
+and 03:28, failure alerts off. "Flash DB heartbeat": `GET /health/db` with the
+`X-Ping-Token` header at 03:30, alerts on for failure and for auto-disable.
+
+## D-024 Render service created by hand; render.yaml is the reference (2026-11-13)
+
+The live service `flash-expense-tracker` was created in the Render dashboard,
+not from the Blueprint. `infra/render.yaml` mirrors its settings and must be
+updated whenever the dashboard settings change.
