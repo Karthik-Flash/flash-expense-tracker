@@ -15,6 +15,20 @@ Done in the Phase 0 closeout:
 - `/health/db` keep-alive: `X-Ping-Token` header, upserts the `heartbeat` row
   with the database clock (migration `0001`), pinged daily by cron-job.org.
 
+Deploy (13 Nov 2026), all done and verified:
+
+- [x] Supabase Postgres (Singapore, Session pooler, Data API off), `0001` applied
+- [x] Render API https://flash-expense-tracker.onrender.com (`/health` 200,
+      `/health/db` 200 with header, 401 without)
+- [x] Vercel app https://flash-expense-tracker.vercel.app ("Backend online")
+- [x] `CORS_ORIGINS` set for localhost and the Vercel URL
+- [x] cron-job.org wake-up (03:27, 03:28 IST) and DB heartbeat (03:30 IST)
+
+Last open Phase 0 items:
+
+- [ ] Overnight cron check: heartbeat job ran at 03:30 IST and `last_seen` moved
+- [ ] Redaction run on the real backup; sample reviewed
+
 ## Phase 1: Data model and idempotent ingestion
 
 - Schema: `raw_messages` (sender, body, received_at UTC, dedupe_key UNIQUE),
