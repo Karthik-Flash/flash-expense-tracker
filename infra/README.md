@@ -10,6 +10,13 @@ order: each one gives you a value that the next one needs.
 | Frontend | Vercel (Hobby)      | `frontend/` | global CDN                 |
 | Pings    | cron-job.org (Free) | n/a         | n/a                        |
 
+**Deployed 13 Nov 2026.** Live: app https://flash-expense-tracker.vercel.app,
+API https://flash-expense-tracker.onrender.com. The Render service
+`flash-expense-tracker` was created by hand in the dashboard (section 2), not
+from the Blueprint. [render.yaml](render.yaml) is the reference copy of its
+settings; keep it in sync when you change the service. How the pieces connect:
+[NOTES.md, Architecture](../NOTES.md#architecture).
+
 Keep these in a password manager, never in git or chat:
 `DATABASE_URL`, `PING_TOKEN`, the Supabase database password.
 
@@ -30,7 +37,8 @@ This prints 64 hex characters. Save it as `PING_TOKEN`. It is sent in the
 2. Click **New project**.
    - **Organization**: your personal org.
    - **Project name**: `flash`.
-   - **Database password**: click **Generate a password**, then copy it.
+   - **Database password**: letters and digits only (no `#`, `%`, `@` and so
+     on; they break `DATABASE_URL` parsing). Make it long, then copy it.
    - **Region**: **Southeast Asia (Singapore)**.
    - Click **Create new project** and wait until it is ready (about 2 minutes).
 3. Find the connection string:
@@ -58,8 +66,8 @@ This prints 64 hex characters. Save it as `PING_TOKEN`. It is sent in the
 3. Under **Git Provider**, choose GitHub. Allow access to
    `Karthik-Flash/flash-expense-tracker`, then select it.
 4. Fill the form:
-   - **Name**: `flash-api` (the URL becomes `https://flash-api.onrender.com`,
-     or with a suffix if that name is taken).
+   - **Name**: `flash-expense-tracker` (the URL becomes
+     `https://flash-expense-tracker.onrender.com`).
    - **Language**: `Python 3`.
    - **Branch**: `main`.
    - **Region**: `Singapore (Southeast Asia)`.
@@ -157,3 +165,62 @@ service.
    start. A 401 means the header is missing or wrong.
 
 There are no scheduled GitHub workflows, on purpose.
+
+## Runbook
+
+Test commands used below (PowerShell):
+
+```powershell
+$u = "https://flash-expense-tracker.onrender.com"
+Invoke-RestMethod "$u/health"
+$t = Read-Host "PING_TOKEN"
+Invoke-RestMethod "$u/health/db" -Headers @{ "X-Ping-Token" = $t }
+```
+
+### Email: Supabase "project will be paused"
+
+1. Open https://supabase.com/dashboard and the project.
+2. Open cron-job.org, job "Flash DB heartbeat", and check its history. Find
+   when it last returned 200.
+3. If the project already shows **Paused**, click **Resume** and wait until it
+   is active.
+4. Run the `/health/db` test. Expect `db: ok`.
+5. Fix whatever stopped the heartbeat (see the next entry).
+
+### Email: cron-job.org "job disabled" (or repeated failures)
+
+1. Open the Render dashboard. The service must show **Live**. If a deploy
+   failed, read its log and fix that first.
+2. Run the `/health` test, then the `/health/db` test.
+   - 401: the cron header and Render's `PING_TOKEN` do not match.
+   - 503 "ping token not configured": `PING_TOKEN` is missing on Render.
+   - 503 "database unavailable": check Supabase (paused? password changed?).
+3. In cron-job.org, open the job, click **Test run**, expect 200.
+4. Switch the job back to **Enabled**.
+
+### Rotate PING_TOKEN
+
+1. Generate a new token (section 0). Save it in the password manager.
+2. Render > service > **Environment**: set `PING_TOKEN` to the new value, then
+   **Save, rebuild, and deploy**. Wait for **Live**.
+3. cron-job.org > "Flash DB heartbeat" > **Advanced** > **Headers**: set
+   `X-Ping-Token` to the new value. Save.
+4. Run the `/health/db` test with the new token (expect 200) and click
+   **Test run** in cron-job.org (expect 200).
+
+### Rotate the database password
+
+1. Supabase > **Project Settings > Database** > **Reset database password**.
+   Letters and digits only. Save it in the password manager.
+2. Update `DATABASE_URL` in `backend/.env` (local) with the new password.
+3. Render > service > **Environment**: update `DATABASE_URL`, then
+   **Save, rebuild, and deploy**. Wait for **Live**.
+4. Run the `/health/db` test. Expect `db: ok`.
+
+### Render free hours or suspension email
+
+1. Keep only one free web service on this Render account. Free instance hours
+   are shared by every free service in the workspace.
+2. Render > **Billing**: check free instance hours used this month.
+3. If the service is suspended, wait for the monthly reset or remove other
+   free services; then check it shows **Live** and run the `/health` test.
