@@ -1,9 +1,10 @@
-# Render Blueprint for the backend. Optional: infra/README.md describes the
-# same service as manual dashboard clicks. Keep both in sync.
-# To use it: Render > New > Blueprint, Blueprint Path = infra/render.yaml.
+# Reference copy of the Render service settings. The live service
+# (https://flash-expense-tracker.onrender.com) was created by hand in the
+# dashboard; keep this file in sync when its settings change.
+# Re-creating it from here: Render > New > Blueprint, Blueprint Path = infra/render.yaml.
 services:
   - type: web
-    name: flash-api
+    name: flash-expense-tracker
     runtime: python
     plan: free
     region: singapore
