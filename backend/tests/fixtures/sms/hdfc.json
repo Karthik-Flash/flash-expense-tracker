@@ -44,7 +44,7 @@
   {
     "id": "hdfc-H03-debit-card-spend-2",
     "sender": "HDFCBK",
-    "body": "Spent Rs.1000.50 From HDFC Bank Card x0002 At TEST STORE * TEST ORDER On 2026-01-08:22:15:00 Bal Rs.12345.50 Not You? Call 18000000001/SMS BLOCK DC 0002 to 9000000001",
+    "body": "Spent Rs.1000.50 From HDFC Bank Card x0002 At TEST STORE * TEST ORDER On 2026-01-08:22:15:00 Bal Rs.12345.50 Not You? Call 18000000001/SMS BLOCK DC  0002 to 9000000001",
     "received_at": "2026-01-08T16:45:05Z",
     "expected": {"type": "debit", "amount_paise": 100050, "direction": "debit", "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST STORE * TEST ORDER", "reference": null, "balance_paise": 1234550, "txn_time_utc": "2026-01-08T16:45:00Z", "time_inferred": false}
   },

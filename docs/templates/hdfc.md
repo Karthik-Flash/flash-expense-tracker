@@ -25,12 +25,13 @@ is always set: the message's own date and time converted from IST, or, when
 the message has no time, `received_at` with `time_inferred: true`. For all
 other types both are null.
 
-> **Redaction artifacts (fixed 14 Nov 2026, prompt 1b).** The first sample
-> was redacted before `BANK_VOCABULARY` existed, so some fixed bank words
-> became `{PARTY}`: the card label in `From {PARTY} At` (H03, H11; real text
-> "HDFC Bank Card x" plus last 4), `from {PARTY} {NUM}` (H12), the word in
-> `Biometric {PARTY}!` (H09), and the URL scheme (H12). Shapes H03, H09, H11
-> and H12 are **pending re-survey**: re-run the redaction, then the survey.
+> **Re-survey (14 Nov 2026, refreshed sample, `--verify` Leaks: 0).** Same
+> 135 messages and 15 shapes. H03, H11 and H12 now show the real card label
+> ("HDFC Bank Card x{ACCT}" / "HDFC Bank Card {ACCT}") and got new shape ids.
+> H09 still shows `{PARTY}` in its word slot: the word there is in the private
+> name map and is not "authentication". The parser accepts any single word
+> in that slot, so it does not matter for parsing. Each shape's parser
+> template has the same id (H01...) in `backend/app/engine/parsers/hdfc.py`.
 
 ## Shapes found
 
@@ -66,18 +67,19 @@ Credit Alert!
 - **Notes:** No payer name, only the VPA. HDFC sometimes masks the VPA itself
   (`*` plus a few characters before `@`). Date only (time inferred).
 
-### H03 · sh_abd519ff · 4 messages · HDFCBK · pending re-survey
+### H03 · sh_5c7a7a9b · 4 messages · HDFCBK
 
 ```
-Spent {AMOUNT} From {PARTY} At {PARTY} On {DATE}:{TIME} Bal {BAL} Not You? Call {PHONE}/SMS BLOCK DC {ACCT} to {PHONE}
+Spent {AMOUNT} From HDFC Bank Card {ACCT} At {PARTY} On {DATE}:{TIME} Bal {BAL} Not You? Call {PHONE}/SMS BLOCK DC {ACCT} to {PHONE}
 ```
 
 - **Type:** debit · **Channel:** debit_card
-- **Fields:** amount, account_last4 (card last 4, from `DC {ACCT}`),
+- **Fields:** amount, account_last4 (card last 4),
   counterparty_raw (`At` text), txn_time (yyyy-mm-dd:HH:MM:SS, IST),
   balance (account balance after the spend).
-- **Notes:** Amounts may have no decimals. The first `{PARTY}` is the card
-  label (redaction artifact). Merchant text may contain ` * ` followed by
+- **Notes:** Amounts may have no decimals. The card's last 4 appears twice
+  (`x{ACCT}` and `DC {ACCT}`, often with two spaces after `DC`); the parser
+  checks they agree. Merchant text may contain ` * ` followed by
   more descriptor text. International spends also arrive in this shape, in INR,
   together with H04.
 
@@ -146,7 +148,7 @@ TnC
   alphanumeric).
 - **Notes:** Recurring card mandate executed. Variant of H13.
 
-### H09 · sh_5791118d · 1 message · HDFCBK · pending re-survey
+### H09 · sh_5791118d · 1 message · HDFCBK
 
 ```
 Biometric {PARTY}! You have enabled your biometric {PARTY} for HDFC Bank App. Not you? Call {PHONE}
@@ -154,7 +156,8 @@ Biometric {PARTY}! You have enabled your biometric {PARTY} for HDFC Bank App. No
 
 - **Type:** other_info (security event)
 - **Fields:** none.
-- **Notes:** `{PARTY}` here is a fixed word hit by redaction.
+- **Notes:** `{PARTY}` is a fixed word that the private name map still
+  replaces (not "authentication"). The template accepts any single word.
 
 ### H10 · sh_25c299ba · 1 message · HDFCBK
 
@@ -168,10 +171,10 @@ Transaction Reversed!On HDFC Bank DEBIT/ATM Card {ACCT} Amt: {AMOUNT} By {PARTY}
   transaction ID; split on `* ` into counterparty_raw and reference. No space
   after `Reversed!`. Should be linked to the original spend (Open questions 3).
 
-### H11 · sh_7c3c7508 · 1 message · HDFCBK · pending re-survey
+### H11 · sh_edf2c444 · 1 message · HDFCBK
 
 ```
-Withdrawn {AMOUNT} From {PARTY} At {PARTY} On {DATE}:{TIME} Bal {BAL} Not You? Call {PHONE}/SMS BLOCK DC {ACCT} to {PHONE}
+Withdrawn {AMOUNT} From HDFC Bank Card {ACCT} At {PARTY} On {DATE}:{TIME} Bal {BAL} Not You? Call {PHONE}/SMS BLOCK DC {ACCT} to {PHONE}
 ```
 
 - **Type:** debit · **Channel:** atm
@@ -180,18 +183,19 @@ Withdrawn {AMOUNT} From {PARTY} At {PARTY} On {DATE}:{TIME} Bal {BAL} Not You? C
 - **Notes:** Same layout as H03 with `Withdrawn`. Cash withdrawal: spend
   category is "cash", not a merchant.
 
-### H12 · sh_b5411ded · 1 message · HDFCBK · pending re-survey
+### H12 · sh_9ca903ac · 1 message · HDFCBK
 
 ```
 Alert:
-{AMOUNT} will be debited on {DATE} from {PARTY} {NUM} for {PARTY}
+{AMOUNT} will be debited on {DATE} from HDFC Bank Card {ACCT} for {PARTY}
 ID:{REF}
 Act:{URL}
 ```
 
 - **Type:** upcoming_debit (pre-debit notification; not money)
 - **Fields:** amount (`INR.` with a dot), future date (dd/mm/yyyy), card last
-  4 (`{NUM}`), counterparty_raw (`for` text), reference (mandate ID).
+  4 (`{ACCT}`), counterparty_raw (`for` text), reference (mandate ID). The
+  link after `Act:` is not stored.
 - **Notes:** Announces a future autopay debit; must not create a
   transaction. The matching H08/H13 message is the real debit.
 
@@ -308,7 +312,7 @@ stage (Phase 2-3).
 | 7 | FD closed early | `credit` with channel `fd`; Reconcile treats it as an own-money transfer in, not income. |
 | 8 | Masked UPI ID as only counterparty | Acceptable for now; quick-tagging lets the user name it later. |
 | 9 | International card spends | Deferred with `foreign_currency`. |
-| 10 | Bank words redacted | Fixed in prompt 1b (`BANK_VOCABULARY`, link paths faked). H03, H09, H11, H12 pending re-survey. |
+| 10 | Bank words redacted | Fixed in prompt 1b (`BANK_VOCABULARY`, link paths faked). Re-surveyed: H03, H11, H12 show the real wording; H09's word slot is still mapped (harmless for parsing). |
 
 ## Not yet seen
 

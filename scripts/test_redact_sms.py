@@ -83,6 +83,25 @@ def test_parse_sender_length_rules(address: str, expected: tuple[str, str]) -> N
     assert r.parse_sender(address) == expected
 
 
+# Shared with backend/app/engine/senders.py: both implementations must pass it.
+SHARED_SENDER_CASES = json.loads(
+    (
+        Path(__file__).resolve().parent.parent
+        / "backend"
+        / "tests"
+        / "fixtures"
+        / "sender_ids.json"
+    ).read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize(
+    "case", SHARED_SENDER_CASES, ids=[c["address"] for c in SHARED_SENDER_CASES]
+)
+def test_shared_sender_table(case: dict) -> None:
+    assert r.parse_sender(case["address"]) == (case["core"], case["suffix"])
+
+
 @pytest.mark.parametrize(
     "variants",
     [
