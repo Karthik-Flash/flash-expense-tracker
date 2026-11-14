@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
+from app.engine.filters import is_otp, is_promotional
 from app.engine.models import ParsedMessage
 from app.engine.money import AmountError, to_paise
 from app.engine.senders import SENDER_BANKS, bank_for, parse_sender
 from app.engine.timeparse import parse_date, parse_ist_datetime, txn_time
 
-SENDER_CASES = json.loads(
-    (Path(__file__).parent / "fixtures" / "sender_ids.json").read_text(encoding="utf-8")
-)
+FIXTURES = Path(__file__).parent / "fixtures"
+SENDER_CASES = json.loads((FIXTURES / "sender_ids.json").read_text(encoding="utf-8"))
 
 
 # --- Sender IDs (shared table; scripts/test_redact_sms.py runs it too) -------
@@ -153,3 +153,18 @@ def test_parsed_message_validates() -> None:
         _msg(type="spend")
     with pytest.raises(ValueError):
         _msg(amount_paise=None)  # money without an amount
+
+
+# --- Filters ------------------------------------------------------------------
+OTP_CASES = json.loads((FIXTURES / "otp_cases.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("case", OTP_CASES, ids=[c["body"][:30] for c in OTP_CASES])
+def test_shared_otp_table(case: dict) -> None:
+    """Same table as scripts/test_redact_sms.py: both OTP rules agree."""
+    assert is_otp(case["body"]) is case["otp"]
+
+
+def test_promotional_suffix() -> None:
+    assert is_promotional(parse_sender("VM-HDFCBK-P")[1])
+    assert not is_promotional(parse_sender("VM-HDFCBK-S")[1])

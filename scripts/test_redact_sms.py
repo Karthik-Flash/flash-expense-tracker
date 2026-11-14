@@ -165,6 +165,19 @@ def test_promo_dropped_in_both_hyphen_forms(tmp_path: Path, capsys) -> None:
     assert re.search(r"promotional \(-P\)\s+2\b", capsys.readouterr().out)
 
 
+SHARED_OTP_CASES = json.loads(
+    (
+        Path(__file__).resolve().parent.parent / "backend" / "tests" / "fixtures" / "otp_cases.json"
+    ).read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize("case", SHARED_OTP_CASES, ids=[c["body"][:30] for c in SHARED_OTP_CASES])
+def test_shared_otp_table(case: dict) -> None:
+    """Same table as backend/tests/test_engine_units.py: both OTP rules agree."""
+    assert r.is_otp(case["body"]) is case["otp"]
+
+
 def test_otp_detection_keeps_alerts_with_share_warning() -> None:
     assert r.is_otp("123456 is your OTP for txn of Rs 500 at AMAZON")
     assert r.is_otp("Your one-time password is 4321")

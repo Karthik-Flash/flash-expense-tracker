@@ -1,0 +1,10 @@
+[
+  {"body": "123456 is your OTP for txn of Rs 33 at TEST STORE", "otp": true},
+  {"body": "Your one-time password is 4321", "otp": true},
+  {"body": "Use One Time Password 4321 to log in", "otp": true},
+  {"body": "Verification code 9999 for HDFC Bank NetBanking", "otp": true},
+  {"body": "Rs 500 debited from A/c XX1234. Never share your OTP with anyone.", "otp": false},
+  {"body": "Spent Rs.33 at TEST STORE. Do not share your OTP, PIN or CVV.", "otp": false},
+  {"body": "Sent Rs.33 From HDFC Bank A/C *0001 To TEST", "otp": false},
+  {"body": "Your PIN reminder: do not share the pin", "otp": false}
+]
