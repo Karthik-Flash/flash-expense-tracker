@@ -5,9 +5,9 @@ unless it is on the keep-list (scripts/keep_names.txt plus an optional
 keep_names.txt in --private-dir). It never guesses person vs merchant.
 
 - Streams the XML (250 MB+ is fine) and skips <mms>.
-- Keeps allowlisted bank/card/UPI/wallet senders only. The operator prefix
-  (VM-, AD-, ...) and TRAI suffix (-S/-T/-P/-G) are ignored when matching.
-  Promotional (-P) and OTP messages are dropped.
+- Keeps allowlisted bank and UPI senders only. Sender IDs are normalised to
+  their core first (operator prefix and TRAI suffix stripped, with or without
+  hyphens). Promotional (suffix P) and OTP messages are dropped.
 - Names become PARTY_001, PARTY_002, ... via name_map.json in --private-dir.
 - References, phone numbers and UPI local parts get fakes of the same shape,
   derived with HMAC-SHA256 and a random key (redaction.key in --private-dir,
@@ -44,14 +44,13 @@ PRIVATE_KEEP_FILE = "keep_names.txt"
 NAME_MAP_FILE = "name_map.json"
 KEY_FILE = "redaction.key"
 
-# DLT sender headers, without operator prefix or TRAI suffix.
-# Grow this list with --list-senders.
+# Banks and UPI only. Investment, broker and exchange senders are deliberately
+# excluded until Phase 6 (data minimisation). Values are normalised cores.
 DEFAULT_SENDERS = (
-    "HDFCBK,ICICIT,ICICIB,SBIUPI,SBIINB,SBIPSG,CBSSBI,AXISBK,KOTAKB,"
-    "PAYTMB,IPAYTM,PAYTM,YESBNK,INDUSB,IDFCFB,PNBSMS,BOBTXN,CANBNK,UNIONB,"
-    "AMEXIN,SCBANK,CITIBK,PHONPE,GPAY,AMZPAY,MOBIKW,FREECH,ONECRD,SLICE"
+    "HDFCBK,HDFCBN,SBIBNK,CBSSBI,SBIUPI,SBIINB,SBYONO,SBIPSG,"
+    "ICICIT,AXISBK,KOTAKM,YESBNK,DOPBNK,PHONPE"
 )
-TRAI_SUFFIXES = {"S", "T", "P", "G"}
+TRAI_SUFFIXES = {"S", "T", "P", "G"}  # service, transactional, promotional, government
 
 # --- OTP ----------------------------------------------------------------------
 # ponytail: keyword heuristic. "Never share your OTP" warnings inside real
@@ -165,14 +164,33 @@ def is_otp(body: str) -> bool:
 
 
 def parse_sender(address: str) -> tuple[str, str]:
-    """'VM-HDFCBK-S' -> ('HDFCBK', 'S'); 'HDFCBK' -> ('HDFCBK', '')."""
-    parts = [p for p in address.upper().replace(" ", "").split("-") if p]
-    if len(parts) > 1 and len(parts[0]) == 2 and parts[0].isalpha():
-        parts = parts[1:]  # operator/circle prefix
-    if not parts:
-        return "", ""
-    suffix = parts[-1] if len(parts) > 1 and parts[-1] in TRAI_SUFFIXES else ""
-    return parts[0], suffix
+    """Normalise a sender ID to (core, TRAI suffix).
+
+    Hyphens are optional, so VM-HDFCBK-S, VMHDFCBKS, HDFCBK-S and VMHDFCBK all
+    give core HDFCBK. Rules, after uppercasing and removing hyphens:
+      9 chars ending S/T/P/G  -> drop 2-letter prefix and the suffix
+      8 chars                 -> drop 2-letter prefix
+      7 chars ending S/T/P/G  -> drop the suffix
+      digits, maybe prefixed  -> drop a 2-letter prefix (CP388558 -> 388558)
+      anything else           -> unchanged (e.g. ...@RBM.GOOG, +91 numbers)
+    """
+    sid = address.upper().replace("-", "").replace(" ", "")
+    if sid[2:].isdigit() and (sid[:2].isalpha() or sid[:2].isdigit()):
+        return (sid[2:] if sid[:2].isalpha() else sid), ""
+    if not sid.isalnum():
+        return sid, ""
+    if len(sid) == 9 and sid[:2].isalpha() and sid[-1] in TRAI_SUFFIXES:
+        return sid[2:-1], sid[-1]
+    if len(sid) == 8 and sid[:2].isalpha():
+        return sid[2:], ""
+    if len(sid) == 7 and sid[-1] in TRAI_SUFFIXES:
+        return sid[:-1], sid[-1]
+    return sid, ""
+
+
+def is_allowlisted(core: str, senders: set[str]) -> bool:
+    """Only plain alphanumeric cores can match; RCS IDs and numbers never do."""
+    return core.isalnum() and core in senders
 
 
 def is_phone_number(header: str) -> bool:
@@ -415,7 +433,7 @@ def iter_relevant(
             dropped["mms (skipped)"] += 1
             continue
         header, suffix = parse_sender(sms.get("address", ""))
-        if header not in senders:
+        if not is_allowlisted(header, senders):
             dropped["sender not allowlisted"] += 1
         elif suffix == "P":
             dropped["promotional (-P)"] += 1
@@ -430,20 +448,24 @@ def list_senders(paths: list[Path], senders: set[str]) -> None:
     totals: Counter = Counter()
     promo: Counter = Counter()
     phones: Counter = Counter()
+    variants: dict[str, set[str]] = defaultdict(set)
     mms = 0
     for _, sms in iter_files(paths):
         if sms is None:
             mms += 1
             continue
-        header, suffix = parse_sender(sms.get("address", ""))
+        raw = sms.get("address", "")
+        header, suffix = parse_sender(raw)
         if is_phone_number(header):
             phones[header] += 1
             continue
         totals[header] += 1
         promo[header] += suffix == "P"
-    print(f"{'SENDER':<12}{'MESSAGES':>10}{'PROMO':>8}  ALLOWLISTED")
+        variants[header].add(raw.upper().replace(" ", ""))
+    print(f"{'SENDER':<20}{'MESSAGES':>10}{'PROMO':>8}{'VARIANTS':>10}  ALLOWLISTED")
     for header, n in totals.most_common():
-        print(f"{header:<12}{n:>10,}{promo[header]:>8,}  {'yes' if header in senders else ''}")
+        flag = "yes" if is_allowlisted(header, senders) else ""
+        print(f"{header:<20}{n:>10,}{promo[header]:>8,}{len(variants[header]):>10,}  {flag}")
     print(f"\nPhone numbers (hidden): {phones.total():,} messages from {len(phones):,} numbers")
     print(f"MMS (skipped): {mms:,}")
 
@@ -538,7 +560,7 @@ def main(argv: list[str] | None = None) -> int:
     if not paths:
         print("No XML files found in --input", file=sys.stderr)
         return 1
-    senders = {s.strip().upper() for s in args.senders.split(",") if s.strip()}
+    senders = {parse_sender(s.strip())[0] for s in args.senders.split(",") if s.strip()}
 
     try:
         if args.list_senders:
