@@ -368,8 +368,10 @@ git add -p                                        # stage piece by piece
 git commit -m "feat(scope): what and why"
 git switch main; git merge --no-ff feat/short-name
 git branch -d feat/short-name
-git push                                          # CI + Render + Vercel all start
+git push                                          # CI + Vercel start; Render waits for CI
 git log --oneline --graph -15                     # recent history
+git tag -n                                        # phase tags with their messages
+git log --oneline phase-1-done..phase-2-done      # what one phase changed
 ```
 
 ### Push and CI
