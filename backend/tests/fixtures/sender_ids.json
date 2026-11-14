@@ -1,0 +1,21 @@
+[
+  {"address": "VM-HDFCBK", "core": "HDFCBK", "suffix": ""},
+  {"address": "AD-HDFCBK-S", "core": "HDFCBK", "suffix": "S"},
+  {"address": "JD-ICICIT-T", "core": "ICICIT", "suffix": "T"},
+  {"address": "VK-SBIUPI-P", "core": "SBIUPI", "suffix": "P"},
+  {"address": "HDFCBK", "core": "HDFCBK", "suffix": ""},
+  {"address": "HDFCBK-S", "core": "HDFCBK", "suffix": "S"},
+  {"address": "vmhdfcbkp", "core": "HDFCBK", "suffix": "P"},
+  {"address": "JXSBIINBS", "core": "SBIINB", "suffix": "S"},
+  {"address": "VKSBIBNK", "core": "SBIBNK", "suffix": ""},
+  {"address": "HDFCBKT", "core": "HDFCBK", "suffix": "T"},
+  {"address": "CP388558", "core": "388558", "suffix": ""},
+  {"address": "388558", "core": "388558", "suffix": ""},
+  {"address": "AB-ABCDE-P", "core": "ABCDE", "suffix": "P"},
+  {"address": "AB-ABCD", "core": "ABCD", "suffix": ""},
+  {"address": "AB-ABCDEF-S", "core": "ABCDEF", "suffix": "S"},
+  {"address": "ABABCDEF", "core": "ABCDEF", "suffix": ""},
+  {"address": "AB-123456", "core": "123456", "suffix": ""},
+  {"address": "ABC123@RBM.GOOG", "core": "ABC123@RBM.GOOG", "suffix": ""},
+  {"address": "+919876543210", "core": "+919876543210", "suffix": ""}
+]
