@@ -74,39 +74,41 @@ CI green**. Next: you run the real import (to-do list), then "LOCK IN".
                                    | 1. HTTPS: load the app
                                    v
   +-----------------------------------------------------+
-  | Vercel  (global CDN)                                 |
-  | https://flash-expense-tracker.vercel.app             |
-  | Static PWA built from frontend/                      |
-  | VITE_API_URL baked in at build time                  |
+  | Vercel  (global CDN)                                |
+  | https://flash-expense-tracker.vercel.app            |
+  | Static PWA built from frontend/                     |
+  | VITE_API_URL baked in at build time                 |
   +-----------------------------------------------------+
                                    |
                                    | 2. fetch(VITE_API_URL + "/health")
                                    |    from your browser, cross-origin
                                    v
-  +-----------------------------------------------------+        3. GET /health (03:27, 03:28 IST)
-  | Render  (Free web service, Singapore)                | <----- 4. GET /health/db + X-Ping-Token
-  | https://flash-expense-tracker.onrender.com           |           (03:30 IST)
-  | Cloudflare edge -> uvicorn -> FastAPI (backend/)     |        +--------------------------------+
-  | Env: DATABASE_URL, PING_TOKEN, CORS_ORIGINS,         |        | cron-job.org                   |
-  |      PYTHON_VERSION                                  |        | "Flash wake-up"                |
-  | Sleeps after 15 min idle; cold start ~50 s           |        | "Flash DB heartbeat"           |
-  +-----------------------------------------------------+        | emails you if the DB job fails |
-                                   |                             +--------------------------------+
-                                   | 5. Postgres over TLS (sslmode=require)
+  +-----------------------------------------------------+        3. GET /health/db + X-Ping-Token
+  | Render  (Free web service, Singapore)               | <-----    03:30 03:32 03:34 03:36 03:38 IST
+  | https://flash-expense-tracker.onrender.com          |        +--------------------------------+
+  | Cloudflare edge -> uvicorn -> FastAPI (backend/)    |        | cron-job.org                   |
+  | Env: DATABASE_URL, PING_TOKEN, CORS_ORIGINS,        |        | one job: "Flash DB heartbeat"  |
+  |      PYTHON_VERSION                                 |        | 03:30 run wakes Render (fails) |
+  | Sleeps after 15 min idle; cold start ~50 s          |        | emails only if job disabled    |
+  +-----------------------------------------------------+        +--------------------------------+
+                                   |
+                                   | 4. Postgres over TLS (sslmode=require)
                                    |    via Supabase Session pooler, port 5432
                                    v
   +-----------------------------------------------------+
-  | Supabase  (Free Postgres, Singapore)                 |
-  | tables: heartbeat, alembic_version                   |
-  | Data API off: no public REST access to tables        |
-  | Pauses after 7 days without activity                 |
+  | Supabase  (Free Postgres, Singapore)                |       5. python -m app.cli import-sms | reparse
+  | heartbeat, alembic_version, import_batches,         | <-----    | stats  (your PC, backend\.env)
+  | raw_messages, parse_results, transactions,          |
+  | transaction_sources, duplicate_candidates           |
+  | RLS on the pipeline tables; Data API off            |
+  | Pauses after 7 days idle (warning email first)      |
   +-----------------------------------------------------+
 
   +-----------------------------------------------------+
-  | GitHub  Karthik-Flash/flash-expense-tracker          |
-  | push to main  -> GitHub Actions CI (lint, tests, build)
-  |               -> Render auto-deploy  (backend/)      |
-  |               -> Vercel auto-deploy  (frontend/)     |
+  | GitHub  Karthik-Flash/flash-expense-tracker         |
+  | push to main -> GitHub Actions CI (3 jobs)          |
+  |              -> Render deploys after CI passes      |
+  |              -> Vercel auto-deploy (frontend/)      |
   +-----------------------------------------------------+
 ```
 
@@ -125,34 +127,38 @@ CI green**. Next: you run the real import (to-do list), then "LOCK IN".
 5. The page shows "Backend online · v0.1.0". `/health` never touches the
    database.
 
-### Flow 2: nightly keep-alive (all times IST)
+### Flow 2: nightly keep-alive (all times IST, D-052)
 
-1. 03:27 and 03:28: "Flash wake-up" calls `GET /health`. This wakes Render.
-   The first call may time out (cron-job.org waits only 30 s); that is
-   expected, so its alerts are off.
-2. 03:30: "Flash DB heartbeat" calls `GET /health/db` with header
-   `X-Ping-Token`. Render is warm, so it answers fast.
+1. 03:30: the only job, "Flash DB heartbeat", calls `GET /health/db` with
+   header `X-Ping-Token`. Render is usually asleep and answers with its
+   wake-up page while it spins up. cron-job.org rejects that page ("output
+   too large"), so this first run fails every night. Expected.
+2. 03:32, 03:34, 03:36, 03:38: the same call again. Render is warm now.
 3. FastAPI checks the header against `PING_TOKEN` (`secrets.compare_digest`).
    Missing or wrong: 401. `PING_TOKEN` unset on Render: 503.
 4. FastAPI connects to Supabase through the Session pooler and runs one upsert:
    `heartbeat` row `id=1` gets `last_seen = now()` from the database clock.
 5. Supabase records activity, so the free project does not pause.
-6. FastAPI returns `{"db":"ok","latency_ms":N}`. If anything fails (Render
-   down, DB down, wrong token), cron-job.org emails you.
+6. FastAPI returns `{"db":"ok","latency_ms":N}`. A success resets the job's
+   failure count, so the nightly first failure never adds up.
+7. Alerts: "execution fails" is OFF (it would email every night); "job
+   disabled" is ON (cron-job.org disables a job after many failures in a
+   row, i.e. nights with no success). Backstop: Supabase emails a pause
+   warning before it pauses an idle project.
 
 ### Flow 3: you push code
 
 1. `git push` to `main` on GitHub.
-2. Three things start in parallel. They do not wait for each other:
-   - GitHub Actions CI: ruff, backend pytest, scripts pytest, typecheck, build.
-   - Render: `pip install -r requirements.txt && alembic upgrade head`
-     (migrations hit Supabase during the build), then starts
-     `uvicorn app.main:app`. If the build or migration fails, the old version
-     keeps serving.
-   - Vercel: `npm install` and `npm run build` in `frontend/`, with
-     `VITE_API_URL` baked in, then publishes to the CDN.
-3. Check CI with `gh run watch`. A red CI does not stop Render or Vercel from
-   deploying, so do not push to `main` with failing checks.
+2. GitHub Actions CI runs three jobs: backend (ruff, backend and scripts
+   pytest on SQLite), backend on Postgres 17 (`alembic upgrade head`,
+   `alembic check`, pytest), frontend (typecheck, build).
+3. Render waits for CI ("After CI Checks Pass", D-050). Then it runs
+   `pip install -r requirements.txt && alembic upgrade head` (migrations hit
+   Supabase during the build) and starts `uvicorn app.main:app`. If the
+   build or migration fails, the old version keeps serving.
+4. Vercel does not wait for CI: `npm install` and `npm run build` in
+   `frontend/`, with `VITE_API_URL` baked in, then publish to the CDN.
+5. Check CI with `gh run watch`. Keep `main` green.
 
 ### Flow 4: real data to a shareable sample (you run it, agents never do)
 
@@ -162,7 +168,21 @@ CI green**. Next: you run the real import (to-do list), then "LOCK IN".
    name map in `D:\FlashPrivate\private\`.
 3. It writes `data\sample\redacted_sample.json` (gitignored). Only this file
    is shared with agents and the planner.
-4. Phase 2 parsers are built and tested against that sample.
+4. Parsers are built and tested against that sample and fake fixtures.
+   For full-data coverage, the full redacted file goes to
+   `D:\FlashPrivate\private\` (D-051), never the repo.
+
+### Flow 5: real data into the database (you run it, agents never do)
+
+1. From `backend\` on your PC: `python -m app.cli import-sms --input
+   D:\FlashPrivate\raw`. `DATABASE_URL` in `backend\.env` points at Supabase.
+2. The importer streams the XML, keeps only bank-registry senders and never
+   stores OTP, promotional or MMS messages.
+3. Per message: `raw_messages` (dedupe on `content_hash`), engine parse,
+   `parse_results`, then for money a `transactions` row (merged on its dedupe
+   key) linked in `transaction_sources`, plus `duplicate_candidates` pairs.
+4. It prints counts only. `reparse` after a parser version bump; `stats` for
+   totals. Details: [docs/data-model.md](docs/data-model.md).
 
 ### Where each setting lives
 

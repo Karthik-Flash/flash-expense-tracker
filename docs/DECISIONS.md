@@ -73,6 +73,8 @@ Render is allowed to sleep; the UI handles cold starts. A wake-up call to
 `/health` two minutes earlier keeps the monitored call under cron-job.org's
 30-second timeout. (Where migrations run: see D-018.)
 
+Wake-up call superseded by D-052 (14 Nov 2026): one job with retries.
+
 ## D-013 Co-locate in Singapore (2026-11-13)
 
 Render has no India region. Render `singapore` plus Supabase
@@ -148,6 +150,8 @@ cron-job.org, time zone Asia/Kolkata. "Flash wake-up": `GET /health` at 03:27
 and 03:28, failure alerts off. "Flash DB heartbeat": `GET /health/db` with the
 `X-Ping-Token` header at 03:30, alerts on for failure and for auto-disable.
 
+Superseded by D-052 (14 Nov 2026).
+
 ## D-024 Render service created by hand; render.yaml is the reference (2026-11-13)
 
 The live service `flash-expense-tracker` was created in the Render dashboard,
@@ -220,6 +224,9 @@ Reconcile.
 ## D-032 AutoPay success plus card "Spent" (2026-11-14)
 
 Both messages are parsed. They are possible duplicates, merged in Phase 2.
+
+Updated by D-047: Phase 2 only records them as duplicate candidates; merging
+moves to Reconcile (Phase 3).
 
 ## D-033 Pre-debit notices are upcoming_debit (2026-11-14)
 
@@ -380,4 +387,14 @@ with agents and the planner. The full redacted export, which holds every
 message, is written to `D:\FlashPrivate\private\redacted_full.json` and read
 from there by `scripts/parse_coverage.py`. It never goes in the repo folder,
 not even in gitignored `data/`. Extends D-015.
+
+## D-052 One heartbeat job with retries (2026-11-14)
+
+Supersedes D-023 and the wake-up call in D-012. The "Flash wake-up" job is
+deleted. One cron-job.org job, "Flash DB heartbeat", calls `GET /health/db`
+with the `X-Ping-Token` header at 03:30, 03:32, 03:34, 03:36 and 03:38 IST.
+The first run each night is expected to fail ("output too large": Render's
+wake-up page while it spins up); a later run succeeds and resets the failure
+count. Notifications: "execution fails" off, "job disabled" on. Supabase's
+pause warning email is the backstop.
 

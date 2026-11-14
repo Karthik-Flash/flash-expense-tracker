@@ -134,35 +134,32 @@ redeploy the frontend.
 Supabase pauses free projects after 7 days without activity. A daily call to
 `/health/db` writes the heartbeat row, which counts as activity.
 
-cron-job.org stops waiting after 30 seconds, and a Render cold start can take
-longer. So one job wakes Render first, then the monitored job runs on a warm
-service.
+One job does it (D-052). Render is usually asleep at night: the first call
+gets Render's wake-up page, which cron-job.org rejects ("output too large").
+The same job repeats every two minutes, so a later run reaches the warm
+service and succeeds, which resets the failure count.
 
 1. Go to https://console.cron-job.org/signup and create an account. Confirm
    the email.
 2. Open **Settings** and set **Time zone** to `Asia/Kolkata`.
-3. Create the wake-up job: **Cronjobs > Create cronjob**.
-   - **Title**: `flash wake-up`.
-   - **URL**: `https://<your-service>.onrender.com/health`
-   - **Execution schedule**: **Custom**. Days: every day. Hours: `3`.
-     Minutes: `27` and `28`. (Two calls: the first may time out while Render
-     wakes; the second succeeds, so the job never builds up failures.)
-   - **Notifications**: all off.
-   - Click **Create**.
-4. Create the monitored job: **Cronjobs > Create cronjob**.
-   - **Title**: `flash db heartbeat`.
+3. Create the job: **Cronjobs > Create cronjob**.
+   - **Title**: `Flash DB heartbeat`.
    - **URL**: `https://<your-service>.onrender.com/health/db` (no token in the URL).
-   - **Execution schedule**: **Every day at** `03:30`.
-   - **Notifications**: turn on **execution of the cronjob fails** and
-     **the cronjob will be disabled because of too many failures**. Also turn
-     on **execution of the cronjob succeeds after it failed before** to get an
-     all-clear email.
+   - **Execution schedule**: **Custom**. Days: every day. Hours: `3`.
+     Minutes: `30`, `32`, `34`, `36`, `38`.
+   - **Notifications**: **execution of the cronjob fails** OFF (the 03:30
+     run fails every night by design). **The cronjob will be disabled
+     because of too many failures** ON.
    - Open the **Advanced** tab. Under **Headers**, add key `X-Ping-Token` with
      your `PING_TOKEN` as the value. Leave **Request method** on `GET`.
    - Click **Create**.
-5. Open the heartbeat job and click **Test run**. Expect HTTP 200 with
-   `{"db":"ok",...}`. Run it again if the first one times out during a cold
-   start. A 401 means the header is missing or wrong.
+4. Click **Test run**. Expect HTTP 200 with `{"db":"ok",...}`. If Render was
+   asleep the first test fails with "output too large"; run it again. A 401
+   means the header is missing or wrong.
+5. Backstop: Supabase emails a warning before it pauses an idle project.
+
+Until 14 Nov 2026 a separate "Flash wake-up" job called `/health` at 03:27
+and 03:28. It was deleted; do not recreate it (D-052).
 
 There are no scheduled GitHub workflows, on purpose.
 
@@ -181,13 +178,16 @@ Invoke-RestMethod "$u/health/db" -Headers @{ "X-Ping-Token" = $t }
 
 1. Open https://supabase.com/dashboard and the project.
 2. Open cron-job.org, job "Flash DB heartbeat", and check its history. Find
-   when it last returned 200.
+   when it last returned 200. A failed 03:30 run alone is normal (D-052).
 3. If the project already shows **Paused**, click **Resume** and wait until it
    is active.
 4. Run the `/health/db` test. Expect `db: ok`.
 5. Fix whatever stopped the heartbeat (see the next entry).
 
-### Email: cron-job.org "job disabled" (or repeated failures)
+### Email: cron-job.org "job disabled"
+
+The job failed many runs in a row: no night reached a 200. One failed 03:30
+run per night is normal and never triggers this.
 
 1. Open the Render dashboard. The service must show **Live**. If a deploy
    failed, read its log and fix that first.
@@ -195,7 +195,8 @@ Invoke-RestMethod "$u/health/db" -Headers @{ "X-Ping-Token" = $t }
    - 401: the cron header and Render's `PING_TOKEN` do not match.
    - 503 "ping token not configured": `PING_TOKEN` is missing on Render.
    - 503 "database unavailable": check Supabase (paused? password changed?).
-3. In cron-job.org, open the job, click **Test run**, expect 200.
+3. In cron-job.org, open the job, click **Test run**, expect 200 (run it a
+   second time if the first gets Render's wake-up page).
 4. Switch the job back to **Enabled**.
 
 ### Rotate PING_TOKEN
