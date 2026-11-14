@@ -82,7 +82,7 @@ This prints 64 hex characters. Save it as `PING_TOKEN`. It is sent in the
    - `PING_TOKEN` = the value from step 0
    - `CORS_ORIGINS` = `http://localhost:5173` for now. You replace it in step 3.5.
 6. Open **Advanced**. Set **Health Check Path** to `/health`. Leave
-   **Auto-Deploy** on **On Commit**.
+   **Auto-Deploy** on **After CI Checks Pass** (D-050).
 7. Click **Deploy Web Service**. In the build log, look for
    `Running upgrade  -> 0001, heartbeat table` (first deploy only), then wait
    for "Live".

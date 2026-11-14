@@ -19,8 +19,9 @@ Quick reference and progress log. Updated after every task.
 
 Phase 0 (scaffold, closeout, deploy): **deployed and verified**.
 Phase 1, prompts 1, 1b, 1c, 2, 3 (HDFC survey, redaction fixes, leak check,
-HDFC parser engine, full-data gaps): **done**. Next: re-run the redaction and
-full-data coverage once (to-do list), then Phase 2.
+HDFC parser engine, full-data gaps): **done**.
+Phase 2 Part A (schema, SMS import pipeline, dedupe, reparse, CLI): **built,
+CI green**. Next: you run the real import (to-do list), then "LOCK IN".
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
 - [x] Backend `/health`, `/health/db` (`X-Ping-Token`), migration `0001`
@@ -43,6 +44,10 @@ full-data coverage once (to-do list), then Phase 2.
 - [x] Gaps closed (`hdfc-1.1.0`): templates H16-H21, `H_INFO` fallback for
       amount-free notices, redaction of Mandate/SI Hub IDs and payee names
 - [ ] Re-run redaction and full-data coverage with the new rules (to-do list)
+- [x] Phase 2 Part A: migration `0002` (6 tables, RLS on Postgres), importer,
+      dedupe, reparse, `python -m app.cli` ([docs/data-model.md](docs/data-model.md));
+      invariants I1-I9 tested on SQLite and Postgres 17 in CI
+- [ ] Real import on Supabase (your commands, to-do list item 3)
 
 ## Your to-do list
 
@@ -54,6 +59,10 @@ full-data coverage once (to-do list), then Phase 2.
    `Leaks: 0`. Expected full-data result: 0 `no_template` (the 15 messages
    of the six new shapes parse; the remaining notices become `H_INFO`).
    Paste the coverage output into the chat (counts and shapes only).
+3. Real import, from `backend\` (uses `DATABASE_URL` in `backend\.env`, i.e.
+   Supabase). Run in this order; the commands are under "Import pipeline"
+   below: migrate, dry run, import, re-import, reparse dry run, stats. Send
+   the stats output (counts only) in your "LOCK IN" message.
 
 ## Architecture
 
@@ -294,6 +303,34 @@ backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input data\sample\r
 `redacted_full.json` stays in `data\sample\` (gitignored). Only run the
 coverage step if the first command ends with `Leaks: 0`.
 
+### Import pipeline (you run these; agents never touch Supabase or real data)
+
+From `backend\`. `DATABASE_URL` comes from `backend\.env` (Supabase). The
+input is a backup file or a folder of `*.xml` files (not searched
+recursively). Every command prints counts only.
+
+```powershell
+cd backend
+# 1. Migrate (Render also runs this on deploy; repeating is safe). Expect 0002 (head)
+.\.venv\Scripts\python.exe -m alembic upgrade head; .\.venv\Scripts\python.exe -m alembic current
+# 2. Dry run: full pipeline inside one transaction, rolled back. Saves nothing
+.\.venv\Scripts\python.exe -m app.cli import-sms --input D:\FlashPrivate\raw --dry-run
+# 3. Import
+.\.venv\Scripts\python.exe -m app.cli import-sms --input D:\FlashPrivate\raw
+# 4. Re-import the same input: expect raw new 0 and no "new" under transactions
+.\.venv\Scripts\python.exe -m app.cli import-sms --input D:\FlashPrivate\raw
+# 5. Reparse dry run: expect reparsed 0 (everything is at the current parser version)
+.\.venv\Scripts\python.exe -m app.cli reparse --dry-run
+# 6. Stats: tables, types, unknown queue, candidates, month range, last batches
+.\.venv\Scripts\python.exe -m app.cli stats
+```
+
+- After a parser version bump: `python -m app.cli reparse --dry-run`, then
+  `reparse`. Nothing is deleted; transaction ids stay stable.
+- A crashed import is safe to re-run: committed messages are skipped as
+  duplicates. The crashed batch stays `failed` (or `running` if killed).
+- `stats` shows months only (IST), never days, amounts or names.
+
 ### Template survey (reads only the redacted sample)
 
 ```powershell
@@ -330,15 +367,36 @@ gh repo view --web                                # open the repo in the browser
 
 1. Starlette warns `httpx` with `TestClient` is deprecated (suggests `httpx2`).
    Kept `httpx` until the replacement is verified (DECISIONS D-010).
-2. Phase 1 schema: confirm the dedupe key recipe before the next migration.
+2. Import speed: about 8 database round trips per stored message. Fine for a
+   few thousand bank SMS over the Supabase pooler; batch the lookups if a
+   future source is much larger.
 3. Name detection covers the usual bank positions only; skim the sample.
 4. Replace the placeholder PWA icons before launch (UI spec: Phase 3, D-020).
-5. Optional: set Render **Auto-Deploy** to "After CI Checks Pass" so a red CI
-   never reaches production.
+5. GitHub cannot enforce required checks on a private repo on the free plan;
+   "required" means Render deploys only after all CI jobs pass (D-050).
 6. Bank vocabulary covers HDFC wording only. Each new bank's survey should add
    its fixed phrases to `BANK_VOCABULARY` in `scripts/redact_sms.py`.
 
 ## Log
+
+### 2026-11-14: Phase 2 Part A, schema, import pipeline, dedupe
+
+- Migration `0002`: `import_batches`, `raw_messages`, `parse_results`,
+  `transactions`, `transaction_sources`, `duplicate_candidates`. BIGINT
+  paise, timestamptz UTC, RLS enabled (no policies) on Postgres.
+- Dedupe (D-046): raw `content_hash` (no source); transaction key on a
+  per-payment reference (no account) or the raw message; fuzzy pairs only
+  recorded (D-047). Found and fixed: H08/H13 references are mandate IDs that
+  repeat monthly; hint `mandate_reference` (`hdfc-1.1.1`) keeps those
+  charges apart.
+- Importer: registry senders only, never OTP/promotional/MMS (D-049); batch
+  commits; crash-safe re-run; `--dry-run` rolls back. "Never asks for OTP"
+  advisories are no longer treated as OTPs (engine and redaction).
+- Reparse: new result per stale message, ids stable, nothing deleted.
+- CLI `python -m app.cli import-sms | reparse | stats`, counts only.
+- Tests: invariants I1-I9; new CI job runs migrations, `alembic check` and
+  the backend tests on Postgres 17.
+- Docs: `docs/data-model.md`; DECISIONS D-046 to D-050.
 
 ### 2026-11-14: Phase 1 prompt 3, full-data gaps
 
