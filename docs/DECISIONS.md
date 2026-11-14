@@ -172,3 +172,23 @@ The default allowlist is banks and UPI only: HDFCBK, HDFCBN, SBIBNK, CBSSBI,
 SBIUPI, SBIINB, SBYONO, SBIPSG, ICICIT, AXISBK, KOTAKM, YESBNK, DOPBNK,
 PHONPE. Investment, broker and exchange senders are deliberately excluded
 until Phase 6, so the sample holds only what spending analysis needs.
+
+## D-027 Template surveys and parser fixtures (2026-11-14)
+
+Parsers are designed from template shapes, not from message text. Rules:
+
+- `scripts/shape_survey.py` output stays in `data/sample/` (gitignored).
+  Committed template docs (`docs/templates/<bank>.md`) contain shapes with
+  placeholders and fixed bank wording only.
+- Fixtures (`backend/tests/fixtures/sms/<bank>.json`) use obviously fake
+  values: `TEST ...` names, `PERSON_900`+, `test.user@...` VPAs, accounts
+  `XX0001`, refs `000000000001`, repeated-digit amounts. No amount may equal
+  any amount in the sample (round numbers collided, so repeated digits are
+  used instead).
+- Fixture conventions: `account_last4` holds the card's last 4 for card
+  transactions; `txn_time_utc` is null when the SMS has a date but no time
+  (the parser falls back to `received_at`); foreign-currency fixtures carry
+  only `{"type": "foreign_currency"}`.
+- Before committing, every new file is scanned against the sample: shared
+  digit runs, VPAs, amounts, pseudonym tokens below 900, words that occur only
+  in value slots of the sample, and 6-word windows that are not template text.

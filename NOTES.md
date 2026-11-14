@@ -17,7 +17,8 @@ Quick reference and progress log. Updated after every task.
 
 ## Status
 
-Phase 0 (scaffold, closeout, deploy): **deployed and verified**. Two checks left.
+Phase 0 (scaffold, closeout, deploy): **deployed and verified**.
+Phase 1, prompt 1 (HDFC template survey): **done**. Next: prompt 2.
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
 - [x] Backend `/health`, `/health/db` (`X-Ping-Token`), migration `0001`
@@ -26,16 +27,18 @@ Phase 0 (scaffold, closeout, deploy): **deployed and verified**. Two checks left
 - [x] Agent deny rules: `D:\FlashPrivate\`, every `.env`, `*.xml` outside `mobile/`
 - [x] Supabase, Render, Vercel, cron-job.org set up and tested (13 Nov 2026)
 - [ ] Overnight cron check: after 03:30 IST, confirm `heartbeat.last_seen` moved
-- [ ] Redaction run on the real backup, then review the sample
-- [ ] Phase 1: planner refines it in [docs/PLAN.md](docs/PLAN.md)
+- [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
+- [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
+      ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 38 fake fixtures
+- [ ] Answer the 10 open questions in `docs/templates/hdfc.md`
 
 ## Your to-do list
 
-1. Tomorrow morning: open cron-job.org history. Both jobs should show 200
-   around 03:27 to 03:30 IST. In Supabase Table Editor, `heartbeat.last_seen`
-   should be about 22:00 UTC of the previous day (= 03:30 IST).
-2. Run the three redaction commands (Cheat sheet below), review the sample.
-3. Tell me the sample exists. Then parsing work can start (Phase 2).
+1. If not done yet: check cron-job.org history for a 200 around 03:30 IST and
+   that `heartbeat.last_seen` moved.
+2. Read the Open questions in [docs/templates/hdfc.md](docs/templates/hdfc.md)
+   and decide (self-transfers, reversals, date-only times, FD liquidation...).
+3. Send Phase 1 prompt 2.
 
 ## Architecture
 
@@ -252,6 +255,16 @@ backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\r
 - Keep something private: add it to `D:\FlashPrivate\private\keep_names.txt`.
 - Back up `D:\FlashPrivate\private\redaction.key` and `name_map.json`.
 
+### Template survey (reads only the redacted sample)
+
+```powershell
+backend\.venv\Scripts\python.exe scripts\shape_survey.py --input data\sample\redacted_sample.json --senders HDFCBK,HDFCBN --output data\sample\hdfc_shapes.json
+```
+
+Output stays in `data\sample\` (gitignored). Same command for other banks with
+their sender cores. Fixtures for parsers: `backend\tests\fixtures\sms\<bank>.json`
+(fake values only; checked by `backend\tests\test_sms_fixtures.py`).
+
 ### Git: daily loop
 
 ```powershell
@@ -283,8 +296,25 @@ gh repo view --web                                # open the repo in the browser
 4. Replace the placeholder PWA icons before launch (UI spec: Phase 3, D-020).
 5. Optional: set Render **Auto-Deploy** to "After CI Checks Pass" so a red CI
    never reaches production.
+6. Redaction over-reach seen in the HDFC survey: the card label ("HDFC Bank
+   Card x..."), "authentication" and the URL scheme were pseudonymised. Fix in
+   a later redaction task (keep-list or stop words), then re-run the sample.
 
 ## Log
+
+### 2026-11-14: Phase 1 prompt 1, HDFC template survey
+
+- `scripts/shape_survey.py`: turns messages into placeholder shapes and
+  groups them (stdlib, reusable per bank). 7 synthetic tests.
+- HDFCBK + HDFCBN: 135 messages, 15 shapes, all matched. Types: debit 7
+  shapes / 103 messages, credit 1/22, refund 1/1, mandate 2/2,
+  foreign_currency 1/4, other_info 3/3.
+- `docs/templates/hdfc.md`: shapes, proposed types, fields, 10 open
+  questions, 14 "not yet seen" formats.
+- `backend/tests/fixtures/sms/hdfc.json`: 38 fake fixtures (24 observed
+  shapes + 14 not yet seen), checked by `test_sms_fixtures.py`.
+- Leak scan before commit: no sample digits/VPAs/amounts/tokens below 900 in
+  committed files (method in DECISIONS D-027).
 
 ### 2026-11-14: Sender ID normalisation and allowlist
 
