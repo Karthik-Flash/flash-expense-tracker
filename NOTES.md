@@ -17,11 +17,11 @@ Quick reference and progress log. Updated after every task.
 
 ## Status
 
-Phase 0 (scaffold, closeout, deploy): **deployed and verified**.
-Phase 1, prompts 1, 1b, 1c, 2, 3 (HDFC survey, redaction fixes, leak check,
-HDFC parser engine, full-data gaps): **done**.
-Phase 2 Part A (schema, SMS import pipeline, dedupe, reparse, CLI): **built,
-CI green**. Next: you run the real import (to-do list), then "LOCK IN".
+**Phase 0-2 complete** (12-14 Nov 2026): scaffold and deploy, redaction,
+HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
+Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
+`phase-1-done`, `phase-2-done`. Next: Phase 3 ([docs/PLAN.md](docs/PLAN.md)).
+New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
 - [x] Backend `/health`, `/health/db` (`X-Ping-Token`), migration `0001`
@@ -29,7 +29,7 @@ CI green**. Next: you run the real import (to-do list), then "LOCK IN".
 - [x] `scripts/redact_sms.py`: default-deny, keep-list, HMAC fakes
 - [x] Agent deny rules: `D:\FlashPrivate\`, every `.env`, `*.xml` outside `mobile/`
 - [x] Supabase, Render, Vercel, cron-job.org set up and tested (13 Nov 2026)
-- [ ] Overnight cron check: after 03:30 IST, confirm `heartbeat.last_seen` moved
+- [ ] Overnight cron check on the new schedule (first night 15 Nov, D-052)
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -43,26 +43,23 @@ CI green**. Next: you run the real import (to-do list), then "LOCK IN".
 - [x] Full-data coverage (764 HDFC): 683 parsed, 44 foreign, 37 no_template
 - [x] Gaps closed (`hdfc-1.1.0`): templates H16-H21, `H_INFO` fallback for
       amount-free notices, redaction of Mandate/SI Hub IDs and payee names
-- [ ] Re-run redaction and full-data coverage with the new rules (to-do list)
+- [x] Full data on `hdfc-1.1.1`: 764 HDFC messages, 720 parsed, 44 foreign,
+      0 no_template (from the real import)
 - [x] Phase 2 Part A: migration `0002` (6 tables, RLS on Postgres), importer,
       dedupe, reparse, `python -m app.cli` ([docs/data-model.md](docs/data-model.md));
       invariants I1-I9 tested on SQLite and Postgres 17 in CI
-- [ ] Real import on Supabase (your commands, to-do list item 3)
+- [x] Real import on Supabase (14 Nov): 917 raw, 678 transactions,
+      re-import 0 new, reparse dry run 0
 
 ## Your to-do list
 
-1. If not done yet: check cron-job.org history for a 200 around 03:30 IST and
-   that `heartbeat.last_seen` moved.
-2. Redaction rules changed (Mandate/SI Hub IDs, payee names), so refresh
-   both files: the STANDARD sample command under "SMS redaction" and the two
-   full-data commands under "Parser coverage". Each must end with
-   `Leaks: 0`. Expected full-data result: 0 `no_template` (the 15 messages
-   of the six new shapes parse; the remaining notices become `H_INFO`).
-   Paste the coverage output into the chat (counts and shapes only).
-3. Real import, from `backend\` (uses `DATABASE_URL` in `backend\.env`, i.e.
-   Supabase). Run in this order; the commands are under "Import pipeline"
-   below: migrate, dry run, import, re-import, reparse dry run, stats. Send
-   the stats output (counts only) in your "LOCK IN" message.
+1. Morning of 15 Nov: cron-job.org "Flash DB heartbeat" history should show
+   a failed 03:30 run and a 200 at 03:32 or later, and `heartbeat.last_seen`
+   should have moved (D-052).
+2. If `data\sample\redacted_full.json` exists from an earlier run, delete it.
+   The full file now lives in `D:\FlashPrivate\private\` (D-051).
+3. Optional: refresh the sample with the newer redaction rules (STANDARD
+   sample command under "SMS redaction"; must end with `Leaks: 0`).
 
 ## Architecture
 
@@ -386,19 +383,47 @@ gh repo view --web                                # open the repo in the browser
 
 ## Open items
 
-1. Starlette warns `httpx` with `TestClient` is deprecated (suggests `httpx2`).
-   Kept `httpx` until the replacement is verified (DECISIONS D-010).
-2. Import speed: about 8 database round trips per stored message. Fine for a
-   few thousand bank SMS over the Supabase pooler; batch the lookups if a
-   future source is much larger.
-3. Name detection covers the usual bank positions only; skim the sample.
-4. Replace the placeholder PWA icons before launch (UI spec: Phase 3, D-020).
-5. GitHub cannot enforce required checks on a private repo on the free plan;
-   "required" means Render deploys only after all CI jobs pass (D-050).
-6. Bank vocabulary covers HDFC wording only. Each new bank's survey should add
-   its fixed phrases to `BANK_VOCABULARY` in `scripts/redact_sms.py`.
+1. Overnight cron check pending: the first night on the new schedule is
+   15 Nov 2026 (D-052).
+2. Reconcile (Phase 3): 18 open duplicate candidates, and 1 refund that was
+   merged into another transaction on its dedupe key; check both.
+3. 44 foreign-currency messages deferred (D-035).
+4. 153 messages from banks without a parser (SBI, ICICI, India Post, Kotak,
+   PhonePe): a parser plus `reparse`, no re-import needed.
+5. HDFC H09 word slot: the word is still mapped in the private name map; the
+   template accepts any word, so parsing is unaffected.
+6. Import speed: ~6 min for 917 messages (about 8 round trips each over the
+   pooler). Batch the lookups if a much larger source arrives.
+7. Starlette warns `httpx` with `TestClient` is deprecated (suggests `httpx2`).
+   Kept `httpx` until the replacement is verified (D-010).
+8. Name detection in redaction covers the usual bank positions only; skim
+   new samples. Bank vocabulary covers HDFC wording only: each new bank's
+   survey adds its fixed phrases to `BANK_VOCABULARY`.
+9. Replace the placeholder PWA icons before launch (UI spec later, D-020).
+10. GitHub cannot enforce required checks on a private repo on the free plan;
+    Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-14: Phase 2 lock-in, real import
+
+- Your real import on Supabase (counts only): migration `0002` (head). Dry
+  run equal to the import: read 2,543; skipped mms 451, otp 12, promotional
+  61, unregistered_sender 1,102; raw new 917; parsed 720; unknown
+  foreign_currency_deferred 44, no_parser_for_bank 153; is_money 679;
+  transactions new 678, merged 1; candidates 18. About 6 min.
+- Re-import (batch 3): raw new 0, duplicate 917, transactions 0.
+  Reparse dry run: reparsed 0.
+- Stats: import_batches 2, raw_messages 917, parse_results 917,
+  transactions 678, transaction_sources 679, duplicate_candidates 18 (open).
+  Active transactions: debit 539, credit 134, refund 5. Parse results:
+  credit 134, debit 539, mandate 8, other_info 29, refund 6,
+  upcoming_debit 4. Months 2026-01 to 2026-11. Batch ids start at 2 (the dry
+  run used id 1; see data-model.md).
+- Docs: full redacted file moved to the private folder (D-051); one cron
+  heartbeat job with retries (D-052); PLAN phases 0-2 done; CHANGELOG.md;
+  docs/HANDOFF.md; CLAUDE.md points to the handoff.
+- Tags: `phase-0-done`, `phase-1-done`, `phase-2-done`.
 
 ### 2026-11-14: Phase 2 Part A, schema, import pipeline, dedupe
 
