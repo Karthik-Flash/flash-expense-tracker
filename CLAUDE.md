@@ -1,8 +1,9 @@
 # CLAUDE.md
 
 Flash Expense Tracker: a personal expense tracker. Minimal UI, algorithm-heavy
-Python engine. Monorepo. Read [NOTES.md](NOTES.md) first for current status,
-and [docs/PLAN.md](docs/PLAN.md) for the phase you are in.
+Python engine. Monorepo. **New session: read [docs/HANDOFF.md](docs/HANDOFF.md)
+first**, then [NOTES.md](NOTES.md) for current status and
+[docs/PLAN.md](docs/PLAN.md) for the phase you are in.
 
 ## Hard rules
 

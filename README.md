@@ -51,7 +51,7 @@ backend/    FastAPI app, Alembic migrations, tests
 frontend/   Vite React PWA
 scripts/    redact_sms.py (makes a safe SMS sample from a backup)
 infra/      render.yaml and hosting guide (Vercel, Render, Supabase, cron-job.org)
-docs/       PLAN.md, DECISIONS.md
+docs/       HANDOFF.md, PLAN.md, DECISIONS.md, engine and data-model guides
 mobile/     Capacitor Android shell (later phase)
 data/       gitignored; see data/README.md
 ```
