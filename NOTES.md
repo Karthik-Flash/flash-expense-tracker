@@ -18,8 +18,9 @@ Quick reference and progress log. Updated after every task.
 ## Status
 
 Phase 0 (scaffold, closeout, deploy): **deployed and verified**.
-Phase 1, prompts 1, 1b, 1c, 2 (HDFC survey, redaction fixes, leak check,
-HDFC parser engine): **done**. Next: coverage on the full data, then the next prompt.
+Phase 1, prompts 1, 1b, 1c, 2, 3 (HDFC survey, redaction fixes, leak check,
+HDFC parser engine, full-data gaps): **done**. Next: re-run the redaction and
+full-data coverage once (to-do list), then Phase 2.
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
 - [x] Backend `/health`, `/health/db` (`X-Ping-Token`), migration `0001`
@@ -30,7 +31,7 @@ HDFC parser engine): **done**. Next: coverage on the full data, then the next pr
 - [ ] Overnight cron check: after 03:30 IST, confirm `heartbeat.last_seen` moved
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
-      ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 39 fake fixtures
+      ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
 - [x] All 10 open questions resolved (hdfc.md "Resolved", DECISIONS D-028 to D-037)
 - [x] Redaction fixes: hyphenated sender IDs, `BANK_VOCABULARY`, link paths
 - [x] `always_redact.txt` final pass and `--verify` leak check
@@ -38,15 +39,21 @@ HDFC parser engine): **done**. Next: coverage on the full data, then the next pr
 - [x] HDFC parser engine `backend/app/engine/` ([docs/engine.md](docs/engine.md)):
       14 templates seen in the sample + 13 expected forms; all 135 HDFC
       sample messages handled (131 parsed, 4 foreign currency deferred)
-- [ ] Coverage on the full redacted data (commands below)
+- [x] Full-data coverage (764 HDFC): 683 parsed, 44 foreign, 37 no_template
+- [x] Gaps closed (`hdfc-1.1.0`): templates H16-H21, `H_INFO` fallback for
+      amount-free notices, redaction of Mandate/SI Hub IDs and payee names
+- [ ] Re-run redaction and full-data coverage with the new rules (to-do list)
 
 ## Your to-do list
 
 1. If not done yet: check cron-job.org history for a 200 around 03:30 IST and
    that `heartbeat.last_seen` moved.
-2. Run the full-data coverage (two commands under "Parser coverage" below)
-   and paste the output into the chat. It contains counts and template
-   shapes only, never message text.
+2. Redaction rules changed (Mandate/SI Hub IDs, payee names), so refresh
+   both files: the STANDARD sample command under "SMS redaction" and the two
+   full-data commands under "Parser coverage". Each must end with
+   `Leaks: 0`. Expected full-data result: 0 `no_template` (the 15 messages
+   of the six new shapes parse; the remaining notices become `H_INFO`).
+   Paste the coverage output into the chat (counts and shapes only).
 
 ## Architecture
 
@@ -332,6 +339,21 @@ gh repo view --web                                # open the repo in the browser
    its fixed phrases to `BANK_VOCABULARY` in `scripts/redact_sms.py`.
 
 ## Log
+
+### 2026-11-14: Phase 1 prompt 3, full-data gaps
+
+- Full-data coverage (your run, 764 HDFC messages): 683 parsed, 44 foreign
+  currency deferred, 37 no_template.
+- `hdfc-1.1.0`: H16 NEFT debit, H17 UPI AutoPay debit (`autopay`), H18 card
+  AutoPay set up, H19 UPI mandate cancelled (`mandate_cancelled`), H20 FD
+  closure notice (`fd_closure`), H21 MF order (`mf_order`). `parse_date`
+  also takes yyyy-mm-dd.
+- `H_INFO` fallback: no template and no amount gives `other_info`; with an
+  amount it stays `no_template` (DECISIONS D-044).
+- Redaction: IDs after `Mandate ID:` / `SI Hub ID:` get a same-shape fake
+  regardless of digit count; the name after "added a payee" is a counterparty
+  slot (D-045).
+- 10 new fake fixtures (49 in total). Sample coverage unchanged (131 parsed).
 
 ### 2026-11-14: Phase 1 prompt 2, HDFC parser engine
 

@@ -306,3 +306,21 @@ enforces this. IST is a fixed UTC+05:30 offset instead of zoneinfo, which
 needs extra tz data on Windows. Sender normalisation exists in the engine and
 in standalone `scripts/redact_sms.py`; one shared case table
 (`backend/tests/fixtures/sender_ids.json`) keeps them identical.
+
+## D-044 Amount-free notice fallback (2026-11-14)
+
+A bank parser may name an info fallback (HDFC: `H_INFO`). A message from that
+bank that matches no template and contains no amount (Rs, INR, the rupee
+sign, or a foreign currency code followed by a number) becomes `other_info`
+with no fields, never `is_money`. A message that contains an amount and
+matches no template stays `Unknown("no_template")`: amounts are never
+guessed. This covers the long tail of bank notices (UPI activated, card
+limits, KYC, login alerts) without one template per notice. HDFC moves to
+`hdfc-1.1.0` with templates H16-H21 from the full-data coverage run.
+
+## D-045 Mandate IDs and payee names are redacted (2026-11-14)
+
+`scripts/redact_sms.py` fakes the value after `Mandate ID:` and `SI Hub ID:`
+whatever its digit count (other references need 6+ digits), keeping length
+and character classes, and treats the name after "added a payee" as a
+counterparty position. Both were gaps found in the full-data run.
