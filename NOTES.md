@@ -18,8 +18,8 @@ Quick reference and progress log. Updated after every task.
 ## Status
 
 Phase 0 (scaffold, closeout, deploy): **deployed and verified**.
-Phase 1, prompts 1 and 1b (HDFC survey, redaction fixes): **done**.
-Next: re-run redaction + re-survey, then the parser prompt.
+Phase 1, prompts 1, 1b, 1c (HDFC survey, redaction fixes, leak check): **done**.
+Next: re-run redaction with `--verify` + re-survey, then the parser prompt.
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
 - [x] Backend `/health`, `/health/db` (`X-Ping-Token`), migration `0001`
@@ -33,17 +33,21 @@ Next: re-run redaction + re-survey, then the parser prompt.
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 39 fake fixtures
 - [x] All 10 open questions resolved (hdfc.md "Resolved", DECISIONS D-028 to D-037)
 - [x] Redaction fixes: hyphenated sender IDs, `BANK_VOCABULARY`, link paths
-- [ ] Re-run redaction on the real backup, then re-survey (H03, H09, H11, H12
-      are pending re-survey)
+- [x] `always_redact.txt` final pass and `--verify` leak check
+- [ ] Re-run redaction with the standard command until `Leaks: 0`, then
+      re-survey (H03, H09, H11, H12 are pending re-survey)
 
 ## Your to-do list
 
 1. If not done yet: check cron-job.org history for a 200 around 03:30 IST and
    that `heartbeat.last_seen` moved.
-2. Re-run the redaction (step 3 in "SMS redaction" below) so the sample gets
-   the fixed bank wording and faked link paths. The same private folder keeps
-   every existing token and fake stable.
-3. Re-run the template survey (command below) and tell me it is done.
+2. Create `D:\FlashPrivate\private\always_redact.txt` (your name variants,
+   family names, your phone number; one per line).
+3. Run the standard sample command (step 3 in "SMS redaction" below). It must
+   end with `Leaks: 0`. If not, add the leaked name to `always_redact.txt` and
+   run again. Paste only the `LEAK ...` / `Leaks:` lines into a chat, never
+   counterparty listings.
+4. Re-run the template survey (command below) and tell me it is done.
 
 ## Architecture
 
@@ -246,19 +250,29 @@ Rotation steps: [infra/README.md](infra/README.md), Runbook.
 # 1. Sender IDs and counts only
 backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --list-senders
 
-# 2. Names and UPI IDs with counts; anything not marked "yes" gets pseudonymised
+# 2. Names and UPI IDs with counts (real values: read locally, NEVER paste into a chat)
 backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --list-counterparties
 
-# 3. Write the sample
-backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --output data\sample\redacted_sample.json --limit 50
+# 3. STANDARD sample command: write the sample, then check it for leaks
+backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --output data\sample\redacted_sample.json --limit 100 --seed 42 --verify
+
+# Re-check an existing sample only
+backend\.venv\Scripts\python.exe scripts\redact_sms.py --private-dir D:\FlashPrivate\private --output data\sample\redacted_sample.json --verify
 ```
 
+- Step 3 must end with `Leaks: 0` (exit code 0) before the sample is shared.
+  `--verify` prints only tokens and message numbers
+  (`LEAK PARTY_014 in message 37`), never real values.
+- `D:\FlashPrivate\private\always_redact.txt`: one entry per line (own name
+  variants, family names, own phone). Replaced everywhere in a final pass;
+  checked by `--verify` as substrings. Add any leaked name here and re-run.
 - `--list-senders` groups IDs by normalised core (`VKSBIBNK`, `VM-SBIBNK-S`
   -> `SBIBNK`); `VARIANTS` = raw IDs merged. Allowlist = banks and UPI only
   (`DEFAULT_SENDERS`, 14 cores). Add a bank by its core.
 - Keep a public brand: add it to `scripts\keep_names.txt` (committed).
 - Keep something private: add it to `D:\FlashPrivate\private\keep_names.txt`.
-- Back up `D:\FlashPrivate\private\redaction.key` and `name_map.json`.
+- Back up `D:\FlashPrivate\private\` (`redaction.key`, `name_map.json`,
+  `seen_ids.json`, your keep and always-redact lists).
 
 ### Template survey (reads only the redacted sample)
 
@@ -305,6 +319,20 @@ gh repo view --web                                # open the repo in the browser
    its fixed phrases to `BANK_VOCABULARY` in `scripts/redact_sms.py`.
 
 ## Log
+
+### 2026-11-14: Phase 1 prompt 1c, always-redact list and --verify
+
+- Your manual check found your first name once in the sample, so the script
+  now checks itself.
+- `always_redact.txt` in the private folder: every whole-word occurrence is
+  replaced in a final pass (same name map and tokens; phones get the usual
+  fake). Entries are never printed.
+- `--verify` (after writing, or alone on an existing sample): always-redact
+  entries as substrings, 2+ word map names, and real UPI IDs/references by
+  keyed digest (`seen_ids.json`; real values are not stored). Prints tokens
+  and message numbers only; exit 1 on any leak (D-040).
+- One standard sample command (`--limit 100 --seed 42 --verify`); older
+  variants removed. 54 script tests.
 
 ### 2026-11-14: Phase 1 prompt 1b, redaction fixes and resolved questions
 

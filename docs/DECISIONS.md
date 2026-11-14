@@ -262,3 +262,20 @@ name, end a name, are never replaced, and stale name-map entries made of them
 are ignored. It is separate from `keep_names.txt`, which lists brands that are
 counterparties. Links keep scheme and host; the path and query (possibly a
 personal tracking link) get a same-length HMAC fake.
+
+## D-040 Always-redact list and automatic leak check (2026-11-14)
+
+Manual checks cover only a few names, and one real first name reached the
+sample. `scripts/redact_sms.py` therefore:
+
+- reads an optional `always_redact.txt` in the private folder (own and family
+  names, own phone) and replaces every whole-word occurrence in a final pass,
+  using the same name map and tokens; entries are never printed;
+- with `--verify`, scans the written sample for those entries (as
+  substrings), 2+ word mapped names, and real UPI IDs and references. UPI IDs
+  and references are matched by keyed digest (`seen_ids.json`), so no real
+  value is stored for the check. Output is tokens and message numbers only;
+  the exit code is 1 if any leak is found;
+- one standard sample command: `--limit 100 --seed 42 --verify`.
+
+Counterparty listings show real values and are never pasted into chats.
