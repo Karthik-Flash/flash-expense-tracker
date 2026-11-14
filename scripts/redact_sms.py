@@ -13,12 +13,18 @@ keep_names.txt in --private-dir). It never guesses person vs merchant.
   derived with HMAC-SHA256 and a random key (redaction.key in --private-dir,
   created on first run). The same input gives the same fake on every run.
 - Account/card numbers keep the bank's mask style and only the last 4 digits.
+- Optional always_redact.txt in --private-dir (own/family names, own phone):
+  every whole-word occurrence is replaced in a final pass, whatever its position.
+- --verify scans the written sample for always-redact entries, mapped names
+  and real UPI IDs/references, printing tokens and positions only.
 
 Real data lives outside the repo. Run this yourself; agents never do.
+Standard sample command (Windows paths, from the repo root):
 
-  python scripts/redact_sms.py --input D:/FlashPrivate/raw --private-dir D:/FlashPrivate/private --list-senders
-  python scripts/redact_sms.py --input D:/FlashPrivate/raw --private-dir D:/FlashPrivate/private --list-counterparties
-  python scripts/redact_sms.py --input D:/FlashPrivate/raw --private-dir D:/FlashPrivate/private --output data/sample/redacted_sample.json --limit 50
+  python scripts/redact_sms.py --input D:/FlashPrivate/raw --private-dir D:/FlashPrivate/private --output data/sample/redacted_sample.json --limit 100 --seed 42 --verify
+
+Also: --list-senders / --list-counterparties (with --input and --private-dir),
+and --verify alone on an existing --output.
 """  # noqa: E501
 
 import argparse
@@ -43,6 +49,8 @@ KEEP_FILE = Path(__file__).with_name("keep_names.txt")
 PRIVATE_KEEP_FILE = "keep_names.txt"
 NAME_MAP_FILE = "name_map.json"
 KEY_FILE = "redaction.key"
+ALWAYS_FILE = "always_redact.txt"  # optional: own/family names, own phone number
+SEEN_IDS_FILE = "seen_ids.json"  # keyed digests of real UPI IDs/refs, for --verify
 
 # Banks and UPI only. Investment, broker and exchange senders are deliberately
 # excluded until Phase 6 (data minimisation). Values are normalised cores.
@@ -277,6 +285,35 @@ def load_keep(private_dir: Path) -> set[str]:
     return keep
 
 
+def load_always_redact(private_dir: Path) -> list[str]:
+    """Entries of <private-dir>/always_redact.txt; '#' starts a comment. Never printed."""
+    path = private_dir / ALWAYS_FILE
+    if not path.exists():
+        return []
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [e for line in lines if (e := line.split("#", 1)[0].strip())]
+
+
+def phone_entry(entry: str) -> str | None:
+    """The 10-digit mobile number in an always-redact entry, or None for a name."""
+    digits = re.sub(r"\D", "", entry)
+    tail = digits[-10:]
+    if 10 <= len(digits) <= 12 and re.fullmatch(r"[6-9]\d{9}", tail):
+        return tail
+    return None
+
+
+def name_pattern(key: str) -> re.Pattern[str]:
+    """Whole-word, case-insensitive match of a normalised name ('RAHUL KUMAR')."""
+    words = r"[\s.']+".join(map(re.escape, key.split()))
+    return re.compile(rf"\b{words}\b", re.I)
+
+
+def id_digest(key: bytes, kind: str, value: str) -> str:
+    """Keyed digest, so --verify can spot a real ID without it being stored."""
+    return hmac.new(key, f"seen:{kind}:{value}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
 def _hold(held: list[str], text: str) -> str:
     held.append(text)
     return f"{PH_OPEN}{len(held) - 1}{PH_CLOSE}"
@@ -307,6 +344,33 @@ class Redactor:
         self._next = 1
         for key, token in self.names.items():
             self._remember(key, token)
+        self.seen_ids_path = private_dir / SEEN_IDS_FILE
+        stored = _load_json(self.seen_ids_path)
+        self.seen_ids = {k: set(stored.get(k, [])) for k in ("upi", "ref")}
+        self._always = self._compile_always(load_always_redact(private_dir))
+
+    def _compile_always(self, entries: list[str]) -> list[tuple[re.Pattern[str], str]]:
+        """(pattern, replacement) per always-redact entry, longest names first."""
+        rules = []
+        for entry in entries:
+            phone = phone_entry(entry)
+            if phone:
+                digits = r"[\s-]?".join(phone)
+                rules.append((re.compile(rf"(?<!\d){digits}(?!\d)"), self._phone(phone)))
+            elif key := norm(entry):
+                if key not in self.names:
+                    self.names[key] = f"PARTY_{self._next:03d}"
+                self._remember(key, self.names[key])
+                rules.append((name_pattern(key), self.names[key]))
+        return sorted(rules, key=lambda r: -len(r[0].pattern))
+
+    def always_redact(self, body: str) -> tuple[str, int]:
+        """Final pass: replace every always-redact entry anywhere. Returns (body, count)."""
+        total = 0
+        for rx, replacement in self._always:
+            body, n = rx.subn(replacement, body)
+            total += n
+        return body, total
 
     def mask(self, body: str) -> str:
         """Fake refs, UPI IDs and phones; mask accounts; record names for pseudonymise()."""
@@ -317,6 +381,7 @@ class Redactor:
             if sum(c.isdigit() for c in value) < 6:
                 return m.group(0)
             i = m.start("ref") - m.start()
+            self.seen_ids["ref"].add(id_digest(self.key, "ref", value.upper()))
             fake = _hold(held, self._fake("ref", value))
             return m.group(0)[:i] + fake + m.group(0)[i + len(value) :]
 
@@ -367,6 +432,8 @@ class Redactor:
 
     def save(self) -> None:
         _save_text(self.names_path, json.dumps(self.names, indent=2, sort_keys=True))
+        ids = {k: sorted(v) for k, v in self.seen_ids.items()}
+        _save_text(self.seen_ids_path, json.dumps(ids))
 
     def _note_name(self, key: str) -> None:
         if key in self.keep:
@@ -391,6 +458,7 @@ class Redactor:
             self.seen["upi_kept"].add(local.lower())
             return f"{local}@{handle}"
         self.seen["upi_pseudonymised"].add(local.lower())
+        self.seen_ids["upi"].add(id_digest(self.key, "upi", f"{local}@{handle}".lower()))
         is_phone = re.fullmatch(r"[6-9]\d{9}", local)
         fake = self._phone(local) if is_phone else self._fake("upi", local)
         return f"{fake}@{handle}"
@@ -580,8 +648,10 @@ def redact_to_file(args: argparse.Namespace, paths: list[Path], senders: set[str
         if args.limit is not None and len(msgs) > args.limit:
             msgs = rng.sample(msgs, args.limit)
         out.extend(sorted(msgs, key=lambda m: m["date_utc"]))
+    always_hits = 0
     for msg in out:  # after the full pass, so a name found anywhere is replaced everywhere
-        msg["body"] = redactor.pseudonymise(msg["body"])
+        msg["body"], hits = redactor.always_redact(redactor.pseudonymise(msg["body"]))
+        always_hits += hits
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -601,7 +671,60 @@ def redact_to_file(args: argparse.Namespace, paths: list[Path], senders: set[str
     print(f"  {'names pseudonymised':<24}{s['names_pseudonymised']:>10,}")
     print(f"  {'UPI IDs kept':<24}{s['upi_kept']:>10,}")
     print(f"  {'UPI IDs pseudonymised':<24}{s['upi_pseudonymised']:>10,}")
+    # Entries share the name map, so the name sweep often replaces them first.
+    print(f"Always-redact final-pass replacements: {always_hits:,}")
     print(f"Wrote {len(out):,} messages to {args.output}")
+
+
+def verify(output: Path, private_dir: Path) -> int:
+    """Scan a written sample for leaks. Prints tokens and positions only."""
+    bodies = [m.get("body", "") for m in json.loads(output.read_text(encoding="utf-8"))]
+    names = _load_json(private_dir / NAME_MAP_FILE)
+    keep = load_keep(private_dir)
+    leaks: set[tuple[int, str]] = set()  # (1-based message number, label)
+
+    # a) always-redact entries, as substrings so joined words are caught too
+    for n, entry in enumerate(load_always_redact(private_dir), 1):
+        phone = phone_entry(entry)
+        label = (None if phone else names.get(norm(entry))) or f"ALWAYS_REDACT_{n}"
+        needle = phone or entry.lower()
+        for i, body in enumerate(bodies, 1):
+            hay = re.sub(r"[\s-]", "", body) if phone else body.lower()
+            if needle in hay:
+                leaks.add((i, label))
+
+    # b) mapped names: 2+ words are leaks, single words only "possible"
+    possible = 0
+    for key, token in names.items():
+        if not key or key in keep or name_key(key) != key:
+            continue  # keep-listed or bank wording since the map was written
+        rx = name_pattern(key)
+        hits = [i for i, body in enumerate(bodies, 1) if rx.search(body)]
+        if len(key.split()) >= 2:
+            leaks.update((i, token) for i in hits)
+        else:
+            possible += len(hits)
+
+    # c) real UPI IDs and references, compared by keyed digest
+    key_path, seen = private_dir / KEY_FILE, _load_json(private_dir / SEEN_IDS_FILE)
+    if key_path.exists() and seen:
+        key = bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
+        upi, refs = set(seen.get("upi", [])), set(seen.get("ref", []))
+        for i, body in enumerate(bodies, 1):
+            for m in UPI_ID_RE.finditer(body):
+                if id_digest(key, "upi", m.group(0).lower()) in upi:
+                    leaks.add((i, "UPI_ID"))
+            for cand in re.findall(r"\b[A-Za-z0-9]{6,22}\b", body):
+                if sum(c.isdigit() for c in cand) < 6:
+                    continue
+                if id_digest(key, "ref", cand.upper()) in refs:
+                    leaks.add((i, "REFERENCE"))
+
+    for i, label in sorted(leaks):
+        print(f"LEAK {label} in message {i}")
+    print(f"possible (single word): {possible}")
+    print(f"Leaks: {len(leaks)}")
+    return 1 if leaks else 0
 
 
 def resolve_inputs(inputs: list[Path]) -> list[Path]:
@@ -614,9 +737,14 @@ def resolve_inputs(inputs: list[Path]) -> list[Path]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("--input", type=Path, nargs="+", required=True, help="XML files or folders")
-    ap.add_argument("--private-dir", type=Path, required=True, help="name map, key, keep-list")
+    ap.add_argument(
+        "--input", type=Path, nargs="+", help="XML files or folders (not with --verify alone)"
+    )
+    ap.add_argument("--private-dir", type=Path, required=True, help="name map, key, keep-lists")
     ap.add_argument("--output", type=Path, help="JSON sample to write (required unless listing)")
+    ap.add_argument(
+        "--verify", action="store_true", help="check --output for leaks; exit 1 if any are found"
+    )
     ap.add_argument("--senders", default=DEFAULT_SENDERS, help="comma-separated sender IDs")
     ap.add_argument("--limit", type=int, help="random sample of N messages per sender")
     ap.add_argument("--seed", type=int, default=0, help="seed for --limit sampling")
@@ -626,8 +754,17 @@ def main(argv: list[str] | None = None) -> int:
         "--list-counterparties", action="store_true", help="names and UPI IDs with counts only"
     )
     args = ap.parse_args(argv)
-    if not (args.list_senders or args.list_counterparties or args.output):
+    listing = args.list_senders or args.list_counterparties
+    if not (listing or args.output):
         ap.error("--output is required unless --list-senders or --list-counterparties is used")
+    if listing and args.verify:
+        ap.error("--verify checks a written --output; it cannot be combined with listing")
+    if not args.input:
+        if not args.verify:
+            ap.error("--input is required unless --verify is used alone")
+        if not args.output.exists():
+            ap.error(f"--output {args.output} does not exist")
+        return verify(args.output, args.private_dir)
 
     paths = resolve_inputs(args.input)
     if not paths:
@@ -645,7 +782,7 @@ def main(argv: list[str] | None = None) -> int:
     except ET.ParseError as e:
         print(f"XML parse error: {e}", file=sys.stderr)
         return 1
-    return 0
+    return verify(args.output, args.private_dir) if args.verify else 0
 
 
 if __name__ == "__main__":
