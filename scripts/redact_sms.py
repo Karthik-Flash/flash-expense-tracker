@@ -72,6 +72,9 @@ ACCOUNT_RE = re.compile(
     re.IGNORECASE,
 )
 LONG_DIGITS_RE = re.compile(r"(?<!\d)\d{9,}(?!\d)")  # unlabelled account numbers
+# Links: scheme and host are kept; the path/query (can be a personal tracking
+# link) gets a same-length fake.
+URL_RE = re.compile(r"\b(?P<head>(?:https?://|www\.)[^/\s?#]+)(?P<rest>[/?#]\S*)?", re.I)
 REF_RES = (
     # UPI/P2P/612345678901/NAME, IMPS/P2A/..., NEFT/SBIN326317123456/NAME
     re.compile(r"\b(?:UPI|IMPS|NEFT|RTGS)/(?:P2[PAM]/)?(?P<ref>[A-Z0-9]{6,22})(?=/)", re.I),
@@ -119,20 +122,78 @@ STOP_WORDS = set(
 )
 WORD_RE = re.compile(r"[A-Za-z]+")
 
+# Fixed bank template wording (see docs/templates/hdfc.md). Never a
+# counterparty: skipped at the start of a name, ends a name, and never
+# replaced. Separate from keep_names.txt, which lists brands that ARE
+# counterparties. Punctuation counts as a space ("E-mandate" = "E MANDATE").
+BANK_VOCABULARY = (
+    "HDFC Bank",
+    "HDFCBANK",
+    "HDFC Bank Card",
+    "HDFC Bank Debit Card",
+    "HDFC Bank DEBIT/ATM Card",
+    "HDFC Bank App",
+    "HDFC Bank NetBanking",
+    "HDFC Bank Online Banking",
+    "HDFC Bank MobileBanking",
+    "Debit Card",
+    "International payment",
+    "Biometric authentication",
+    "authentication",
+    "AutoPay",
+    "E-mandate",
+    "SI Hub",
+    "Mandate Set",
+    "Money Transfer",
+    "Credit Alert",
+    "Amt Deducted",
+    "Payment Successful",
+    "Transaction Reversed",
+    "Forex Markup",
+    "UPI Pin",
+    "Block+Reissue",
+    "TnC",
+    "https",
+    "http",
+    "www",
+)
+
 
 def norm(text: str) -> str:
-    """'Amazon.Pay' -> 'AMAZON PAY'. Used for keep-list and name-map keys."""
+    """'Amazon.Pay' -> 'AMAZON PAY'. Used for keep-list, vocabulary and map keys."""
     return " ".join(WORD_RE.findall(text.upper()))
 
 
+VOCAB = {norm(p) for p in BANK_VOCABULARY}
+VOCAB_MAX_WORDS = max(len(v.split()) for v in VOCAB)
+
+
+def _vocab_len(words: list[str], i: int) -> int:
+    """Length in words of the longest bank-vocabulary phrase starting at words[i]."""
+    for n in range(min(VOCAB_MAX_WORDS, len(words) - i), 0, -1):
+        if " ".join(words[i : i + n]) in VOCAB:
+            return n
+    return 0
+
+
 def name_key(raw: str) -> str:
-    """Leading words up to the first stop word: 'Rahul Kumar on' -> 'RAHUL KUMAR'."""
-    words = []
-    for w in WORD_RE.findall(raw.upper()):
-        if w in STOP_WORDS:
+    """Name words up to the first stop word or bank wording; leading bank wording dropped.
+
+    'Rahul Kumar on' -> 'RAHUL KUMAR'; 'HDFC Bank Card x' -> 'X' (too short, ignored).
+    """
+    words = WORD_RE.findall(raw.upper())
+    out: list[str] = []
+    i = 0
+    while i < len(words) and words[i] not in STOP_WORDS:
+        n = _vocab_len(words, i)
+        if n and out:
             break
-        words.append(w)
-    return " ".join(words)
+        if n:
+            i += n
+            continue
+        out.append(words[i])
+        i += 1
+    return " ".join(out)
 
 
 def find_names(body: str) -> list[str]:
@@ -166,15 +227,22 @@ def is_otp(body: str) -> bool:
 def parse_sender(address: str) -> tuple[str, str]:
     """Normalise a sender ID to (core, TRAI suffix).
 
-    Hyphens are optional, so VM-HDFCBK-S, VMHDFCBKS, HDFCBK-S and VMHDFCBK all
-    give core HDFCBK. Rules, after uppercasing and removing hyphens:
+    With hyphens, the parts are: optional 2-letter prefix, core, optional
+    1-letter suffix (S/T/P/G): AB-ABCDE-P -> ABCDE, P; AB-123456 -> 123456.
+    Without hyphens, length rules apply:
       9 chars ending S/T/P/G  -> drop 2-letter prefix and the suffix
       8 chars                 -> drop 2-letter prefix
       7 chars ending S/T/P/G  -> drop the suffix
       digits, maybe prefixed  -> drop a 2-letter prefix (CP388558 -> 388558)
-      anything else           -> unchanged (e.g. ...@RBM.GOOG, +91 numbers)
+    Anything else (e.g. ...@RBM.GOOG, +91 numbers) stays unchanged.
     """
-    sid = address.upper().replace("-", "").replace(" ", "")
+    sid = address.upper().replace(" ", "")
+    if "-" in sid and sid.replace("-", "").isalnum():
+        parts = [p for p in sid.split("-") if p]
+        suffix = parts.pop() if len(parts) > 1 and parts[-1] in TRAI_SUFFIXES else ""
+        if len(parts) > 1 and len(parts[0]) == 2 and parts[0].isalpha():
+            parts = parts[1:]
+        return "".join(parts), suffix
     if sid[2:].isdigit() and (sid[:2].isalpha() or sid[:2].isdigit()):
         return (sid[2:] if sid[:2].isalpha() else sid), ""
     if not sid.isalnum():
@@ -217,7 +285,7 @@ def _hold(held: list[str], text: str) -> str:
 def scan(body: str) -> tuple[list[str], list[str]]:
     """(names, UPI IDs) in a raw body, for --list-counterparties. Nothing is faked."""
     upi_ids = [m.group(0) for m in UPI_ID_RE.finditer(body)]
-    for rx in (*REF_RES, UPI_ID_RE, PHONE_RE):
+    for rx in (URL_RE, *REF_RES, UPI_ID_RE, PHONE_RE):
         body = rx.sub(PH_OPEN + PH_CLOSE, body)
     return find_names(body), upi_ids
 
@@ -235,7 +303,7 @@ class Redactor:
             k: set() for k in ("names_kept", "names_pseudonymised", "upi_kept", "upi_pseudonymised")
         }
         self._people: dict[str, str] = {}
-        self._first_words: set[str] = {k.split()[0] for k in self.keep}
+        self._first_words: set[str] = {k.split()[0] for k in self.keep | VOCAB}
         self._next = 1
         for key, token in self.names.items():
             self._remember(key, token)
@@ -252,6 +320,11 @@ class Redactor:
             fake = _hold(held, self._fake("ref", value))
             return m.group(0)[:i] + fake + m.group(0)[i + len(value) :]
 
+        def url(m: re.Match) -> str:
+            rest = m["rest"] or ""
+            return _hold(held, m["head"] + (self._fake("url", rest) if rest else ""))
+
+        body = URL_RE.sub(url, body)
         for rx in REF_RES:
             body = rx.sub(ref, body)
         body = UPI_ID_RE.sub(lambda m: _hold(held, self._upi(m["local"], m["handle"])), body)
@@ -265,8 +338,8 @@ class Redactor:
     def pseudonymise(self, body: str) -> str:
         """Replace every mapped name (any case, any position) with its token.
 
-        Keep-listed phrases are matched first and skipped, so a brand such as
-        "AMAZON PAY" survives even if "AMAZON" alone were mapped.
+        Keep-listed phrases and bank wording are matched first and skipped, so
+        "AMAZON PAY" or "HDFC Bank Card" survive even if a shorter name is mapped.
         """
         words = list(WORD_RE.finditer(body))
         out, pos, i = [], 0, 0
@@ -279,7 +352,7 @@ class Redactor:
                     if any(gap.strip(" .'") for gap in gaps):
                         continue
                     key = " ".join(w.group().upper() for w in span)
-                    if key in self.keep:
+                    if key in self.keep or key in VOCAB:
                         step = n
                         break
                     if key in self._people:
@@ -305,13 +378,13 @@ class Redactor:
             self._remember(key, self.names[key])
 
     def _remember(self, key: str, token: str) -> None:
-        if key in self.keep or not key:
-            return  # keep-listed since the map was written
+        digits = token.rpartition("_")[2]
+        if digits.isdigit():  # always, so a skipped entry's number is never reused
+            self._next = max(self._next, int(digits) + 1)
+        if not key or key in self.keep or name_key(key) != key:
+            return  # keep-listed or bank wording since the map was written
         self._people[key] = token
         self._first_words.add(key.split()[0])
-        digits = token.rpartition("_")[2]
-        if digits.isdigit():
-            self._next = max(self._next, int(digits) + 1)
 
     def _upi(self, local: str, handle: str) -> str:
         if norm(local) in self.keep:
