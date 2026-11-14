@@ -1,8 +1,9 @@
 """HDFC Bank templates (senders HDFCBK, HDFCBN).
 
-One template per shape in docs/templates/hdfc.md. H-templates were observed in
-the redacted sample (shape id in the comment); N-templates are expected forms
-from the catalogue's "Not yet seen" list, covered by fixtures only.
+One template per shape in docs/templates/hdfc.md. H01-H15 were observed in
+the redacted sample (shape id in the comment), H16-H21 only in the full-data
+coverage run; N-templates are expected forms from the catalogue's "Not yet
+seen" list, covered by fixtures only.
 
 Bodies are whitespace-normalised before matching, so every pattern uses single
 spaces where the SMS has spaces or line breaks.
@@ -15,7 +16,7 @@ from app.engine.parsers.base import AMOUNT, MASK, BankParser, Template
 # Bump on every change that can alter the result for some message:
 # MAJOR when result fields change meaning, MINOR when a template is added
 # (more messages parse), PATCH when a template fix changes values.
-PARSER_VERSION = "hdfc-1.0.0"
+PARSER_VERSION = "hdfc-1.1.0"
 
 _PARTS = {
     "<AMT>": f"(?P<amount>{AMOUNT})",
@@ -27,6 +28,12 @@ _PARTS = {
     "<D_SLASH4>": r"(?P<date>\d{2}/\d{2}/\d{4})",
     "<D_DASH2>": r"(?P<date>\d{2}-\d{2}-\d{2})",
     "<D_MON>": r"(?P<date>\d{2}-[A-Za-z]{3}-(?:\d{4}|\d{2}))",
+    # Any catalogued date form, for shapes first seen in full data only.
+    "<DATE>": (
+        r"(?P<date>\d{4}-\d{2}-\d{2}|\d{2}[-/]\d{2}[-/](?:\d{4}|\d{2})"
+        r"|\d{2}-[A-Za-z]{3}-(?:\d{4}|\d{2}))"
+    ),
+    "<NUM4>": MASK + r"\d*(?P<last4>\d{4})",  # plain account number: keep the last 4
 }
 
 
@@ -177,6 +184,69 @@ TEMPLATES = (
         "mandate",
         "upi",
     ),
+    # H16 (full data): NEFT sent via online banking
+    Template(
+        "H16",
+        _p(
+            r"Amt Deducted! <AMT> from your HDFC Bank A/c <L4> for NEFT transaction "
+            r"via HDFC Bank Online Banking\.? Not you\?Call \S+ BLOCK OB to \S+"
+        ),
+        "debit",
+        "neft",
+    ),
+    # H17 (full data): UPI AutoPay mandate executed
+    Template(
+        "H17",
+        _p(
+            r"UPI Mandate: Sent <AMT> from HDFC Bank A/c <NUM4> To (?P<party>.+?) <DATE> "
+            r"Ref (?P<ref>\S+) Not You\? Call \S+ BLOCK UPI to \S+"
+        ),
+        "debit",
+        "upi",
+        hints=("autopay",),
+    ),
+    # H18 (full data): card AutoPay mandate set up
+    Template(
+        "H18",
+        _p(
+            r"AutoPay Active! For (?P<party>.+?) Starting:<DATE> Mandate ID:(?P<ref>\S+) "
+            r"On HDFC Bank Card <CARD> Manage: \S+ TnC"
+        ),
+        "mandate",
+        "e_mandate",
+    ),
+    # H19 (full data): UPI mandate cancelled
+    Template(
+        "H19",
+        _p(
+            r"Update: <AMT> UPI mandate to (?P<party>.+?) has been cancelled "
+            r"from HDFC Bank A/c <L4>\. UMN: (?P<ref>\S+)"
+        ),
+        "mandate",
+        "upi",
+        hints=("mandate_cancelled",),
+    ),
+    # H20 (full data): FD closed early, funds moved (no amount; H14 has it)
+    Template(
+        "H20",
+        _p(
+            r"Alert! Your FD No\.<L4> is prematurely liquidated and funds are transferred "
+            r"to your HDFC Bank A/c " + MASK + r"\d{4}\. Not you\?Call \S+"
+        ),
+        "other_info",
+        "fd",
+        hints=("fd_closure",),
+    ),
+    # H21 (full data): mutual fund order placed (investments are Phase 6)
+    Template(
+        "H21",
+        _p(
+            r"HDFC Bank MF a/c - <L4>\. You have placed a SUBSCRIPTION order "
+            r"in (?P<party>.+?) for <AMT> on <DATE>\."
+        ),
+        "other_info",
+        hints=("mf_order",),
+    ),
     # N01 not yet seen: credit card spend
     Template(
         "N01",
@@ -309,4 +379,6 @@ FOREIGN_CURRENCY = (
     re.compile(r"^Spent (?!INR\b)[A-Z]{3} ?\d"),  # N14 not yet seen: foreign card spend
 )
 
-PARSER = BankParser("HDFC", PARSER_VERSION, TEMPLATES, FOREIGN_CURRENCY)
+# Amount-free HDFC notices with no template (UPI activated, card limits, KYC,
+# login alerts, ...) become other_info "H_INFO". With an amount: no_template.
+PARSER = BankParser("HDFC", PARSER_VERSION, TEMPLATES, FOREIGN_CURRENCY, info_fallback="H_INFO")

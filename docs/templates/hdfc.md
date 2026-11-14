@@ -33,6 +33,14 @@ other types both are null.
 > in that slot, so it does not matter for parsing. Each shape's parser
 > template has the same id (H01...) in `backend/app/engine/parsers/hdfc.py`.
 
+> **Full-data run (14 Nov 2026, 764 HDFC messages).** hdfc-1.0.0 parsed
+> 683, deferred 44 as foreign currency and left 37 as `no_template`. Six of
+> the unmatched shapes (15 messages) became H16-H21 (hdfc-1.1.0). The rest,
+> reported as 25 shapes, were all amount-free notices (UPI activated, card limits, welcome kit, KYC, login
+> alerts, FD booked or renewed, payee added, device registration); they now
+> take the `H_INFO` fallback below instead of getting one template each.
+> Shapes H16-H21 came from the user's local run; shape ids were not recorded.
+
 ## Shapes found
 
 ### H01 · sh_4d09f351 · 93 messages · HDFCBK, HDFCBN
@@ -244,6 +252,96 @@ Call {PHONE}
   account_last4 (`x` plus 4), reference (UMN, VPA-like).
 - **Notes:** Setup only, no money moves.
 
+### H16 · full data · 4 messages
+
+```
+Amt Deducted!
+{AMOUNT} from your HDFC Bank A/c {ACCT} for NEFT transaction via HDFC Bank Online Banking
+Not you?Call {PHONE}/SMS BLOCK OB to {PHONE}
+```
+
+- **Type:** debit · **Channel:** neft
+- **Fields:** amount, account_last4. No payee, no date (time inferred).
+- **Notes:** Same family as H06 ("Money Transfer").
+
+### H17 · full data · 2 messages
+
+```
+UPI Mandate:
+Sent {AMOUNT}
+from HDFC Bank A/c {NUM}
+To {PARTY}
+{DATE}
+Ref {REF}
+Not You? Call {PHONE}/SMS BLOCK UPI to {PHONE}
+```
+
+- **Type:** debit · **Channel:** upi · **Hint:** `autopay`
+- **Fields:** amount, account_last4 (last 4 digits of the plain account
+  number), counterparty_raw, reference, date (validated; time inferred).
+- **Notes:** A UPI AutoPay charge executed under a mandate (compare H15).
+
+### H18 · full data · 3 messages
+
+```
+AutoPay Active!
+For {PARTY}
+Starting:{DATE}
+Mandate ID:{REF}
+On HDFC Bank Card {ACCT}
+Manage: {URL}
+TnC
+```
+
+- **Type:** mandate · **Channel:** e_mandate
+- **Fields:** counterparty_raw, reference (mandate ID), card last 4, start
+  date (validated). No amount.
+- **Notes:** Card AutoPay set up; charges arrive later as H08 or H13.
+
+### H19 · full data · 2 messages
+
+```
+Update:
+{AMOUNT} UPI mandate to {PARTY} has been cancelled from HDFC Bank A/c {ACCT}.
+UMN: {REF}
+```
+
+- **Type:** mandate · **Channel:** upi · **Hint:** `mandate_cancelled`
+- **Fields:** amount (mandate limit), counterparty_raw, account_last4,
+  reference (UMN).
+- **Notes:** No money moves. Reconcile closes the H15 mandate with this UMN.
+
+### H20 · full data · 3 messages
+
+```
+Alert!
+Your FD No.{ACCT} is prematurely liquidated and funds are transferred to your HDFC Bank A/c {ACCT}.
+Not you?Call {PHONE}
+```
+
+- **Type:** other_info · **Channel:** fd · **Hint:** `fd_closure`
+- **Fields:** account_last4 is the FD number (as in H14). No amount.
+- **Notes:** Info only; the money is in H14 or a separate credit SMS.
+
+### H21 · full data · 1 message
+
+```
+HDFC Bank MF a/c - {ACCT}. You have placed a SUBSCRIPTION order in {PARTY} for {AMOUNT} on {DATE}.
+```
+
+- **Type:** other_info · **Hint:** `mf_order`
+- **Fields:** amount, account_last4 (MF account), counterparty_raw (fund),
+  date (validated).
+- **Notes:** Order only, not a debit. Investments are Phase 6.
+
+### H_INFO · fallback · remaining notices in full data
+
+No pattern. Any HDFC message that matches no template above and contains no
+amount (Rs, INR, ₹, or a foreign currency code followed by a number) parses
+as `other_info` with `template_id` `H_INFO` and no fields. A message with an
+amount never takes this path; it stays `Unknown("no_template")`. Fixtures:
+three invented notices (UPI activated, card limit, login alert).
+
 ## Summary
 
 | Type             | Shapes | Messages |
@@ -262,7 +360,10 @@ Call {PHONE}
 | **Total**        | **15** |  **135** |
 
 Debit: H01, H03, H05, H06, H08, H11, H13. Credit: H02, H14. Mandate: H15.
-Upcoming debit: H12. Other info: H07, H09.
+Upcoming debit: H12. Other info: H07, H09. (Sample counts above.)
+
+Added from the full-data run: debit H16, H17; mandate H18, H19; other info
+H20, H21 and the `H_INFO` fallback.
 
 ## Open questions (all resolved 14 Nov 2026, see Resolved)
 

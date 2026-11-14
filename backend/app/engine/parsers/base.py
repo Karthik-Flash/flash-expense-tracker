@@ -9,6 +9,9 @@ A template is a regex over the whitespace-normalised body plus fixed facts
   ref           reference
   dt            IST date-time (yyyy-mm-dd:HH:MM:SS)
   date          date only; validated, the time comes from received_at
+
+A parser may name an info fallback: a message that matches no template and
+contains no amount is then other_info under that template id.
 """
 
 import re
@@ -25,10 +28,22 @@ DIRECTION = {"debit": "debit", "credit": "credit", "refund": "credit"}
 AMOUNT = r"(?:(?:Rs|INR)\.?|" + chr(0x20B9) + r") ?[\d,]+(?:\.\d+)?"
 MASK = r"[*Xx]*"  # bank masking before the last 4 digits
 
+# Any currency amount, rupee or foreign (same currencies as shape_survey). A
+# message with one never takes the notice fallback: amounts are never guessed.
+ANY_AMOUNT = re.compile(
+    r"(?:\b(?:Rs|INR)\.?|" + chr(0x20B9) + r") ?\d"
+    r"|\b(?:USD|EUR|GBP|AED|SGD|AUD|CAD|JPY|CHF) ?\d",
+    re.I,
+)
+
 
 def normalise(body: str) -> str:
     """Collapse every run of whitespace (including newlines) to one space."""
     return " ".join(body.split())
+
+
+def has_amount(text: str) -> bool:
+    return ANY_AMOUNT.search(text) is not None
 
 
 @dataclass(frozen=True)
@@ -47,6 +62,9 @@ class BankParser:
     templates: tuple[Template, ...]
     # Messages we recognise but deliberately do not parse yet (foreign currency).
     foreign_currency: tuple[re.Pattern[str], ...] = field(default=())
+    # Template id for amount-free notices that match no template (other_info).
+    # None: such messages stay Unknown("no_template").
+    info_fallback: str | None = None
 
     def matching(self, body: str) -> list[tuple[Template, re.Match[str]]]:
         text = normalise(body)
@@ -59,6 +77,8 @@ class BankParser:
             return Unknown("foreign_currency_deferred", self.bank)
         matches = self.matching(body)
         if not matches:
+            if self.info_fallback and not has_amount(text):
+                return self._info(self.info_fallback)
             return Unknown("no_template", self.bank)
         if len(matches) > 1:
             ids = ",".join(t.id for t, _ in matches)
@@ -68,6 +88,25 @@ class BankParser:
             return self._build(template, m, received_at)
         except (AmountError, ValueError) as e:
             return Unknown("ambiguous", self.bank, f"{template.id}: {e}")
+
+    def _info(self, template_id: str) -> ParsedMessage:
+        """An amount-free bank notice: type other_info, no fields."""
+        return ParsedMessage(
+            bank=self.bank,
+            template_id=template_id,
+            parser_version=self.version,
+            type="other_info",
+            direction=None,
+            amount_paise=None,
+            currency=None,
+            account_last4=None,
+            channel=None,
+            counterparty_raw=None,
+            reference=None,
+            balance_paise=None,
+            txn_time_utc=None,
+            time_inferred=None,
+        )
 
     def _build(self, t: Template, m: re.Match[str], received_at: datetime) -> ParsedMessage:
         g = {k: v for k, v in m.groupdict().items() if v is not None}

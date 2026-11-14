@@ -47,7 +47,8 @@ def test_fixture_parses_to_expected_fields(fx: dict) -> None:
 @pytest.mark.parametrize("fx", FIXTURES, ids=[f["id"] for f in FIXTURES])
 def test_fixture_matches_exactly_one_template(fx: dict) -> None:
     n = len(PARSER.matching(fx["body"]))
-    assert n == (0 if fx["expected"] == {"type": "foreign_currency"} else 1)
+    no_template = fx["expected"] == {"type": "foreign_currency"} or "-H_INFO-" in fx["id"]
+    assert n == (0 if no_template else 1)
 
 
 def test_every_template_has_a_fixture() -> None:
@@ -55,9 +56,45 @@ def test_every_template_has_a_fixture() -> None:
     assert {t.id for t in PARSER.templates} <= covered
 
 
-def test_card_bill_payment_hint() -> None:
-    fx = next(f for f in FIXTURES if f["id"].startswith("hdfc-N02"))
-    assert parse_message(fx["sender"], fx["body"], received(fx)).hints == ("card_bill_payment",)
+@pytest.mark.parametrize(
+    ("template_id", "hints"),
+    [
+        ("N02", ("card_bill_payment",)),
+        ("H17", ("autopay",)),
+        ("H19", ("mandate_cancelled",)),
+        ("H20", ("fd_closure",)),
+        ("H21", ("mf_order",)),
+        ("H_INFO", ()),
+    ],
+)
+def test_template_hints(template_id: str, hints: tuple[str, ...]) -> None:
+    for fx in (f for f in FIXTURES if f["id"].split("-")[1] == template_id):
+        assert parse_message(fx["sender"], fx["body"], received(fx)).hints == hints
+
+
+# --- Info fallback: amount-free notices only ----------------------------------
+def test_amount_free_notice_is_info() -> None:
+    result = parse_message("VM-HDFCBK-S", "Hello from a test", WHEN)
+    assert isinstance(result, ParsedMessage)
+    assert (result.template_id, result.type, result.is_money) == ("H_INFO", "other_info", False)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Rs 33 hello from a test",
+        "Paid INR.33 to TEST",
+        "Hello, " + chr(0x20B9) + "33 from a test",
+        "Txn of USD 12 at TEST STORE",
+    ],
+)
+def test_unmatched_message_with_amount_stays_no_template(body: str) -> None:
+    assert parse_message("HDFCBK", body, WHEN) == Unknown("no_template", "HDFC")
+
+
+def test_parser_without_fallback_keeps_no_template() -> None:
+    result = BankParser("TEST", "test-1.0.0", ()).parse("Hello from a test", WHEN)
+    assert result == Unknown("no_template", "TEST")
 
 
 # --- Unknown reasons ----------------------------------------------------------
@@ -68,10 +105,6 @@ def test_unknown_sender() -> None:
 
 def test_no_parser_for_bank() -> None:
     assert parse_message("VM-SBIBNK", "Rs 33 debited", WHEN) == Unknown("no_parser_for_bank", "SBI")
-
-
-def test_no_template() -> None:
-    assert parse_message("VM-HDFCBK-S", "Hello from a test", WHEN) == Unknown("no_template", "HDFC")
 
 
 def test_foreign_currency_deferred() -> None:

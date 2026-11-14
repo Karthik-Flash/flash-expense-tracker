@@ -322,6 +322,42 @@ def test_fakes_come_from_a_secret_key_not_a_bare_hash(tmp_path: Path) -> None:
     assert re.fullmatch(r"[0-9a-f]{64}", key)
 
 
+def shape(s: str) -> str:
+    return re.sub(r"\d", "9", re.sub(r"[A-Z]", "A", re.sub(r"[a-z]", "a", s)))
+
+
+@pytest.mark.parametrize(
+    ("body", "value"),
+    [
+        ("Mandate ID:QwErTy7zKp\nOn HDFC Bank Card x0002", "QwErTy7zKp"),  # 1 digit only
+        ("Via:HDFC Bank DC 0002 Mandate ID: ABCDEFGH TnC", "ABCDEFGH"),  # no digits
+        ("Via:HDFC Bank DC 0002 SI Hub ID: Xy-12ab_9Z TnC", "Xy-12ab_9Z"),
+    ],
+)
+def test_mandate_ids_get_a_stable_same_shape_fake(
+    redactor: r.Redactor, body: str, value: str
+) -> None:
+    out = redactor.redact(body)
+    fake = re.search(r"ID: ?(\S+)", out).group(1)
+    assert value not in out and fake != value
+    assert shape(fake) == shape(value)
+    assert redactor.redact(body) == out  # stable
+    assert "HDFC Bank" in out  # surrounding bank wording untouched
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "You have added a payee RAHUL KUMAR to your HDFC Bank NetBanking. Not you? Call",
+        "Alert! You added payee: Rahul Kumar on 05-01-26 via HDFC Bank MobileBanking",
+    ],
+)
+def test_added_payee_name_is_pseudonymised(redactor: r.Redactor, body: str) -> None:
+    out = redactor.redact(body)
+    assert "RAHUL" not in out.upper() and "KUMAR" not in out.upper()
+    assert re.search(r"payee:? PARTY_\d{3}", out)
+
+
 # --- Streaming ----------------------------------------------------------------
 def test_invalid_char_refs_do_not_break_parsing(tmp_path: Path) -> None:
     xml = write_backup(tmp_path / "emoji.xml", [("VM-HDFCBK", "Paid Rs 5 &#55357;&#56832; &#1;")])

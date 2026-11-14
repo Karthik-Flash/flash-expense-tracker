@@ -89,13 +89,16 @@ def test_to_paise_rejects_ambiguous(text: str) -> None:
         ("19-OCT-2026", date(2026, 10, 19)),
         ("18-JAN-26", date(2026, 1, 18)),
         ("12-Nov-26", date(2026, 11, 12)),
+        ("2026-01-17", date(2026, 1, 17)),
     ],
 )
 def test_parse_date_formats(text: str, expected: date) -> None:
     assert parse_date(text) == expected
 
 
-@pytest.mark.parametrize("text", ["31-02-26", "09/13/26", "01-ABC-2026", "2026/01/01", "1-1-26"])
+@pytest.mark.parametrize(
+    "text", ["31-02-26", "09/13/26", "01-ABC-2026", "2026/01/01", "1-1-26", "2026-02-30"]
+)
 def test_parse_date_rejects_invalid(text: str) -> None:
     with pytest.raises(ValueError):
         parse_date(text)

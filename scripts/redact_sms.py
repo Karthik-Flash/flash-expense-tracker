@@ -95,6 +95,11 @@ REF_RES = (
     # UPI:612345678901, IMPS 612345678901
     re.compile(r"\b(?:UPI|IMPS|NEFT|RTGS)[: -]+(?P<ref>\d{9,22})\b", re.I),
 )
+# Mandate ID:AB12cd, SI Hub ID: XYZ-123. Faked whatever its digit count.
+MANDATE_ID_RE = re.compile(
+    r"\b(?:Mandate|SI[ ]+Hub)[ ]+ID[ ]*[:\-][ ]*(?P<ref>[A-Za-z0-9]+(?:[-_/][A-Za-z0-9]+)*)",
+    re.I,
+)
 # Private-use characters never appear in SMS; masked values hide between them
 # so later patterns cannot touch them.
 PH_OPEN, PH_CLOSE = chr(0xE000), chr(0xE001)
@@ -110,6 +115,7 @@ COUNTERPARTY_RES = (
     re.compile(rf"\b(?:UPI|IMPS|NEFT|RTGS)/(?:P2[PAM]/)?[^/\s]+/(?P<name>{NAME})", re.I),
     re.compile(rf";[ ]*(?P<name>{NAME})[ ]+credited\b", re.I),  # ICICI: "; NAME credited"
     re.compile(rf"\bdear[ ]+(?P<name>{NAME})", re.I),
+    re.compile(rf"\badded[ ]+(?:a[ ]+)?payee[ ]*[:\-]?[ ]*(?P<name>{NAME})", re.I),
     # Lookahead keeps "by IMPS from Mr. X" from hiding "from Mr. X".
     re.compile(
         rf"\b(?:to|from|by|at|towards)[ ]+(?=(?:(?:mr|mrs|ms|dr)\.?[ ]+)?(?P<name>{NAME}))",
@@ -376,9 +382,9 @@ class Redactor:
         """Fake refs, UPI IDs and phones; mask accounts; record names for pseudonymise()."""
         held: list[str] = []
 
-        def ref(m: re.Match) -> str:
+        def ref(m: re.Match, min_digits: int = 6) -> str:
             value = m.group("ref")
-            if sum(c.isdigit() for c in value) < 6:
+            if sum(c.isdigit() for c in value) < min_digits:
                 return m.group(0)
             i = m.start("ref") - m.start()
             self.seen_ids["ref"].add(id_digest(self.key, "ref", value.upper()))
@@ -390,6 +396,7 @@ class Redactor:
             return _hold(held, m["head"] + (self._fake("url", rest) if rest else ""))
 
         body = URL_RE.sub(url, body)
+        body = MANDATE_ID_RE.sub(lambda m: ref(m, min_digits=0), body)
         for rx in REF_RES:
             body = rx.sub(ref, body)
         body = UPI_ID_RE.sub(lambda m: _hold(held, self._upi(m["local"], m["handle"])), body)

@@ -18,6 +18,12 @@ result = parse_message("VM-HDFCBK-S", body, received_at=datetime.now(UTC))
   messages are decided later, in the Reconcile stage (Phase 2-3).
 - **Exactly one template.** If no template matches: `Unknown("no_template")`.
   If two match: `Unknown("ambiguous")`. The engine never picks one.
+- **Notice fallback, never for amounts.** A parser may name an info fallback
+  (HDFC: `H_INFO`). A message that matches no template **and contains no
+  amount** (Rs, INR, ₹, or a foreign code such as USD followed by a number)
+  becomes `other_info` under that id, never `is_money`. A message with an
+  amount and no template stays `Unknown("no_template")`: amounts are never
+  guessed.
 - **Strict fields.** A matching template whose values do not check out (bad
   date, ambiguous amount, two different card numbers in one SMS) gives
   `Unknown("ambiguous")`, not a guess.
@@ -31,7 +37,8 @@ core      --SENDER_BANKS--> bank code (HDFC)          else Unknown("unknown_send
 bank      --PARSERS-------> BankParser                else Unknown("no_parser_for_bank")
 body      --normalise-----> one line, single spaces
           --foreign check-> Unknown("foreign_currency_deferred")
-          --templates-----> 0 matches: Unknown("no_template")
+          --templates-----> 0 matches, no amount: other_info (info fallback, if set)
+                            0 matches, amount: Unknown("no_template")
                             2+ matches: Unknown("ambiguous")
                             1 match: fields -> ParsedMessage (or "ambiguous" if a value is invalid)
 ```
@@ -81,7 +88,7 @@ body      --normalise-----> one line, single spaces
 
 ## Parser versions
 
-Each bank module has `PARSER_VERSION` (e.g. `hdfc-1.0.0`), stored on every
+Each bank module has `PARSER_VERSION` (e.g. `hdfc-1.1.0`), stored on every
 result so stored messages can be re-parsed when a parser improves. Bump it
 in the same commit as any change that can alter a result:
 
