@@ -279,3 +279,30 @@ sample. `scripts/redact_sms.py` therefore:
 - one standard sample command: `--limit 100 --seed 42 --verify`.
 
 Counterparty listings show real values and are never pasted into chats.
+
+## D-041 Parser rules (2026-11-14)
+
+The engine (`backend/app/engine/`) parses one message at a time and reports
+only what that message literally says. Each bank parser is a list of
+templates matched against the whole (whitespace-normalised) body. Exactly one
+template may match: none gives `Unknown("no_template")`, two or more give
+`Unknown("ambiguous")`; the engine never picks one. A match whose values fail
+validation (invalid date, ambiguous amount, differing card numbers) is also
+`ambiguous`. Foreign-currency messages return
+`Unknown("foreign_currency_deferred")` (D-035). Details: `docs/engine.md`.
+
+## D-042 Parser versioning (2026-11-14)
+
+Every result stores its bank's `PARSER_VERSION` (`hdfc-1.0.0`). Any change
+that can alter a result bumps it in the same commit: major for a change in
+field meaning, minor for a new template, patch for a value fix. Stored
+messages with an older version can then be re-parsed.
+
+## D-043 Engine stays stdlib and framework-free (2026-11-14)
+
+The engine uses only the standard library (re, decimal, datetime,
+dataclasses) and imports no FastAPI, SQLAlchemy or app config; a test
+enforces this. IST is a fixed UTC+05:30 offset instead of zoneinfo, which
+needs extra tz data on Windows. Sender normalisation exists in the engine and
+in standalone `scripts/redact_sms.py`; one shared case table
+(`backend/tests/fixtures/sender_ids.json`) keeps them identical.

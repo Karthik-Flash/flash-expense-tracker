@@ -18,8 +18,8 @@ Quick reference and progress log. Updated after every task.
 ## Status
 
 Phase 0 (scaffold, closeout, deploy): **deployed and verified**.
-Phase 1, prompts 1, 1b, 1c (HDFC survey, redaction fixes, leak check): **done**.
-Next: re-run redaction with `--verify` + re-survey, then the parser prompt.
+Phase 1, prompts 1, 1b, 1c, 2 (HDFC survey, redaction fixes, leak check,
+HDFC parser engine): **done**. Next: coverage on the full data, then the next prompt.
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
 - [x] Backend `/health`, `/health/db` (`X-Ping-Token`), migration `0001`
@@ -34,20 +34,19 @@ Next: re-run redaction with `--verify` + re-survey, then the parser prompt.
 - [x] All 10 open questions resolved (hdfc.md "Resolved", DECISIONS D-028 to D-037)
 - [x] Redaction fixes: hyphenated sender IDs, `BANK_VOCABULARY`, link paths
 - [x] `always_redact.txt` final pass and `--verify` leak check
-- [ ] Re-run redaction with the standard command until `Leaks: 0`, then
-      re-survey (H03, H09, H11, H12 are pending re-survey)
+- [x] Sample refreshed with `--verify` (Leaks: 0) and re-surveyed
+- [x] HDFC parser engine `backend/app/engine/` ([docs/engine.md](docs/engine.md)):
+      14 templates seen in the sample + 13 expected forms; all 135 HDFC
+      sample messages handled (131 parsed, 4 foreign currency deferred)
+- [ ] Coverage on the full redacted data (commands below)
 
 ## Your to-do list
 
 1. If not done yet: check cron-job.org history for a 200 around 03:30 IST and
    that `heartbeat.last_seen` moved.
-2. Create `D:\FlashPrivate\private\always_redact.txt` (your name variants,
-   family names, your phone number; one per line).
-3. Run the standard sample command (step 3 in "SMS redaction" below). It must
-   end with `Leaks: 0`. If not, add the leaked name to `always_redact.txt` and
-   run again. Paste only the `LEAK ...` / `Leaks:` lines into a chat, never
-   counterparty listings.
-4. Re-run the template survey (command below) and tell me it is done.
+2. Run the full-data coverage (two commands under "Parser coverage" below)
+   and paste the output into the chat. It contains counts and template
+   shapes only, never message text.
 
 ## Architecture
 
@@ -274,6 +273,20 @@ backend\.venv\Scripts\python.exe scripts\redact_sms.py --private-dir D:\FlashPri
 - Back up `D:\FlashPrivate\private\` (`redaction.key`, `name_map.json`,
   `seen_ids.json`, your keep and always-redact lists).
 
+### Parser coverage (counts and shapes only, safe to paste)
+
+```powershell
+# On the 288-message sample
+backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input data\sample\redacted_sample.json
+
+# On the full data: redact everything (no --limit) into a separate file, check it, then measure
+backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --output data\sample\redacted_full.json --verify
+backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input data\sample\redacted_full.json
+```
+
+`redacted_full.json` stays in `data\sample\` (gitignored). Only run the
+coverage step if the first command ends with `Leaks: 0`.
+
 ### Template survey (reads only the redacted sample)
 
 ```powershell
@@ -319,6 +332,21 @@ gh repo view --web                                # open the repo in the browser
    its fixed phrases to `BANK_VOCABULARY` in `scripts/redact_sms.py`.
 
 ## Log
+
+### 2026-11-14: Phase 1 prompt 2, HDFC parser engine
+
+- Re-survey of the refreshed sample: same 135 messages and 15 shapes. H03,
+  H11, H12 now show the real card label (new shape ids); H09's word slot is
+  still mapped by the private name map (harmless; template accepts any word).
+- `backend/app/engine/`: `senders`, `money` (Decimal to paise), `timeparse`
+  (fixed IST offset), `models` (`ParsedMessage`, `Unknown`), `parsers/base`
+  and `parsers/hdfc` (`hdfc-1.0.0`). Stdlib only, no FastAPI/SQLAlchemy/config.
+- All 39 fixtures parse to exactly their expected fields; each matches exactly
+  one template. Shared sender-ID table runs against both implementations.
+- `scripts/parse_coverage.py`: counts and Unknown shapes only. Sample: 288
+  messages, 131 parsed (127 money), 4 foreign deferred, 153 banks without a
+  parser, 0 no_template, 0 ambiguous.
+- Docs: `docs/engine.md`; DECISIONS D-041 to D-043.
 
 ### 2026-11-14: Phase 1 prompt 1c, always-redact list and --verify
 
