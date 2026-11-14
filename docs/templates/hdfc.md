@@ -16,15 +16,21 @@ Line breaks are shown as separate lines.
 
 **Fields** use the fixture names: `amount_paise`, `direction`,
 `account_last4`, `channel`, `counterparty_raw`, `reference`, `balance_paise`,
-`txn_time_utc`. Channel values: `upi`, `netbanking`, `debit_card`, `atm`,
-`credit_card`, `e_mandate`, `nach`, `neft`, `imps`, `emi`, `cash`.
+`txn_time_utc`, `time_inferred`. Channel values: `upi`, `netbanking`,
+`debit_card`, `atm`, `credit_card`, `e_mandate`, `nach`, `neft`, `imps`,
+`emi`, `cash`, `fd`.
 
-> **Redaction artifacts.** Default-deny redaction replaced some fixed bank
-> words with `{PARTY}`: the card label in `From {PARTY} At` (real text is
-> likely "HDFC Bank Card x" plus last 4), `from {PARTY} {NUM}` in H12, and the
-> word in `Biometric {PARTY}!` (H09). The real templates contain fixed text
-> there. Parsers must not depend on those slots; take the card number from
-> `DC {ACCT}` instead. See Open questions 10.
+**Time convention.** For money types (debit, credit, refund) `txn_time_utc`
+is always set: the message's own date and time converted from IST, or, when
+the message has no time, `received_at` with `time_inferred: true`. For all
+other types both are null.
+
+> **Redaction artifacts (fixed 14 Nov 2026, prompt 1b).** The first sample
+> was redacted before `BANK_VOCABULARY` existed, so some fixed bank words
+> became `{PARTY}`: the card label in `From {PARTY} At` (H03, H11; real text
+> "HDFC Bank Card x" plus last 4), `from {PARTY} {NUM}` (H12), the word in
+> `Biometric {PARTY}!` (H09), and the URL scheme (H12). Shapes H03, H09, H11
+> and H12 are **pending re-survey**: re-run the redaction, then the survey.
 
 ## Shapes found
 
@@ -45,7 +51,7 @@ Call {PHONE}/SMS BLOCK UPI to {PHONE}
   (dd/mm/yy, no time), reference (12-digit UPI RRN).
 - **Notes:** The most common shape by far, from both sender IDs. The `To`
   line can hold several words, digits, or a wallet name (wallet top-ups). No
-  balance. Date only, so `txn_time_utc` is null.
+  balance. Date only: `txn_time_utc` = `received_at`, `time_inferred: true`.
 
 ### H02 · sh_6159ada2 · 22 messages · HDFCBK
 
@@ -58,9 +64,9 @@ Credit Alert!
 - **Fields:** amount, account_last4, date (dd-mm-yy), counterparty_raw = the
   VPA, reference.
 - **Notes:** No payer name, only the VPA. HDFC sometimes masks the VPA itself
-  (`*` plus a few characters before `@`). Date only.
+  (`*` plus a few characters before `@`). Date only (time inferred).
 
-### H03 · sh_abd519ff · 4 messages · HDFCBK
+### H03 · sh_abd519ff · 4 messages · HDFCBK · pending re-survey
 
 ```
 Spent {AMOUNT} From {PARTY} At {PARTY} On {DATE}:{TIME} Bal {BAL} Not You? Call {PHONE}/SMS BLOCK DC {ACCT} to {PHONE}
@@ -140,7 +146,7 @@ TnC
   alphanumeric).
 - **Notes:** Recurring card mandate executed. Variant of H13.
 
-### H09 · sh_5791118d · 1 message · HDFCBK
+### H09 · sh_5791118d · 1 message · HDFCBK · pending re-survey
 
 ```
 Biometric {PARTY}! You have enabled your biometric {PARTY} for HDFC Bank App. Not you? Call {PHONE}
@@ -162,7 +168,7 @@ Transaction Reversed!On HDFC Bank DEBIT/ATM Card {ACCT} Amt: {AMOUNT} By {PARTY}
   transaction ID; split on `* ` into counterparty_raw and reference. No space
   after `Reversed!`. Should be linked to the original spend (Open questions 3).
 
-### H11 · sh_7c3c7508 · 1 message · HDFCBK
+### H11 · sh_7c3c7508 · 1 message · HDFCBK · pending re-survey
 
 ```
 Withdrawn {AMOUNT} From {PARTY} At {PARTY} On {DATE}:{TIME} Bal {BAL} Not You? Call {PHONE}/SMS BLOCK DC {ACCT} to {PHONE}
@@ -174,7 +180,7 @@ Withdrawn {AMOUNT} From {PARTY} At {PARTY} On {DATE}:{TIME} Bal {BAL} Not You? C
 - **Notes:** Same layout as H03 with `Withdrawn`. Cash withdrawal: spend
   category is "cash", not a merchant.
 
-### H12 · sh_b5411ded · 1 message · HDFCBK
+### H12 · sh_b5411ded · 1 message · HDFCBK · pending re-survey
 
 ```
 Alert:
@@ -183,7 +189,7 @@ ID:{REF}
 Act:{URL}
 ```
 
-- **Type:** mandate (pre-debit notification)
+- **Type:** upcoming_debit (pre-debit notification; not money)
 - **Fields:** amount (`INR.` with a dot), future date (dd/mm/yyyy), card last
   4 (`{NUM}`), counterparty_raw (`for` text), reference (mandate ID).
 - **Notes:** Announces a future autopay debit; must not create a
@@ -211,7 +217,8 @@ Not You? To Block+Reissue Call {PHONE}/SMS BLOCK DC {ACCT} to {PHONE}
 HDFCBANK UPDATE: Your FD No {ACCT} has been pre maturely liquidated for {AMOUNT} on {DATE}
 ```
 
-- **Type:** other_info (provisional; see Open questions 7)
+- **Type:** credit · **Channel:** fd (Reconcile treats it as own money
+  moving, not income)
 - **Fields:** amount (`INR ` with commas), FD last 4, date (dd-MON-yyyy).
 - **Notes:** Fixed deposit closed early. The money lands in the savings
   account; whether a separate credit SMS follows is unknown.
@@ -238,20 +245,22 @@ Call {PHONE}
 | Type             | Shapes | Messages |
 | ---------------- | -----: | -------: |
 | debit            |      7 |      103 |
-| credit           |      1 |       22 |
+| credit           |      2 |       23 |
 | refund           |      1 |        1 |
-| mandate          |      2 |        2 |
+| mandate          |      1 |        1 |
+| upcoming_debit   |      1 |        1 |
 | foreign_currency |      1 |        4 |
-| other_info       |      3 |        3 |
+| other_info       |      2 |        2 |
 | collect_request  |      0 |        0 |
 | card_alert       |      0 |        0 |
 | balance_info     |      0 |        0 |
 | fraud_warning    |      0 |        0 |
 | **Total**        | **15** |  **135** |
 
-Debit shapes: H01, H03, H05, H06, H08, H11, H13. Other info: H07, H09, H14.
+Debit: H01, H03, H05, H06, H08, H11, H13. Credit: H02, H14. Mandate: H15.
+Upcoming debit: H12. Other info: H07, H09.
 
-## Open questions
+## Open questions (all resolved 14 Nov 2026, see Resolved)
 
 1. **Self-transfers.** UPI `Sent` (H01), NetBanking (H05) and `Amt Deducted`
    (H06) can move money to the user's own account at another bank, or top up
@@ -280,6 +289,26 @@ Debit shapes: H01, H03, H05, H06, H08, H11, H13. Other info: H07, H09, H14.
 10. **Redaction over-reach.** Fixed words (card label, "authentication",
     the URL scheme) were pseudonymised. Add them to the keep-list or stop
     words in a later redaction task, so future surveys see the real wording.
+
+## Resolved
+
+Principle: **the parser reports only what one message says.** Transfers,
+card bill payments, refund linking and cross-message duplicates need other
+messages and the user's own accounts, so they are decided in the Reconcile
+stage (Phase 2-3).
+
+| # | Question | Decision |
+| - | -------- | -------- |
+| 1 | Self-transfers | Become transfers, not spending. Reconcile decides, using a user "my accounts and UPI IDs" list. The parser just reports the debit. |
+| 2 | Card bill payments | Transfers, so card spends are not counted twice. Reconcile decides; the parser sets a hint when the wording says it is a card payment. |
+| 3 | Reversals | Refund linked to the original spend (same card last 4, same amount, within a few days). Unmatched: standalone refund. Reconcile. |
+| 4 | AutoPay success + card "Spent" | Possible duplicate; both are parsed, merged in Phase 2. |
+| 5 | Pre-debit notice | Type `upcoming_debit`, not money. Stored later for month-end forecasts (Phase 6). |
+| 6 | Date without time | `txn_time_utc` = `received_at`, with `time_inferred: true`. |
+| 7 | FD closed early | `credit` with channel `fd`; Reconcile treats it as an own-money transfer in, not income. |
+| 8 | Masked UPI ID as only counterparty | Acceptable for now; quick-tagging lets the user name it later. |
+| 9 | International card spends | Deferred with `foreign_currency`. |
+| 10 | Bank words redacted | Fixed in prompt 1b (`BANK_VOCABULARY`, link paths faked). H03, H09, H11, H12 pending re-survey. |
 
 ## Not yet seen
 

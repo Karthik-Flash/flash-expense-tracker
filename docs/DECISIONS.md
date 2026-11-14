@@ -186,9 +186,79 @@ Parsers are designed from template shapes, not from message text. Rules:
   any amount in the sample (round numbers collided, so repeated digits are
   used instead).
 - Fixture conventions: `account_last4` holds the card's last 4 for card
-  transactions; `txn_time_utc` is null when the SMS has a date but no time
-  (the parser falls back to `received_at`); foreign-currency fixtures carry
-  only `{"type": "foreign_currency"}`.
+  transactions; foreign-currency fixtures carry only
+  `{"type": "foreign_currency"}`. (Time convention: superseded by D-034.)
 - Before committing, every new file is scanned against the sample: shared
   digit runs, VPAs, amounts, pseudonym tokens below 900, words that occur only
   in value slots of the sample, and 6-word windows that are not template text.
+
+## D-028 Parser scope: one message only (2026-11-14)
+
+The parser reports only what a single message says. Anything that needs
+other messages or the user's own accounts (transfers, card bill payments,
+refund linking, cross-message duplicates) is decided in the Reconcile stage,
+Phase 2-3.
+
+## D-029 Self-transfers are transfers (2026-11-14)
+
+Money moved between the user's own accounts or wallets is a transfer, not
+spending. Reconcile decides, using a user-maintained "my accounts and UPI IDs"
+list. The parser just reports the debit or credit.
+
+## D-030 Card bill payments are transfers (2026-11-14)
+
+Paying a credit card bill is a transfer, so card spends are not counted
+twice. Reconcile decides; the parser sets a hint when the wording says it is
+a card payment.
+
+## D-031 Reversals link to the original spend (2026-11-14)
+
+A reversal becomes a refund linked to the original spend: same card last 4,
+same amount, within a few days. With no match it stays a standalone refund.
+Reconcile.
+
+## D-032 AutoPay success plus card "Spent" (2026-11-14)
+
+Both messages are parsed. They are possible duplicates, merged in Phase 2.
+
+## D-033 Pre-debit notices are upcoming_debit (2026-11-14)
+
+A notice that money will be debited later has type `upcoming_debit`. It is not
+money. It is stored later for month-end forecasts (Phase 6).
+
+## D-034 Date without time (2026-11-14)
+
+For money types (debit, credit, refund) `txn_time_utc` is always set. If the
+message has no time, it is `received_at` and `time_inferred` is true;
+otherwise `time_inferred` is false. Non-money types have both null.
+
+## D-035 International card spends deferred (2026-11-14)
+
+International card spends and forex notices are handled with
+`foreign_currency`, which is deferred. Fixtures carry only the type.
+
+## D-036 FD premature closure (2026-11-14)
+
+Parsed as `credit` with channel `fd`. Reconcile treats it as the user's own
+money moving (transfer in), not income.
+
+## D-037 Masked UPI ID as the only counterparty (2026-11-14)
+
+Acceptable for now. Quick-tagging will let the user name such counterparties
+later.
+
+## D-038 Hyphenated sender IDs split on hyphens (2026-11-14)
+
+Fixes D-025: removing hyphens before the length rules turned `AB-ABCDE-P`
+into core `ABCDEP` and lost the promo suffix. IDs with hyphens are now split:
+optional 2-letter prefix, core, optional S/T/P/G suffix. Length rules apply
+only to IDs without hyphens.
+
+## D-039 Bank wording is never redacted; link paths are (2026-11-14)
+
+`BANK_VOCABULARY` in `scripts/redact_sms.py` lists fixed template phrases
+("HDFC Bank Card", "authentication", ...). They are skipped at the start of a
+name, end a name, are never replaced, and stale name-map entries made of them
+are ignored. It is separate from `keep_names.txt`, which lists brands that are
+counterparties. Links keep scheme and host; the path and query (possibly a
+personal tracking link) get a same-length HMAC fake.

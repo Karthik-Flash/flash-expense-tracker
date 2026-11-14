@@ -4,49 +4,49 @@
     "sender": "HDFCBK",
     "body": "Sent Rs.1,25,000.00\nFrom HDFC Bank A/C *0001\nTo TEST MERCHANT\nOn 05/01/26\nRef 000000000001\nNot You?\nCall 18000000001/SMS BLOCK UPI to 9000000001\n",
     "received_at": "2026-01-05T06:30:00Z",
-    "expected": {"type": "debit", "amount_paise": 12500000, "direction": "debit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST MERCHANT", "reference": "000000000001", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 12500000, "direction": "debit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST MERCHANT", "reference": "000000000001", "balance_paise": null, "txn_time_utc": "2026-01-05T06:30:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H01-upi-sent-2",
     "sender": "HDFCBN",
     "body": "Sent Rs.44.00\nFrom HDFC Bank A/C *0001\nTo PERSON_900\nOn 06/01/26\nRef 000000000002\nNot You?\nCall 18000000001/SMS BLOCK UPI to 9000000001\n",
     "received_at": "2026-01-06T03:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 4400, "direction": "debit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "PERSON_900", "reference": "000000000002", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 4400, "direction": "debit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "PERSON_900", "reference": "000000000002", "balance_paise": null, "txn_time_utc": "2026-01-06T03:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H01-upi-sent-3",
     "sender": "HDFCBK",
     "body": "Sent Rs.11111.00\nFrom HDFC Bank A/C *0001\nTo TEST WALLET BALANCE\nOn 06/01/26\nRef 000000000010\nNot You?\nCall 18000000001/SMS BLOCK UPI to 9000000001\n",
     "received_at": "2026-01-06T05:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 1111100, "direction": "debit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST WALLET BALANCE", "reference": "000000000010", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 1111100, "direction": "debit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST WALLET BALANCE", "reference": "000000000010", "balance_paise": null, "txn_time_utc": "2026-01-06T05:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H02-upi-credit-1",
     "sender": "HDFCBK",
     "body": "Credit Alert!\nRs.555.00 credited to HDFC Bank A/c XX0001 on 07-01-26 from VPA test.user@okaxis (UPI 000000000003)\n",
     "received_at": "2026-01-07T07:00:00Z",
-    "expected": {"type": "credit", "amount_paise": 55500, "direction": "credit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "test.user@okaxis", "reference": "000000000003", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "credit", "amount_paise": 55500, "direction": "credit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "test.user@okaxis", "reference": "000000000003", "balance_paise": null, "txn_time_utc": "2026-01-07T07:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H02-upi-credit-2",
     "sender": "HDFCBK",
     "body": "Credit Alert!\nRs.2,50,000.00 credited to HDFC Bank A/c XX0001 on 07-01-26 from VPA *test@oksbi (UPI 000000000004)\n",
     "received_at": "2026-01-07T08:00:00Z",
-    "expected": {"type": "credit", "amount_paise": 25000000, "direction": "credit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "*test@oksbi", "reference": "000000000004", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "credit", "amount_paise": 25000000, "direction": "credit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "*test@oksbi", "reference": "000000000004", "balance_paise": null, "txn_time_utc": "2026-01-07T08:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H03-debit-card-spend-1",
     "sender": "HDFCBK",
     "body": "Spent Rs.222 From HDFC Bank Card x0002 At TEST MERCHANT On 2026-01-08:10:00:00 Bal Rs.24000 Not You? Call 18000000001/SMS BLOCK DC 0002 to 9000000001",
     "received_at": "2026-01-08T04:30:05Z",
-    "expected": {"type": "debit", "amount_paise": 22200, "direction": "debit", "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST MERCHANT", "reference": null, "balance_paise": 2400000, "txn_time_utc": "2026-01-08T04:30:00Z"}
+    "expected": {"type": "debit", "amount_paise": 22200, "direction": "debit", "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST MERCHANT", "reference": null, "balance_paise": 2400000, "txn_time_utc": "2026-01-08T04:30:00Z", "time_inferred": false}
   },
   {
     "id": "hdfc-H03-debit-card-spend-2",
     "sender": "HDFCBK",
     "body": "Spent Rs.1000.50 From HDFC Bank Card x0002 At TEST STORE * TEST ORDER On 2026-01-08:22:15:00 Bal Rs.12345.50 Not You? Call 18000000001/SMS BLOCK DC 0002 to 9000000001",
     "received_at": "2026-01-08T16:45:05Z",
-    "expected": {"type": "debit", "amount_paise": 100050, "direction": "debit", "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST STORE * TEST ORDER", "reference": null, "balance_paise": 1234550, "txn_time_utc": "2026-01-08T16:45:00Z"}
+    "expected": {"type": "debit", "amount_paise": 100050, "direction": "debit", "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST STORE * TEST ORDER", "reference": null, "balance_paise": 1234550, "txn_time_utc": "2026-01-08T16:45:00Z", "time_inferred": false}
   },
   {
     "id": "hdfc-H04-forex-notice-1",
@@ -60,210 +60,210 @@
     "sender": "HDFCBK",
     "body": "Payment Successful! Rs. 22222.00 from A/c **********0001 to TEST BILLER via HDFC Bank NetBanking. Not you?Call 18000000001",
     "received_at": "2026-01-09T05:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 2222200, "direction": "debit", "account_last4": "0001", "channel": "netbanking", "counterparty_raw": "TEST BILLER", "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 2222200, "direction": "debit", "account_last4": "0001", "channel": "netbanking", "counterparty_raw": "TEST BILLER", "reference": null, "balance_paise": null, "txn_time_utc": "2026-01-09T05:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H05-netbanking-payment-2",
     "sender": "HDFCBK",
     "body": "Payment Successful! Rs. 1,00,000.00 from A/c **********0001 to PERSON_901 via HDFC Bank NetBanking. Not you?Call 18000000001",
     "received_at": "2026-01-09T06:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 10000000, "direction": "debit", "account_last4": "0001", "channel": "netbanking", "counterparty_raw": "PERSON_901", "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 10000000, "direction": "debit", "account_last4": "0001", "channel": "netbanking", "counterparty_raw": "PERSON_901", "reference": null, "balance_paise": null, "txn_time_utc": "2026-01-09T06:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H06-amt-deducted-1",
     "sender": "HDFCBK",
     "body": "Amt Deducted!\nRs.333.00 from your HDFC Bank A/c XX0001 for Money Transfer via HDFC Bank Online Banking.\nNot you?Call 18000000001/SMS BLOCK OB to 9000000001",
     "received_at": "2026-01-09T07:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 33300, "direction": "debit", "account_last4": "0001", "channel": "netbanking", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 33300, "direction": "debit", "account_last4": "0001", "channel": "netbanking", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": "2026-01-09T07:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H06-amt-deducted-2",
     "sender": "HDFCBK",
     "body": "Amt Deducted!\nRs.4444.00 from your HDFC Bank A/c XX0001 for Money Transfer via HDFC Bank Online Banking.\nNot you?Call 18000000001/SMS BLOCK OB to 9000000001",
     "received_at": "2026-01-09T08:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 444400, "direction": "debit", "account_last4": "0001", "channel": "netbanking", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 444400, "direction": "debit", "account_last4": "0001", "channel": "netbanking", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": "2026-01-09T08:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H07-upi-pin-set-1",
     "sender": "HDFCBK",
     "body": "HDFC Bank: You have successfully set the UPI Pin for your HDFC Bank A/c No. **0001. Not You? Call 18000000001 or SMS BLOCK UPI to 9000000001",
     "received_at": "2026-01-09T09:00:00Z",
-    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": "0001", "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": "0001", "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
   },
   {
     "id": "hdfc-H08-autopay-sihub-1",
     "sender": "HDFCBK",
     "body": "AutoPay (E-mandate) Success!\nFor TEST SUBSCRIPTION \nTxn Amt:INR14.00\nDt:09/01/2026\nVia:HDFC Bank DC 0002\nSI Hub ID: TEST0000001\nTnC",
     "received_at": "2026-01-09T10:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 1400, "direction": "debit", "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST SUBSCRIPTION", "reference": "TEST0000001", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 1400, "direction": "debit", "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST SUBSCRIPTION", "reference": "TEST0000001", "balance_paise": null, "txn_time_utc": "2026-01-09T10:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H08-autopay-sihub-2",
     "sender": "HDFCBK",
     "body": "AutoPay (E-mandate) Success!\nFor TEST STREAMING\nTxn Amt:INR499.00\nDt:10/01/2026\nVia:HDFC Bank DC 0002\nSI Hub ID: TEST0000002\nTnC",
     "received_at": "2026-01-10T10:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 49900, "direction": "debit", "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST STREAMING", "reference": "TEST0000002", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 49900, "direction": "debit", "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST STREAMING", "reference": "TEST0000002", "balance_paise": null, "txn_time_utc": "2026-01-10T10:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H09-biometric-enabled-1",
     "sender": "HDFCBK",
     "body": "Biometric authentication! You have enabled your biometric authentication for HDFC Bank App. Not you? Call 18000000001",
     "received_at": "2026-01-10T11:00:00Z",
-    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": null, "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": null, "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
   },
   {
     "id": "hdfc-H10-card-reversal-1",
     "sender": "HDFCBK",
     "body": "Transaction Reversed!On HDFC Bank DEBIT/ATM Card xx0002 Amt: Rs.77 By TEST MERCHANT* PA0000000000001 On 2026-01-10:16:00:00",
     "received_at": "2026-01-10T10:30:05Z",
-    "expected": {"type": "refund", "amount_paise": 7700, "direction": "credit", "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST MERCHANT", "reference": "PA0000000000001", "balance_paise": null, "txn_time_utc": "2026-01-10T10:30:00Z"}
+    "expected": {"type": "refund", "amount_paise": 7700, "direction": "credit", "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST MERCHANT", "reference": "PA0000000000001", "balance_paise": null, "txn_time_utc": "2026-01-10T10:30:00Z", "time_inferred": false}
   },
   {
     "id": "hdfc-H10-card-reversal-2",
     "sender": "HDFCBK",
     "body": "Transaction Reversed!On HDFC Bank DEBIT/ATM Card xx0002 Amt: Rs.1,200.00 By TEST STORE* PA0000000000002 On 2026-01-11:09:00:00",
     "received_at": "2026-01-11T03:30:05Z",
-    "expected": {"type": "refund", "amount_paise": 120000, "direction": "credit", "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST STORE", "reference": "PA0000000000002", "balance_paise": null, "txn_time_utc": "2026-01-11T03:30:00Z"}
+    "expected": {"type": "refund", "amount_paise": 120000, "direction": "credit", "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST STORE", "reference": "PA0000000000002", "balance_paise": null, "txn_time_utc": "2026-01-11T03:30:00Z", "time_inferred": false}
   },
   {
     "id": "hdfc-H11-atm-withdrawal-1",
     "sender": "HDFCBK",
     "body": "Withdrawn Rs.6600 From HDFC Bank Card x0002 At TEST ATM 0001 On 2026-01-12:08:00:00 Bal Rs.66666.00 Not You? Call 18000000001/SMS BLOCK DC 0002 to 9000000001",
     "received_at": "2026-01-12T02:30:05Z",
-    "expected": {"type": "debit", "amount_paise": 660000, "direction": "debit", "account_last4": "0002", "channel": "atm", "counterparty_raw": "TEST ATM 0001", "reference": null, "balance_paise": 6666600, "txn_time_utc": "2026-01-12T02:30:00Z"}
+    "expected": {"type": "debit", "amount_paise": 660000, "direction": "debit", "account_last4": "0002", "channel": "atm", "counterparty_raw": "TEST ATM 0001", "reference": null, "balance_paise": 6666600, "txn_time_utc": "2026-01-12T02:30:00Z", "time_inferred": false}
   },
   {
     "id": "hdfc-H11-atm-withdrawal-2",
     "sender": "HDFCBK",
     "body": "Withdrawn Rs.12,121 From HDFC Bank Card x0002 At TEST ATM 0002 On 2026-01-12:23:30:00 Bal Rs.1,00,000.00 Not You? Call 18000000001/SMS BLOCK DC 0002 to 9000000001",
     "received_at": "2026-01-12T18:00:05Z",
-    "expected": {"type": "debit", "amount_paise": 1212100, "direction": "debit", "account_last4": "0002", "channel": "atm", "counterparty_raw": "TEST ATM 0002", "reference": null, "balance_paise": 10000000, "txn_time_utc": "2026-01-12T18:00:00Z"}
+    "expected": {"type": "debit", "amount_paise": 1212100, "direction": "debit", "account_last4": "0002", "channel": "atm", "counterparty_raw": "TEST ATM 0002", "reference": null, "balance_paise": 10000000, "txn_time_utc": "2026-01-12T18:00:00Z", "time_inferred": false}
   },
   {
     "id": "hdfc-H12-predebit-notice-1",
     "sender": "HDFCBK",
     "body": "Alert:\nINR.499.00 will be debited on 20/01/2026 from HDFC Bank Card 0002 for TEST STREAMING\nID:TEST0000002\nAct:https://example.invalid/m/0000",
     "received_at": "2026-01-17T04:00:00Z",
-    "expected": {"type": "mandate", "amount_paise": 49900, "direction": null, "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST STREAMING", "reference": "TEST0000002", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "upcoming_debit", "amount_paise": 49900, "direction": null, "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST STREAMING", "reference": "TEST0000002", "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
   },
   {
     "id": "hdfc-H13-autopay-mandate-1",
     "sender": "HDFCBK",
     "body": "AutoPay (E-mandate) Success!\nFor TEST STREAMING\nTxn Amt:INR499.00\nDt:20/01/2026\nVia:HDFC Bank DC 0002\nMandate ID: TEST0000002\nNot You? To Block+Reissue Call 18000000001/SMS BLOCK DC 0002 to 9000000001",
     "received_at": "2026-01-20T04:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 49900, "direction": "debit", "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST STREAMING", "reference": "TEST0000002", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 49900, "direction": "debit", "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST STREAMING", "reference": "TEST0000002", "balance_paise": null, "txn_time_utc": "2026-01-20T04:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H13-autopay-mandate-2",
     "sender": "HDFCBK",
     "body": "AutoPay (E-mandate) Success!\nFor TEST INSURANCE\nTxn Amt:INR1499.00\nDt:21/01/2026\nVia:HDFC Bank DC 0002\nMandate ID: TEST0000003\nNot You? To Block+Reissue Call 18000000001/SMS BLOCK DC 0002 to 9000000001",
     "received_at": "2026-01-21T04:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 149900, "direction": "debit", "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST INSURANCE", "reference": "TEST0000003", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 149900, "direction": "debit", "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST INSURANCE", "reference": "TEST0000003", "balance_paise": null, "txn_time_utc": "2026-01-21T04:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H14-fd-liquidated-1",
     "sender": "HDFCBK",
     "body": "HDFCBANK UPDATE: Your FD No XX0005 has been pre maturely liquidated for INR 77,777.00 on 13-JAN-2026",
     "received_at": "2026-01-13T06:00:00Z",
-    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": null, "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "credit", "amount_paise": 7777700, "direction": "credit", "account_last4": "0005", "channel": "fd", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": "2026-01-13T06:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-H15-upi-mandate-set-1",
     "sender": "HDFCBK",
     "body": "Mandate Set\nRs.111.00\nFor TEST STREAMING\nFrom HDFC Bank A/c x0001\nUMN: test0000000000000000000000000001@ok\nNot you?\nCall 18000000001\n",
     "received_at": "2026-01-14T06:00:00Z",
-    "expected": {"type": "mandate", "amount_paise": 11100, "direction": null, "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST STREAMING", "reference": "test0000000000000000000000000001@ok", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "mandate", "amount_paise": 11100, "direction": null, "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST STREAMING", "reference": "test0000000000000000000000000001@ok", "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
   },
   {
     "id": "hdfc-N01-credit-card-spend-1",
     "sender": "HDFCBK",
     "body": "Spent Rs.1,499 On HDFC Bank Card 0003 At TEST MERCHANT On 2026-01-20:20:15:00 Not You? To Block+Reissue Call 18000000001/SMS BLOCK CC 0003 to 9000000001",
     "received_at": "2026-01-20T14:45:05Z",
-    "expected": {"type": "debit", "amount_paise": 149900, "direction": "debit", "account_last4": "0003", "channel": "credit_card", "counterparty_raw": "TEST MERCHANT", "reference": null, "balance_paise": null, "txn_time_utc": "2026-01-20T14:45:00Z"}
+    "expected": {"type": "debit", "amount_paise": 149900, "direction": "debit", "account_last4": "0003", "channel": "credit_card", "counterparty_raw": "TEST MERCHANT", "reference": null, "balance_paise": null, "txn_time_utc": "2026-01-20T14:45:00Z", "time_inferred": false}
   },
   {
     "id": "hdfc-N02-credit-card-payment-1",
     "sender": "HDFCBK",
     "body": "DEAR CARDMEMBER, PAYMENT OF Rs. 12,345.00 RECEIVED TOWARDS YOUR CREDIT CARD ENDING 0003 ON 19-JAN-26. YOUR AVAILABLE LIMIT IS Rs. 90,000.00",
     "received_at": "2026-01-19T06:00:00Z",
-    "expected": {"type": "credit", "amount_paise": 1234500, "direction": "credit", "account_last4": "0003", "channel": "credit_card", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "credit", "amount_paise": 1234500, "direction": "credit", "account_last4": "0003", "channel": "credit_card", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": "2026-01-19T06:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-N03-neft-credit-1",
     "sender": "HDFCBK",
     "body": "Update! INR 55,555.00 deposited in HDFC Bank A/c XX0001 on 18-JAN-26 for NEFT Cr-TEST0000001-TEST EMPLOYER LTD-XXXXXXXXXX0009-TESTN00000000001.Avl bal INR 1,50,000.00. Cheque deposits in A/C are subject to clearing",
     "received_at": "2026-01-18T06:00:00Z",
-    "expected": {"type": "credit", "amount_paise": 5555500, "direction": "credit", "account_last4": "0001", "channel": "neft", "counterparty_raw": "TEST EMPLOYER LTD", "reference": "TESTN00000000001", "balance_paise": 15000000, "txn_time_utc": null}
+    "expected": {"type": "credit", "amount_paise": 5555500, "direction": "credit", "account_last4": "0001", "channel": "neft", "counterparty_raw": "TEST EMPLOYER LTD", "reference": "TESTN00000000001", "balance_paise": 15000000, "txn_time_utc": "2026-01-18T06:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-N04-imps-credit-1",
     "sender": "HDFCBK",
     "body": "Rs. 2,222.00 credited to a/c XX0001 on 16-01-26 by a/c linked to mobile 9XXXXXX001 (IMPS Ref No. 000000000005)",
     "received_at": "2026-01-16T06:00:00Z",
-    "expected": {"type": "credit", "amount_paise": 222200, "direction": "credit", "account_last4": "0001", "channel": "imps", "counterparty_raw": null, "reference": "000000000005", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "credit", "amount_paise": 222200, "direction": "credit", "account_last4": "0001", "channel": "imps", "counterparty_raw": null, "reference": "000000000005", "balance_paise": null, "txn_time_utc": "2026-01-16T06:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-N05-imps-debit-1",
     "sender": "HDFCBK",
     "body": "IMPS of Rs.16,666.00 sent from A/c XX0001 to TEST PAYEE A/c XX0009 on 21-01-26. Ref 000000000007",
     "received_at": "2026-01-21T06:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 1666600, "direction": "debit", "account_last4": "0001", "channel": "imps", "counterparty_raw": "TEST PAYEE", "reference": "000000000007", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 1666600, "direction": "debit", "account_last4": "0001", "channel": "imps", "counterparty_raw": "TEST PAYEE", "reference": "000000000007", "balance_paise": null, "txn_time_utc": "2026-01-21T06:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-N06-emi-debit-1",
     "sender": "HDFCBK",
     "body": "EMI of Rs.5,555.00 for Loan A/c XX0004 has been debited from your HDFC Bank A/c XX0001 on 22-01-26",
     "received_at": "2026-01-22T06:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 555500, "direction": "debit", "account_last4": "0001", "channel": "emi", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 555500, "direction": "debit", "account_last4": "0001", "channel": "emi", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": "2026-01-22T06:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-N07-nach-debit-1",
     "sender": "HDFCBK",
     "body": "Rs.2,500.00 debited from A/c XX0001 on 23-01-26 towards ACH D- TEST INSURANCE LTD-000000000008. Avl bal Rs.11,111.00",
     "received_at": "2026-01-23T06:00:00Z",
-    "expected": {"type": "debit", "amount_paise": 250000, "direction": "debit", "account_last4": "0001", "channel": "nach", "counterparty_raw": "TEST INSURANCE LTD", "reference": "000000000008", "balance_paise": 1111100, "txn_time_utc": null}
+    "expected": {"type": "debit", "amount_paise": 250000, "direction": "debit", "account_last4": "0001", "channel": "nach", "counterparty_raw": "TEST INSURANCE LTD", "reference": "000000000008", "balance_paise": 1111100, "txn_time_utc": "2026-01-23T06:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-N08-upi-refund-1",
     "sender": "HDFCBK",
     "body": "Rs.199.00 refund credited to HDFC Bank A/c XX0001 from TEST MERCHANT on 24-01-26 (UPI Ref 000000000009)",
     "received_at": "2026-01-24T06:00:00Z",
-    "expected": {"type": "refund", "amount_paise": 19900, "direction": "credit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST MERCHANT", "reference": "000000000009", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "refund", "amount_paise": 19900, "direction": "credit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST MERCHANT", "reference": "000000000009", "balance_paise": null, "txn_time_utc": "2026-01-24T06:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-N09-cash-deposit-1",
     "sender": "HDFCBK",
     "body": "Cash deposit of ₹6,666 in A/c XX0001 on 15-01-26 at TEST BRANCH. Avl bal ₹30,000.00",
     "received_at": "2026-01-15T06:00:00Z",
-    "expected": {"type": "credit", "amount_paise": 666600, "direction": "credit", "account_last4": "0001", "channel": "cash", "counterparty_raw": "TEST BRANCH", "reference": null, "balance_paise": 3000000, "txn_time_utc": null}
+    "expected": {"type": "credit", "amount_paise": 666600, "direction": "credit", "account_last4": "0001", "channel": "cash", "counterparty_raw": "TEST BRANCH", "reference": null, "balance_paise": 3000000, "txn_time_utc": "2026-01-15T06:00:00Z", "time_inferred": true}
   },
   {
     "id": "hdfc-N10-collect-request-1",
     "sender": "HDFCBK",
     "body": "TEST MERCHANT has requested money from you on HDFC Bank MobileBanking. On approving, INR 333.00 will be debited from your A/c - HDFC Bank. Collect ID: 000000000006",
     "received_at": "2026-01-24T07:00:00Z",
-    "expected": {"type": "collect_request", "amount_paise": 33300, "direction": null, "account_last4": null, "channel": "upi", "counterparty_raw": "TEST MERCHANT", "reference": "000000000006", "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "collect_request", "amount_paise": 33300, "direction": null, "account_last4": null, "channel": "upi", "counterparty_raw": "TEST MERCHANT", "reference": "000000000006", "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
   },
   {
     "id": "hdfc-N11-balance-enquiry-1",
     "sender": "HDFCBK",
     "body": "Available Bal in HDFC Bank A/c XX0001 as on 25-JAN-26 is INR 25,000.00. Cheques are subject to clearing",
     "received_at": "2026-01-25T06:00:00Z",
-    "expected": {"type": "balance_info", "amount_paise": null, "direction": null, "account_last4": "0001", "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": 2500000, "txn_time_utc": null}
+    "expected": {"type": "balance_info", "amount_paise": null, "direction": null, "account_last4": "0001", "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": 2500000, "txn_time_utc": null, "time_inferred": null}
   },
   {
     "id": "hdfc-N12-card-declined-1",
     "sender": "HDFCBK",
     "body": "Transaction of Rs.7,777.00 on HDFC Bank Card x0002 at TEST MERCHANT declined due to insufficient balance.",
     "received_at": "2026-01-25T07:00:00Z",
-    "expected": {"type": "card_alert", "amount_paise": 777700, "direction": null, "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST MERCHANT", "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "card_alert", "amount_paise": 777700, "direction": null, "account_last4": "0002", "channel": "debit_card", "counterparty_raw": "TEST MERCHANT", "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
   },
   {
     "id": "hdfc-N13-fraud-advisory-1",
     "sender": "HDFCBK",
     "body": "HDFC Bank never asks for OTP, PIN or card details over a call. Do not share them with anyone. Beware of fraud.",
     "received_at": "2026-01-25T08:00:00Z",
-    "expected": {"type": "fraud_warning", "amount_paise": null, "direction": null, "account_last4": null, "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null}
+    "expected": {"type": "fraud_warning", "amount_paise": null, "direction": null, "account_last4": null, "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
   },
   {
     "id": "hdfc-N14-foreign-card-spend-1",

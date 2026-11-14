@@ -95,6 +95,32 @@ def test_hyphen_and_no_hyphen_forms_share_a_core(variants: tuple[str, ...]) -> N
     assert {r.parse_sender(v)[0] for v in variants} == {variants[0]}
 
 
+@pytest.mark.parametrize(
+    ("address", "expected"),
+    [
+        ("AB-ABCDE-P", ("ABCDE", "P")),  # short core + suffix: promo kept
+        ("AB-ABCD", ("ABCD", "")),
+        ("AB-ABCDEF-S", ("ABCDEF", "S")),
+        ("ABABCDEF", ("ABCDEF", "")),  # no hyphen: length rule, unchanged
+        ("AB-123456", ("123456", "")),
+    ],
+)
+def test_hyphenated_ids_split_on_hyphens(address: str, expected: tuple[str, str]) -> None:
+    assert r.parse_sender(address) == expected
+
+
+def test_short_core_promo_with_hyphens_is_dropped(tmp_path: Path, capsys) -> None:
+    rows = [("AB-ABCDE-P", "Rs 33 promo"), ("AB-ABCDE-T", "Rs 44 debited from A/c XX0001")]
+    xml = write_backup(tmp_path / "h.xml", rows)
+    args = ["--input", str(xml), "--private-dir", str(tmp_path / "p")]
+    out = tmp_path / "out.json"
+    assert r.main([*args, "--output", str(out), "--senders", "ABCDE"]) == 0
+    assert [m["body"] for m in json.loads(out.read_text(encoding="utf-8"))] == [
+        "Rs 44 debited from A/c XX0001"
+    ]
+    assert re.search(r"promotional \(-P\)\s+1\b", capsys.readouterr().out)
+
+
 def test_default_allowlist_matches_after_normalisation() -> None:
     allow = {r.parse_sender(s)[0] for s in r.DEFAULT_SENDERS.split(",")}
     assert len(allow) == 14
@@ -172,6 +198,74 @@ def test_keep_listed_brands_survive(tmp_path: Path) -> None:
 @pytest.fixture
 def redactor(tmp_path: Path) -> r.Redactor:
     return r.Redactor(tmp_path / "private")
+
+
+# --- Bank vocabulary ----------------------------------------------------------
+BANK_WORDING = [
+    (
+        "Spent Rs.33 From HDFC Bank Card x0002 At TEST STORE On 2026-01-01:10:00:00",
+        "From HDFC Bank Card x0002 At PARTY_",
+    ),
+    (
+        "Alert:\nINR.33.00 will be debited on 01/01/2026 from HDFC Bank Card 0002 for TEST CO",
+        "from HDFC Bank Card 0002 for TEST CO",
+    ),
+    (
+        "Biometric authentication! You have enabled your biometric authentication for "
+        "HDFC Bank App.",
+        "Biometric authentication! You have enabled your biometric authentication for "
+        "HDFC Bank App.",
+    ),
+    (
+        "Rs.33 from your HDFC Bank A/c XX0001 for Money Transfer via HDFC Bank Online Banking.",
+        "for Money Transfer via HDFC Bank Online Banking.",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "kept"), BANK_WORDING)
+def test_bank_wording_is_never_pseudonymised(redactor: r.Redactor, body: str, kept: str) -> None:
+    assert kept in redactor.redact(body)
+
+
+@pytest.mark.parametrize(
+    ("raw", "key"),
+    [
+        ("HDFC Bank Card x", "X"),  # leading bank wording dropped, rest too short
+        ("HDFC Bank Debit Card", ""),
+        ("TEST STORE HDFC Bank App", "TEST STORE"),  # bank wording ends a name
+        ("authentication", ""),
+    ],
+)
+def test_name_key_skips_bank_vocabulary(raw: str, key: str) -> None:
+    assert r.name_key(raw) == key
+
+
+def test_stale_map_entries_for_bank_wording_are_ignored(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    private.mkdir()
+    stale = {"HDFC BANK CARD X": "PARTY_001", "AUTHENTICATION": "PARTY_002", "HTTPS": "PARTY_003"}
+    (private / "name_map.json").write_text(json.dumps(stale), encoding="utf-8")
+    red = r.Redactor(private)
+
+    body = "Biometric authentication! See https://example.invalid/a From HDFC Bank Card x0002"
+    out = red.redact(body + " to TEST PAYEE")
+    assert out.startswith("Biometric authentication! See https://example.invalid/")
+    assert "From HDFC Bank Card x0002" in out
+    assert "to PARTY_004" in out  # new token numbers continue after stale ones
+
+
+# --- Links --------------------------------------------------------------------
+def test_link_keeps_scheme_and_host_and_fakes_path(redactor: r.Redactor) -> None:
+    link = "https://1.example.bank.in/TESTBK/a/xYz123?u=99"
+    out = redactor.redact(f"Act:{link} now")
+    fake = re.search(r"Act:(\S+) now", out).group(1)
+
+    assert fake.startswith("https://1.example.bank.in/")
+    assert len(fake) == len(link) and fake != link
+    assert [c for c in fake if not c.isalnum()] == [c for c in link if not c.isalnum()]
+    assert redactor.redact(f"Act:{link} now") == out  # same link, same fake
+    assert redactor.redact("Visit www.example.in today") == "Visit www.example.in today"
 
 
 def test_masked_values_keep_their_shape(redactor: r.Redactor) -> None:

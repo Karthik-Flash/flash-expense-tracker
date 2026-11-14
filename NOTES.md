@@ -18,7 +18,8 @@ Quick reference and progress log. Updated after every task.
 ## Status
 
 Phase 0 (scaffold, closeout, deploy): **deployed and verified**.
-Phase 1, prompt 1 (HDFC template survey): **done**. Next: prompt 2.
+Phase 1, prompts 1 and 1b (HDFC survey, redaction fixes): **done**.
+Next: re-run redaction + re-survey, then the parser prompt.
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
 - [x] Backend `/health`, `/health/db` (`X-Ping-Token`), migration `0001`
@@ -29,16 +30,20 @@ Phase 1, prompt 1 (HDFC template survey): **done**. Next: prompt 2.
 - [ ] Overnight cron check: after 03:30 IST, confirm `heartbeat.last_seen` moved
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
-      ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 38 fake fixtures
-- [ ] Answer the 10 open questions in `docs/templates/hdfc.md`
+      ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 39 fake fixtures
+- [x] All 10 open questions resolved (hdfc.md "Resolved", DECISIONS D-028 to D-037)
+- [x] Redaction fixes: hyphenated sender IDs, `BANK_VOCABULARY`, link paths
+- [ ] Re-run redaction on the real backup, then re-survey (H03, H09, H11, H12
+      are pending re-survey)
 
 ## Your to-do list
 
 1. If not done yet: check cron-job.org history for a 200 around 03:30 IST and
    that `heartbeat.last_seen` moved.
-2. Read the Open questions in [docs/templates/hdfc.md](docs/templates/hdfc.md)
-   and decide (self-transfers, reversals, date-only times, FD liquidation...).
-3. Send Phase 1 prompt 2.
+2. Re-run the redaction (step 3 in "SMS redaction" below) so the sample gets
+   the fixed bank wording and faked link paths. The same private folder keeps
+   every existing token and fake stable.
+3. Re-run the template survey (command below) and tell me it is done.
 
 ## Architecture
 
@@ -296,11 +301,25 @@ gh repo view --web                                # open the repo in the browser
 4. Replace the placeholder PWA icons before launch (UI spec: Phase 3, D-020).
 5. Optional: set Render **Auto-Deploy** to "After CI Checks Pass" so a red CI
    never reaches production.
-6. Redaction over-reach seen in the HDFC survey: the card label ("HDFC Bank
-   Card x..."), "authentication" and the URL scheme were pseudonymised. Fix in
-   a later redaction task (keep-list or stop words), then re-run the sample.
+6. Bank vocabulary covers HDFC wording only. Each new bank's survey should add
+   its fixed phrases to `BANK_VOCABULARY` in `scripts/redact_sms.py`.
 
 ## Log
+
+### 2026-11-14: Phase 1 prompt 1b, redaction fixes and resolved questions
+
+- Sender IDs with hyphens are split on hyphens (prefix, core, S/T/P/G
+  suffix); length rules only for IDs without hyphens. `AB-ABCDE-P` is now
+  core `ABCDE`, promo (D-038).
+- `BANK_VOCABULARY` (29 phrases) is never pseudonymised; stale name-map
+  entries made of bank wording are ignored; links keep scheme and host and
+  get a same-length fake path (D-039). 50 script tests.
+- Your answers recorded: hdfc.md "Resolved" and DECISIONS D-028 to D-037.
+  New type `upcoming_debit`; FD closure is `credit`/`fd`; money types always
+  have `txn_time_utc` (from `received_at` with `time_inferred: true` when the
+  SMS has no time). Fixtures and their test updated.
+- Correction: the fixture file has 39 fixtures (25 observed + 14 not yet
+  seen); the previous entry said 38.
 
 ### 2026-11-14: Phase 1 prompt 1, HDFC template survey
 
@@ -311,7 +330,7 @@ gh repo view --web                                # open the repo in the browser
   foreign_currency 1/4, other_info 3/3.
 - `docs/templates/hdfc.md`: shapes, proposed types, fields, 10 open
   questions, 14 "not yet seen" formats.
-- `backend/tests/fixtures/sms/hdfc.json`: 38 fake fixtures (24 observed
+- `backend/tests/fixtures/sms/hdfc.json`: 39 fake fixtures (25 observed
   shapes + 14 not yet seen), checked by `test_sms_fixtures.py`.
 - Leak scan before commit: no sample digits/VPAs/amounts/tokens below 900 in
   committed files (method in DECISIONS D-027).

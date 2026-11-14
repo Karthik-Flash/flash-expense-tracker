@@ -18,13 +18,13 @@ FIELDS = {
     "reference",
     "balance_paise",
     "txn_time_utc",
+    "time_inferred",
 }
-TYPES = {
-    "debit",
-    "credit",
-    "refund",
+MONEY_TYPES = {"debit", "credit", "refund"}
+TYPES = MONEY_TYPES | {
     "collect_request",
     "mandate",
+    "upcoming_debit",
     "card_alert",
     "balance_info",
     "fraud_warning",
@@ -43,6 +43,7 @@ CHANNELS = {
     "imps",
     "emi",
     "cash",
+    "fd",
 }
 FIXTURES = [
     (path.stem, fx)
@@ -79,6 +80,13 @@ def test_fixture_shape(bank: str, fx: dict) -> None:
     assert exp["direction"] in {"debit", "credit", None}
     assert exp["channel"] in CHANNELS | {None}
     assert exp["account_last4"] is None or re.fullmatch(r"\d{4}", exp["account_last4"])
-    assert exp["txn_time_utc"] is None or is_utc_iso(exp["txn_time_utc"])
+    if exp["type"] in MONEY_TYPES:
+        # Money always has a time: from the message, or received_at when inferred.
+        assert is_utc_iso(exp["txn_time_utc"])
+        assert isinstance(exp["time_inferred"], bool)
+        if exp["time_inferred"]:
+            assert exp["txn_time_utc"] == fx["received_at"]
+    else:
+        assert exp["txn_time_utc"] is None and exp["time_inferred"] is None
     for key in ("account_last4", "counterparty_raw", "reference"):
         assert exp[key] is None or exp[key] in fx["body"], key
