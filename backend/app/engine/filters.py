@@ -9,8 +9,8 @@ import re
 # ponytail: keyword heuristic. "Never share your OTP" warnings inside real
 # transaction alerts are stripped first so those alerts survive.
 OTP_WARNING_RE = re.compile(
-    r"(?:never|do\s*not|don'?t|not\s+to)\s+share\s+(?:your\s+|the\s+|this\s+)?"
-    r"(?:otp|one[\s-]?time[\s-]?password|pin|cvv)",
+    r"(?:(?:never|do\s*not|don'?t|not\s+to)\s+share|never\s+asks?\s+for)\s+"
+    r"(?:your\s+|the\s+|this\s+)?(?:otp|one[\s-]?time[\s-]?password|pin|cvv)",
     re.IGNORECASE,
 )
 OTP_RE = re.compile(r"\b(?:otp|one[\s-]?time[\s-]?password|verification\s+code)\b", re.IGNORECASE)

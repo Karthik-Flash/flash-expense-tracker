@@ -6,5 +6,7 @@
   {"body": "Rs 500 debited from A/c XX1234. Never share your OTP with anyone.", "otp": false},
   {"body": "Spent Rs.33 at TEST STORE. Do not share your OTP, PIN or CVV.", "otp": false},
   {"body": "Sent Rs.33 From HDFC Bank A/C *0001 To TEST", "otp": false},
+  {"body": "HDFC Bank never asks for OTP, PIN or card details over a call.", "otp": false},
+  {"body": "We never ask for your OTP. Your OTP is 123456", "otp": true},
   {"body": "Your PIN reminder: do not share the pin", "otp": false}
 ]
