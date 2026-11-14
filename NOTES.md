@@ -295,13 +295,14 @@ backend\.venv\Scripts\python.exe scripts\redact_sms.py --private-dir D:\FlashPri
 # On the 288-message sample
 backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input data\sample\redacted_sample.json
 
-# On the full data: redact everything (no --limit) into a separate file, check it, then measure
-backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --output data\sample\redacted_full.json --verify
-backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input data\sample\redacted_full.json
+# On the full data: redact everything (no --limit) into the PRIVATE folder, check it, then measure
+backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --output D:\FlashPrivate\private\redacted_full.json --verify
+backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input D:\FlashPrivate\private\redacted_full.json
 ```
 
-`redacted_full.json` stays in `data\sample\` (gitignored). Only run the
-coverage step if the first command ends with `Leaks: 0`.
+The full redacted file never goes in the repo, not even in gitignored
+`data\` (D-051). Only run the coverage step if the first command ends with
+`Leaks: 0`.
 
 ### Import pipeline (you run these; agents never touch Supabase or real data)
 

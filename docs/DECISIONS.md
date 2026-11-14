@@ -373,3 +373,11 @@ dashboard), so a red CI never reaches production. Every deploy runs
 `alembic upgrade head` in the build (D-018), so migration 0002 reaches
 Supabase on the first deploy after the merge.
 
+## D-051 The full redacted export stays in the private folder (2026-11-14)
+
+Only the 288-message sample (`data/sample/redacted_sample.json`) is shared
+with agents and the planner. The full redacted export, which holds every
+message, is written to `D:\FlashPrivate\private\redacted_full.json` and read
+from there by `scripts/parse_coverage.py`. It never goes in the repo folder,
+not even in gitignored `data/`. Extends D-015.
+
