@@ -402,3 +402,77 @@ def test_list_counterparties_prints_names_and_upi_ids_only(tmp_path: Path, capsy
     assert re.search(r"\s1\s+rahul\.k@okaxis", out)
     assert "secret" not in out.lower() and "Rs 10" not in out
     assert not (tmp_path / "p" / "redaction.key").exists()  # listing writes nothing
+
+
+# --- Always-redact and --verify ----------------------------------------------
+def private_with_always(tmp_path: Path, *entries: str) -> Path:
+    private = tmp_path / "private"
+    private.mkdir()
+    lines = "# own and family names, own phone\n" + "\n".join(entries) + "\n"
+    (private / "always_redact.txt").write_text(lines, encoding="utf-8")
+    return private
+
+
+def verify_only(private: Path, out: Path) -> int:
+    return r.main(["--private-dir", str(private), "--output", str(out), "--verify"])
+
+
+def test_always_redact_replaces_names_in_any_position(tmp_path: Path, capsys) -> None:
+    private = private_with_always(tmp_path, "Asha", "+91 98765 43210")
+    rows = [("VM-HDFCBK", "Rs 33 debited. Thanks Asha, call 98765-43210 now")]
+    data = run(write_backup(tmp_path / "a.xml", rows), private, tmp_path / "out.json")
+
+    body = data[0]["body"]
+    names = json.loads((private / "name_map.json").read_text(encoding="utf-8"))
+    assert f"Thanks {names['ASHA']}, call" in body and "asha" not in body.lower()
+    phone = re.search(r"call (\S+) now", body).group(1)
+    assert re.fullmatch(r"[6-9]\d{9}", phone) and phone != "9876543210"
+    out = capsys.readouterr().out
+    assert re.search(r"Always-redact final-pass replacements: [12]$", out, re.M)
+    assert "asha" not in out.lower()
+
+
+def test_clean_run_with_verify_reports_zero_leaks(tmp_path: Path, capsys) -> None:
+    private = private_with_always(tmp_path, "Asha")
+    rows = [
+        ("VM-HDFCBK", "Sent Rs.33 to RAHUL KUMAR via UPI Ref 612345678901 VPA test.user@okaxis"),
+        ("VM-HDFCBK", "Dear Asha, Rs 44 credited"),
+    ]
+    args = ["--input", str(write_backup(tmp_path / "c.xml", rows)), "--private-dir", str(private)]
+    out = tmp_path / "out.json"
+    assert r.main([*args, "--output", str(out), "--senders", "HDFCBK", "--verify"]) == 0
+    printed = capsys.readouterr().out
+    assert "Leaks: 0" in printed and "LEAK " not in printed
+
+
+def test_verify_finds_planted_leaks_and_prints_only_tokens(tmp_path: Path, capsys) -> None:
+    private = private_with_always(tmp_path, "Asha")
+    rows = [
+        ("VM-HDFCBK", "Sent Rs.33 to RAHUL KUMAR via UPI Ref 612345678901 VPA test.user@okaxis"),
+        ("VM-HDFCBK", "Rs 44 credited to A/c XX0001"),
+        ("VM-HDFCBK", "Rs 55 paid to PRIYA via UPI"),
+    ]
+    out = tmp_path / "out.json"
+    run(write_backup(tmp_path / "p.xml", rows), private, out)
+    capsys.readouterr()
+    names = json.loads((private / "name_map.json").read_text(encoding="utf-8"))
+
+    data = json.loads(out.read_text(encoding="utf-8"))
+    data[1]["body"] += " ashakumar"  # joined word: whole-word redaction cannot catch it
+    data[2]["body"] += " Rahul Kumar, ref 612345678901, test.user@okaxis, Priya"
+    out.write_text(json.dumps(data), encoding="utf-8")
+
+    assert verify_only(private, out) == 1
+    printed = capsys.readouterr().out
+    assert f"LEAK {names['ASHA']} in message 2" in printed
+    assert f"LEAK {names['RAHUL KUMAR']} in message 3" in printed
+    assert "LEAK REFERENCE in message 3" in printed and "LEAK UPI_ID in message 3" in printed
+    assert "possible (single word): 1" in printed  # PRIYA is a single-word map entry
+    assert "Leaks: 4" in printed
+    for real in ("asha", "rahul", "kumar", "priya", "612345678901", "test.user"):
+        assert real not in printed.lower()
+
+
+def test_verify_alone_needs_an_existing_output(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        verify_only(tmp_path / "p", tmp_path / "missing.json")
