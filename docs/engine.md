@@ -88,7 +88,7 @@ body      --normalise-----> one line, single spaces
 
 ## Parser versions
 
-Each bank module has `PARSER_VERSION` (e.g. `hdfc-1.1.0`), stored on every
+Each bank module has `PARSER_VERSION` (e.g. `hdfc-1.1.1`), stored on every
 result so stored messages can be re-parsed when a parser improves. Bump it
 in the same commit as any change that can alter a result:
 

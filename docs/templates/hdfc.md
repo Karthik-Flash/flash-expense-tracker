@@ -154,7 +154,9 @@ TnC
 - **Fields:** amount (`INR` with no space), counterparty_raw (`For` line),
   date (dd/mm/yyyy), account_last4 (debit card), reference (SI Hub ID,
   alphanumeric).
-- **Notes:** Recurring card mandate executed. Variant of H13.
+- **Notes:** Recurring card mandate executed. Variant of H13. Hint
+  `mandate_reference` (hdfc-1.1.1): the SI Hub ID repeats every month, so
+  it is never a dedupe key (D-046).
 
 ### H09 · sh_5791118d · 1 message · HDFCBK
 
@@ -221,7 +223,7 @@ Not You? To Block+Reissue Call {PHONE}/SMS BLOCK DC {ACCT} to {PHONE}
 
 - **Type:** debit · **Channel:** e_mandate
 - **Fields:** as H08; reference label is `Mandate ID`.
-- **Notes:** Newer variant of H08.
+- **Notes:** Newer variant of H08. Hint `mandate_reference`, as H08.
 
 ### H14 · sh_5208991c · 1 message · HDFCBK
 

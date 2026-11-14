@@ -16,7 +16,7 @@ from app.engine.parsers.base import AMOUNT, MASK, BankParser, Template
 # Bump on every change that can alter the result for some message:
 # MAJOR when result fields change meaning, MINOR when a template is added
 # (more messages parse), PATCH when a template fix changes values.
-PARSER_VERSION = "hdfc-1.1.0"
+PARSER_VERSION = "hdfc-1.1.1"
 
 _PARTS = {
     "<AMT>": f"(?P<amount>{AMOUNT})",
@@ -113,6 +113,7 @@ TEMPLATES = (
         ),
         "debit",
         "e_mandate",
+        hints=("mandate_reference",),  # the ref is the mandate's, same every month
     ),
     # H09 sh_5791118d: biometric login enabled (the word slot varies)
     Template(
@@ -163,6 +164,7 @@ TEMPLATES = (
         ),
         "debit",
         "e_mandate",
+        hints=("mandate_reference",),
     ),
     # H14 sh_5208991c: fixed deposit closed early (own money in; Reconcile)
     Template(

@@ -60,6 +60,8 @@ def test_every_template_has_a_fixture() -> None:
     ("template_id", "hints"),
     [
         ("N02", ("card_bill_payment",)),
+        ("H08", ("mandate_reference",)),
+        ("H13", ("mandate_reference",)),
         ("H17", ("autopay",)),
         ("H19", ("mandate_cancelled",)),
         ("H20", ("fd_closure",)),

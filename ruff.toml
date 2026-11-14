@@ -7,4 +7,4 @@ select = ["E", "W", "F", "I", "UP", "B", "SIM"]
 ignore = ["SIM905"]
 
 [lint.isort]
-known-first-party = ["app"]
+known-first-party = ["app", "tests"]

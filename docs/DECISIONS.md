@@ -324,3 +324,52 @@ limits, KYC, login alerts) without one template per notice. HDFC moves to
 whatever its digit count (other references need 6+ digits), keeping length
 and character classes, and treats the name after "added a payee" as a
 counterparty position. Both were gaps found in the full-data run.
+
+## D-046 Dedupe rules (2026-11-14)
+
+Raw messages dedupe on `content_hash = sha256(sender_core, body,
+received_at epoch ms)`, unique per owner. The source is excluded, so the same
+SMS arriving later by live SMS is still a duplicate. Money results become
+transactions keyed by `sha256("ref", bank, direction, amount_paise,
+reference)` when they carry a per-payment reference (account excluded, so
+email and statements can merge later), else by `sha256("raw",
+content_hash)`. A mandate ID is not a per-payment reference: it repeats on
+every monthly charge, so results with the engine hint `mandate_reference`
+(HDFC H08, H13; `hdfc-1.1.1`) use the raw key, or two same-amount
+subscription charges would collapse into one. There is no fuzzy merging.
+Different directions never merge. Details: `docs/data-model.md`.
+
+## D-047 Fuzzy duplicates are recorded, merged in Reconcile (2026-11-14)
+
+Same owner, bank, `account_last4`, direction and amount within 10 minutes,
+without a shared reference, gives a `duplicate_candidates` row (status
+`open`). Phase 2 never merges these. The common case is an AutoPay success
+SMS plus the card "Spent" SMS for one charge; merging them, and every other
+cross-message judgement, moves to Reconcile (Phase 3).
+
+## D-048 Real data lives in Supabase; AI tools never connect to it (2026-11-14)
+
+Supabase Postgres holds the real imported data. It is protected by the Data
+API being off, row level security enabled on every pipeline table with no
+policies (the app connects as table owner, so RLS is defence in depth), and
+the database password, which lives only in `backend/.env` and Render.
+AI tools never connect to it and never run the importer on real data; they
+work from synthetic fixtures and the redacted sample only. Tests force a
+throwaway SQLite URL, and CI uses a disposable Postgres container.
+
+## D-049 Never-stored messages and the OTP rule (2026-11-14)
+
+The importer stores only senders in the engine's bank registry, including
+banks without a parser yet (a new parser then needs only `reparse`). OTP,
+promotional (TRAI suffix P) and MMS messages are never stored. The OTP rule
+lives in `app/engine/filters.py` and in standalone `scripts/redact_sms.py`;
+one shared case table (`backend/tests/fixtures/otp_cases.json`) keeps them
+identical. Advisories like "never asks for OTP" are not OTPs.
+
+## D-050 Render deploys only after CI passes (2026-11-14)
+
+Render Auto-Deploy is set to "After CI Checks Pass" (set by hand in the
+dashboard), so a red CI never reaches production. Every deploy runs
+`alembic upgrade head` in the build (D-018), so migration 0002 reaches
+Supabase on the first deploy after the merge.
+
