@@ -52,7 +52,7 @@ def reparse(
         reparse_one(session, owner_id, session.get(RawMessage, raw_id), counts)
         if n % commit_every == 0:
             session.flush() if dry_run else session.commit()
-        if progress:
+        if progress and n % 5000 == 0:
             progress(n)
     if dry_run:
         session.rollback()

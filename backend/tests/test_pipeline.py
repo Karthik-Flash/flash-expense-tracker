@@ -401,3 +401,14 @@ def test_candidates_are_recorded_not_merged(factory: sessionmaker, tmp_path: Pat
     with factory() as s:
         pair = s.scalars(select(DuplicateCandidate)).one()
     assert (pair.status, pair.rule) == ("open", "same_amount_10min") and pair.txn_a < pair.txn_b
+
+
+def test_reparse_reports_progress_every_5000(
+    factory: sessionmaker, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = [("VM-SBIBNK-S", f"Rs {i} debited", WHEN) for i in range(1, 5002)]
+    run_import(factory, write_backup(tmp_path / "sbi.xml", rows))
+    monkeypatch.setitem(PARSERS, "SBI", dataclasses.replace(HDFC, bank="SBI", version="sbi-0.0.1"))
+    seen: list[int] = []
+    assert run_reparse(factory, progress=seen.append).reparsed == 5001
+    assert seen == [5000]
