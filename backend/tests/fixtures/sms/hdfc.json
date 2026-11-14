@@ -175,6 +175,76 @@
     "expected": {"type": "mandate", "amount_paise": 11100, "direction": null, "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST STREAMING", "reference": "test0000000000000000000000000001@ok", "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
   },
   {
+    "id": "hdfc-H16-neft-deducted-1",
+    "sender": "HDFCBK",
+    "body": "Amt Deducted!\nRs.8,888.00 from your HDFC Bank A/c XX0001 for NEFT transaction via HDFC Bank Online Banking\nNot you?Call 18000000001/SMS BLOCK OB to 9000000001\n",
+    "received_at": "2026-01-15T05:00:00Z",
+    "expected": {"type": "debit", "amount_paise": 888800, "direction": "debit", "account_last4": "0001", "channel": "neft", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": "2026-01-15T05:00:00Z", "time_inferred": true}
+  },
+  {
+    "id": "hdfc-H17-upi-autopay-sent-1",
+    "sender": "HDFCBK",
+    "body": "UPI Mandate:\nSent Rs.666.00\nfrom HDFC Bank A/c 0001\nTo TEST STREAMING\n15/01/26\nRef 000000000020\nNot You? Call 18000000001/SMS BLOCK UPI to 9000000001\n",
+    "received_at": "2026-01-15T06:00:00Z",
+    "expected": {"type": "debit", "amount_paise": 66600, "direction": "debit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST STREAMING", "reference": "000000000020", "balance_paise": null, "txn_time_utc": "2026-01-15T06:00:00Z", "time_inferred": true}
+  },
+  {
+    "id": "hdfc-H17-upi-autopay-sent-2",
+    "sender": "HDFCBN",
+    "body": "UPI Mandate:\nSent Rs.6,666.00\nfrom HDFC Bank A/c 000000000001\nTo PERSON_901\n2026-01-16\nRef 000000000021\nNot You? Call 18000000001/SMS BLOCK UPI to 9000000001\n",
+    "received_at": "2026-01-16T06:00:00Z",
+    "expected": {"type": "debit", "amount_paise": 666600, "direction": "debit", "account_last4": "0001", "channel": "upi", "counterparty_raw": "PERSON_901", "reference": "000000000021", "balance_paise": null, "txn_time_utc": "2026-01-16T06:00:00Z", "time_inferred": true}
+  },
+  {
+    "id": "hdfc-H18-card-autopay-active-1",
+    "sender": "HDFCBK",
+    "body": "AutoPay Active!\nFor TEST STREAMING\nStarting:16/01/2026\nMandate ID:TESTMANDATE0001\nOn HDFC Bank Card x0002\nManage: https://example.invalid/m\nTnC\n",
+    "received_at": "2026-01-16T07:00:00Z",
+    "expected": {"type": "mandate", "amount_paise": null, "direction": null, "account_last4": "0002", "channel": "e_mandate", "counterparty_raw": "TEST STREAMING", "reference": "TESTMANDATE0001", "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
+  },
+  {
+    "id": "hdfc-H19-upi-mandate-cancelled-1",
+    "sender": "HDFCBK",
+    "body": "Update:\nRs.444.00 UPI mandate to TEST STREAMING has been cancelled from HDFC Bank A/c x0001.\nUMN: test0000000000000000000000000002@ok\n",
+    "received_at": "2026-01-17T06:00:00Z",
+    "expected": {"type": "mandate", "amount_paise": 44400, "direction": null, "account_last4": "0001", "channel": "upi", "counterparty_raw": "TEST STREAMING", "reference": "test0000000000000000000000000002@ok", "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
+  },
+  {
+    "id": "hdfc-H20-fd-closure-1",
+    "sender": "HDFCBK",
+    "body": "Alert!\nYour FD No.XXXXXXXXXX0005 is prematurely liquidated and funds are transferred to your HDFC Bank A/c XX0001.\nNot you?Call 18000000001\n",
+    "received_at": "2026-01-17T07:00:00Z",
+    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": "0005", "channel": "fd", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
+  },
+  {
+    "id": "hdfc-H21-mf-order-1",
+    "sender": "HDFCBK",
+    "body": "HDFC Bank MF a/c - XXXX0006. You have placed a SUBSCRIPTION order in TEST EQUITY FUND for Rs.3,333.00 on 17-01-26.",
+    "received_at": "2026-01-17T08:00:00Z",
+    "expected": {"type": "other_info", "amount_paise": 333300, "direction": null, "account_last4": "0006", "channel": null, "counterparty_raw": "TEST EQUITY FUND", "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
+  },
+  {
+    "id": "hdfc-H_INFO-upi-activated-1",
+    "sender": "HDFCBK",
+    "body": "UPI is now active on your HDFC Bank A/c XX0001.\nNot you? Call 18000000001\n",
+    "received_at": "2026-01-18T06:00:00Z",
+    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": null, "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
+  },
+  {
+    "id": "hdfc-H_INFO-card-limit-1",
+    "sender": "HDFCBN",
+    "body": "Update! Online usage limit on your HDFC Bank Debit Card 0002 has been changed.\nNot you? Call 18000000001\n",
+    "received_at": "2026-01-18T07:00:00Z",
+    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": null, "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
+  },
+  {
+    "id": "hdfc-H_INFO-login-alert-1",
+    "sender": "HDFCBK",
+    "body": "Login alert! Your HDFC Bank NetBanking was accessed on 18-01-26 at 10:15 IST.\nNot you? Call 18000000001\n",
+    "received_at": "2026-01-18T08:00:00Z",
+    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": null, "channel": null, "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
+  },
+  {
     "id": "hdfc-N01-credit-card-spend-1",
     "sender": "HDFCBK",
     "body": "Spent Rs.1,499 On HDFC Bank Card 0003 At TEST MERCHANT On 2026-01-20:20:15:00 Not You? To Block+Reissue Call 18000000001/SMS BLOCK CC 0003 to 9000000001",

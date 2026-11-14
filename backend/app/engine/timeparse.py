@@ -17,6 +17,8 @@ DATETIME_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2}):(\d{2}):(\d{2}):(\d{2})")
 NUMERIC_DATE_RE = re.compile(r"(\d{2})([-/])(\d{2})\2(\d{2}|\d{4})")
 # 19-OCT-2026, 18-JAN-26, 12-Nov-26
 MONTH_DATE_RE = re.compile(r"(\d{2})-([A-Za-z]{3})-(\d{2}|\d{4})")
+# 2026-01-17 (year first)
+ISO_DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 
 
 def _year(text: str) -> int:
@@ -25,6 +27,8 @@ def _year(text: str) -> int:
 
 def parse_date(text: str) -> date:
     """Day-first date in any catalogued format. Raises ValueError if invalid."""
+    if m := ISO_DATE_RE.fullmatch(text):
+        return date(int(m[1]), int(m[2]), int(m[3]))
     if m := NUMERIC_DATE_RE.fullmatch(text):
         return date(_year(m[4]), int(m[3]), int(m[1]))
     if m := MONTH_DATE_RE.fullmatch(text):
