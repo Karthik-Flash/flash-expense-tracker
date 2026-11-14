@@ -102,3 +102,12 @@ def test_candidate_rule(change: dict, expected: bool) -> None:
 
 def test_shared_reference_is_not_a_candidate() -> None:
     assert not is_candidate(txn(reference="r1"), txn(reference="r1"))
+
+
+def test_mandate_reference_never_merges_monthly_charges() -> None:
+    """AutoPay SMS carry the mandate ID: same every month, so it is not a payment key."""
+    charge = dataclasses.replace(MONEY, reference="TESTMANDATE1", hints=("mandate_reference",))
+    assert transaction_key(charge, "jan") != transaction_key(charge, "feb")
+    assert transaction_key(charge, "jan") == transaction_key(
+        dataclasses.replace(charge, reference=None), "jan"
+    )

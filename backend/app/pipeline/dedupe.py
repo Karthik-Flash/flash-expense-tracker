@@ -5,8 +5,9 @@
   still a duplicate.
 - Transaction level (money results only): with a reference, the key is
   ("ref", bank, direction, amount, reference), without the account so email
-  and statements can merge later; without one, ("raw", content_hash). No
-  fuzzy merging.
+  and statements can merge later; without one, or when the reference is a
+  mandate ID (hint "mandate_reference"), ("raw", content_hash). No fuzzy
+  merging.
 - Fuzzy candidates are only recorded, never merged: Reconcile decides.
 """
 
@@ -20,6 +21,9 @@ SEP = "\x1f"  # unit separator: cannot occur in sender IDs, never ambiguous
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 CANDIDATE_WINDOW = timedelta(minutes=10)
 CANDIDATE_RULE = "same_amount_10min"
+# Engine hint: the reference identifies a mandate, not one payment (it repeats
+# every month), so it must not merge charges. Such results use the raw key.
+MANDATE_REFERENCE = "mandate_reference"
 
 
 def _sha(*parts: object) -> str:
@@ -41,7 +45,7 @@ def transaction_key(parsed: ParsedMessage, raw_hash: str) -> str | None:
     """Dedupe key, or None when the result creates no transaction."""
     if not parsed.is_money or not parsed.amount_paise or parsed.amount_paise <= 0:
         return None
-    if parsed.reference:
+    if parsed.reference and MANDATE_REFERENCE not in parsed.hints:
         return _sha("ref", parsed.bank, parsed.direction, parsed.amount_paise, parsed.reference)
     return _sha("raw", raw_hash)
 
