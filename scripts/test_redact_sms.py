@@ -67,16 +67,57 @@ def test_input_private_dir_and_output_are_required(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("address", "expected"),
     [
-        ("VM-HDFCBK", ("HDFCBK", "")),
-        ("AD-HDFCBK-S", ("HDFCBK", "S")),
-        ("JD-ICICIT-T", ("ICICIT", "T")),
-        ("VK-SBIUPI-P", ("SBIUPI", "P")),
-        ("HDFCBK", ("HDFCBK", "")),
-        ("+919876543210", ("+919876543210", "")),
+        ("JXSBIINBS", ("SBIINB", "S")),  # 9 chars: prefix + core + suffix
+        ("vmhdfcbkp", ("HDFCBK", "P")),  # 9 chars, lowercase input
+        ("VKSBIBNK", ("SBIBNK", "")),  # 8 chars: prefix + core
+        ("CPSBIBNK", ("SBIBNK", "")),
+        ("HDFCBKT", ("HDFCBK", "T")),  # 7 chars: core + suffix
+        ("SBIBNK", ("SBIBNK", "")),  # 6 chars: already a core
+        ("CP388558", ("388558", "")),  # numeric short code with prefix
+        ("388558", ("388558", "")),
+        ("ABC123@RBM.GOOG", ("ABC123@RBM.GOOG", "")),  # RCS ID: unchanged
+        ("+919876543210", ("+919876543210", "")),  # phone number: unchanged
     ],
 )
-def test_parse_sender(address: str, expected: tuple[str, str]) -> None:
+def test_parse_sender_length_rules(address: str, expected: tuple[str, str]) -> None:
     assert r.parse_sender(address) == expected
+
+
+@pytest.mark.parametrize(
+    "variants",
+    [
+        ("SBIBNK", "VKSBIBNK", "VMSBIBNK", "JKSBIBNK", "CPSBIBNK", "VK-SBIBNK", "VM-SBIBNK-S"),
+        ("CBSSBI", "VMCBSSBI", "JKCBSSBI", "AXCBSSBI", "AX-CBSSBI", "AX-CBSSBI-T"),
+        ("SBIINB", "JXSBIINBS", "JX-SBIINB-S", "SBIINB-S", "SBIINBS"),
+    ],
+)
+def test_hyphen_and_no_hyphen_forms_share_a_core(variants: tuple[str, ...]) -> None:
+    assert {r.parse_sender(v)[0] for v in variants} == {variants[0]}
+
+
+def test_default_allowlist_matches_after_normalisation() -> None:
+    allow = {r.parse_sender(s)[0] for s in r.DEFAULT_SENDERS.split(",")}
+    assert len(allow) == 14
+    for raw in ("VMSBIBNK", "AX-CBSSBI-T", "JXSBIINBS", "JM-HDFCBN", "VKPHONPE"):
+        assert r.is_allowlisted(r.parse_sender(raw)[0], allow), raw
+    for raw in ("VMZERODHA", "AD-NSEIND", "CP388558", "+919876543210"):
+        assert not r.is_allowlisted(r.parse_sender(raw)[0], allow), raw
+
+
+def test_rcs_ids_are_never_allowlisted() -> None:
+    core = r.parse_sender("HDFCBK@RBM.GOOG")[0]
+    assert not r.is_allowlisted(core, {core, "HDFCBK"})
+
+
+def test_promo_dropped_in_both_hyphen_forms(tmp_path: Path, capsys) -> None:
+    rows = [
+        ("VMHDFCBKP", "Rs 1 promo no hyphen"),
+        ("VM-HDFCBK-P", "Rs 2 promo hyphen"),
+        ("VMHDFCBKS", "Rs 3 debited from A/c XX1234"),
+    ]
+    data = run(write_backup(tmp_path / "p.xml", rows), tmp_path / "pd", tmp_path / "out.json")
+    assert [m["body"] for m in data] == ["Rs 3 debited from A/c XX1234"]
+    assert re.search(r"promotional \(-P\)\s+2\b", capsys.readouterr().out)
 
 
 def test_otp_detection_keeps_alerts_with_share_warning() -> None:
@@ -234,6 +275,8 @@ def test_list_senders_prints_counts_but_no_bodies_or_numbers(tmp_path: Path, cap
         [
             ("VM-HDFCBK", "secret body one"),
             ("AD-HDFCBK-P", "secret body two"),
+            ("VMHDFCBK", "secret body five"),
+            ("VM-HDFCBK", "secret body six"),
             ("JD-NEWBNK-T", "secret body three"),
             ("+919876543210", "secret body four"),
         ],
@@ -241,8 +284,9 @@ def test_list_senders_prints_counts_but_no_bodies_or_numbers(tmp_path: Path, cap
     args = ["--input", str(xml), "--private-dir", str(tmp_path / "p"), "--list-senders"]
     assert r.main([*args, "--senders", "HDFCBK"]) == 0
     out = capsys.readouterr().out
-    assert re.search(r"HDFCBK\s+2\s+1\s+yes", out)
-    assert re.search(r"NEWBNK\s+1\s+0", out)
+    # MESSAGES PROMO VARIANTS: 4 messages, 1 promo, 3 distinct raw IDs merged.
+    assert re.search(r"HDFCBK\s+4\s+1\s+3\s+yes", out)
+    assert re.search(r"NEWBNK\s+1\s+0\s+1\s*$", out, re.M)
     assert "secret" not in out and "9876543210" not in out
     assert "1 messages from 1 numbers" in out
 

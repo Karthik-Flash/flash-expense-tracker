@@ -153,3 +153,22 @@ and 03:28, failure alerts off. "Flash DB heartbeat": `GET /health/db` with the
 The live service `flash-expense-tracker` was created in the Render dashboard,
 not from the Blueprint. `infra/render.yaml` mirrors its settings and must be
 updated whenever the dashboard settings change.
+
+## D-025 Sender ID normalisation (2026-11-14)
+
+Real exports show operator prefixes without hyphens, so one bank appears
+under many IDs (`SBIBNK`, `VKSBIBNK`, `CPSBIBNK`, `JXSBIINBS`, ...).
+`redact_sms.py` reduces every ID to its core before matching, counting and
+promo detection: uppercase, drop hyphens; 9 chars ending S/T/P/G drop the
+2-letter prefix and the suffix; 8 chars drop the prefix; 7 chars ending
+S/T/P/G drop the suffix; numeric short codes drop a 2-letter prefix
+(`CP388558` -> `388558`); anything else (RCS IDs like `...@RBM.GOOG`, phone
+numbers) stays unchanged and is never allowlisted. Suffix P (promotional) is
+dropped in both forms.
+
+## D-026 Sender allowlist as data minimisation (2026-11-14)
+
+The default allowlist is banks and UPI only: HDFCBK, HDFCBN, SBIBNK, CBSSBI,
+SBIUPI, SBIINB, SBYONO, SBIPSG, ICICIT, AXISBK, KOTAKM, YESBNK, DOPBNK,
+PHONPE. Investment, broker and exchange senders are deliberately excluded
+until Phase 6, so the sample holds only what spending analysis needs.
