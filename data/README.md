@@ -23,9 +23,12 @@ Run these yourself, from the repo root, in PowerShell.
    backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --list-senders
    ```
 
-   Add missing bank, card, UPI or wallet IDs to `DEFAULT_SENDERS` in
-   `scripts/redact_sms.py`, or pass `--senders ID1,ID2,...` (this replaces
-   the default list).
+   Senders are grouped by their normalised core: `VKSBIBNK`, `VM-SBIBNK-S`
+   and `SBIBNK` all count as `SBIBNK`. `VARIANTS` shows how many raw IDs were
+   merged. The allowlist is banks and UPI only (data minimisation; brokers,
+   exchanges and investment apps stay out until Phase 6). To add a bank, put
+   its core in `DEFAULT_SENDERS` in `scripts/redact_sms.py`, or pass
+   `--senders CORE1,CORE2,...` (this replaces the default list).
 
 2. See which counterparties will be pseudonymised (names and UPI IDs with
    counts, no message text). Everything not marked `yes` becomes a token:

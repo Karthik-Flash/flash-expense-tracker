@@ -245,6 +245,9 @@ backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\r
 backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --output data\sample\redacted_sample.json --limit 50
 ```
 
+- `--list-senders` groups IDs by normalised core (`VKSBIBNK`, `VM-SBIBNK-S`
+  -> `SBIBNK`); `VARIANTS` = raw IDs merged. Allowlist = banks and UPI only
+  (`DEFAULT_SENDERS`, 14 cores). Add a bank by its core.
 - Keep a public brand: add it to `scripts\keep_names.txt` (committed).
 - Keep something private: add it to `D:\FlashPrivate\private\keep_names.txt`.
 - Back up `D:\FlashPrivate\private\redaction.key` and `name_map.json`.
@@ -282,6 +285,18 @@ gh repo view --web                                # open the repo in the browser
    never reaches production.
 
 ## Log
+
+### 2026-11-14: Sender ID normalisation and allowlist
+
+- Your `--list-senders` run showed one bank under many IDs (no-hyphen
+  prefixes like `VKSBIBNK`, 9-char forms like `JXSBIINBS`). Every ID is now
+  reduced to its core before matching, counting and promo detection
+  (rules: DECISIONS D-025). Promo suffix P is dropped with or without hyphens.
+  `...@RBM.GOOG` IDs are never allowlisted.
+- `--list-senders` adds a `VARIANTS` column.
+- Default allowlist is now 14 bank/UPI cores (D-026, data minimisation).
+- Commands unchanged. Re-run `--list-senders` to check the grouping, then
+  continue with `--list-counterparties`. 28 script tests.
 
 ### 2026-11-13: Phase 0 deploy (done by hand)
 
