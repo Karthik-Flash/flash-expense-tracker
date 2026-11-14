@@ -17,11 +17,11 @@ Quick reference and progress log. Updated after every task.
 
 ## Status
 
-Phase 0 (scaffold, closeout, deploy): **deployed and verified**.
-Phase 1, prompts 1, 1b, 1c, 2, 3 (HDFC survey, redaction fixes, leak check,
-HDFC parser engine, full-data gaps): **done**.
-Phase 2 Part A (schema, SMS import pipeline, dedupe, reparse, CLI): **built,
-CI green**. Next: you run the real import (to-do list), then "LOCK IN".
+**Phase 0-2 complete** (12-14 Nov 2026): scaffold and deploy, redaction,
+HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
+Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
+`phase-1-done`, `phase-2-done`. Next: Phase 3 ([docs/PLAN.md](docs/PLAN.md)).
+New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
 - [x] Backend `/health`, `/health/db` (`X-Ping-Token`), migration `0001`
@@ -29,7 +29,7 @@ CI green**. Next: you run the real import (to-do list), then "LOCK IN".
 - [x] `scripts/redact_sms.py`: default-deny, keep-list, HMAC fakes
 - [x] Agent deny rules: `D:\FlashPrivate\`, every `.env`, `*.xml` outside `mobile/`
 - [x] Supabase, Render, Vercel, cron-job.org set up and tested (13 Nov 2026)
-- [ ] Overnight cron check: after 03:30 IST, confirm `heartbeat.last_seen` moved
+- [ ] Overnight cron check on the new schedule (first night 15 Nov, D-052)
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -43,26 +43,23 @@ CI green**. Next: you run the real import (to-do list), then "LOCK IN".
 - [x] Full-data coverage (764 HDFC): 683 parsed, 44 foreign, 37 no_template
 - [x] Gaps closed (`hdfc-1.1.0`): templates H16-H21, `H_INFO` fallback for
       amount-free notices, redaction of Mandate/SI Hub IDs and payee names
-- [ ] Re-run redaction and full-data coverage with the new rules (to-do list)
+- [x] Full data on `hdfc-1.1.1`: 764 HDFC messages, 720 parsed, 44 foreign,
+      0 no_template (from the real import)
 - [x] Phase 2 Part A: migration `0002` (6 tables, RLS on Postgres), importer,
       dedupe, reparse, `python -m app.cli` ([docs/data-model.md](docs/data-model.md));
       invariants I1-I9 tested on SQLite and Postgres 17 in CI
-- [ ] Real import on Supabase (your commands, to-do list item 3)
+- [x] Real import on Supabase (14 Nov): 917 raw, 678 transactions,
+      re-import 0 new, reparse dry run 0
 
 ## Your to-do list
 
-1. If not done yet: check cron-job.org history for a 200 around 03:30 IST and
-   that `heartbeat.last_seen` moved.
-2. Redaction rules changed (Mandate/SI Hub IDs, payee names), so refresh
-   both files: the STANDARD sample command under "SMS redaction" and the two
-   full-data commands under "Parser coverage". Each must end with
-   `Leaks: 0`. Expected full-data result: 0 `no_template` (the 15 messages
-   of the six new shapes parse; the remaining notices become `H_INFO`).
-   Paste the coverage output into the chat (counts and shapes only).
-3. Real import, from `backend\` (uses `DATABASE_URL` in `backend\.env`, i.e.
-   Supabase). Run in this order; the commands are under "Import pipeline"
-   below: migrate, dry run, import, re-import, reparse dry run, stats. Send
-   the stats output (counts only) in your "LOCK IN" message.
+1. Morning of 15 Nov: cron-job.org "Flash DB heartbeat" history should show
+   a failed 03:30 run and a 200 at 03:32 or later, and `heartbeat.last_seen`
+   should have moved (D-052).
+2. If `data\sample\redacted_full.json` exists from an earlier run, delete it.
+   The full file now lives in `D:\FlashPrivate\private\` (D-051).
+3. Optional: refresh the sample with the newer redaction rules (STANDARD
+   sample command under "SMS redaction"; must end with `Leaks: 0`).
 
 ## Architecture
 
@@ -74,39 +71,41 @@ CI green**. Next: you run the real import (to-do list), then "LOCK IN".
                                    | 1. HTTPS: load the app
                                    v
   +-----------------------------------------------------+
-  | Vercel  (global CDN)                                 |
-  | https://flash-expense-tracker.vercel.app             |
-  | Static PWA built from frontend/                      |
-  | VITE_API_URL baked in at build time                  |
+  | Vercel  (global CDN)                                |
+  | https://flash-expense-tracker.vercel.app            |
+  | Static PWA built from frontend/                     |
+  | VITE_API_URL baked in at build time                 |
   +-----------------------------------------------------+
                                    |
                                    | 2. fetch(VITE_API_URL + "/health")
                                    |    from your browser, cross-origin
                                    v
-  +-----------------------------------------------------+        3. GET /health (03:27, 03:28 IST)
-  | Render  (Free web service, Singapore)                | <----- 4. GET /health/db + X-Ping-Token
-  | https://flash-expense-tracker.onrender.com           |           (03:30 IST)
-  | Cloudflare edge -> uvicorn -> FastAPI (backend/)     |        +--------------------------------+
-  | Env: DATABASE_URL, PING_TOKEN, CORS_ORIGINS,         |        | cron-job.org                   |
-  |      PYTHON_VERSION                                  |        | "Flash wake-up"                |
-  | Sleeps after 15 min idle; cold start ~50 s           |        | "Flash DB heartbeat"           |
-  +-----------------------------------------------------+        | emails you if the DB job fails |
-                                   |                             +--------------------------------+
-                                   | 5. Postgres over TLS (sslmode=require)
+  +-----------------------------------------------------+        3. GET /health/db + X-Ping-Token
+  | Render  (Free web service, Singapore)               | <-----    03:30 03:32 03:34 03:36 03:38 IST
+  | https://flash-expense-tracker.onrender.com          |        +--------------------------------+
+  | Cloudflare edge -> uvicorn -> FastAPI (backend/)    |        | cron-job.org                   |
+  | Env: DATABASE_URL, PING_TOKEN, CORS_ORIGINS,        |        | one job: "Flash DB heartbeat"  |
+  |      PYTHON_VERSION                                 |        | 03:30 run wakes Render (fails) |
+  | Sleeps after 15 min idle; cold start ~50 s          |        | emails only if job disabled    |
+  +-----------------------------------------------------+        +--------------------------------+
+                                   |
+                                   | 4. Postgres over TLS (sslmode=require)
                                    |    via Supabase Session pooler, port 5432
                                    v
   +-----------------------------------------------------+
-  | Supabase  (Free Postgres, Singapore)                 |
-  | tables: heartbeat, alembic_version                   |
-  | Data API off: no public REST access to tables        |
-  | Pauses after 7 days without activity                 |
+  | Supabase  (Free Postgres, Singapore)                |       5. python -m app.cli import-sms | reparse
+  | heartbeat, alembic_version, import_batches,         | <-----    | stats  (your PC, backend\.env)
+  | raw_messages, parse_results, transactions,          |
+  | transaction_sources, duplicate_candidates           |
+  | RLS on the pipeline tables; Data API off            |
+  | Pauses after 7 days idle (warning email first)      |
   +-----------------------------------------------------+
 
   +-----------------------------------------------------+
-  | GitHub  Karthik-Flash/flash-expense-tracker          |
-  | push to main  -> GitHub Actions CI (lint, tests, build)
-  |               -> Render auto-deploy  (backend/)      |
-  |               -> Vercel auto-deploy  (frontend/)     |
+  | GitHub  Karthik-Flash/flash-expense-tracker         |
+  | push to main -> GitHub Actions CI (3 jobs)          |
+  |              -> Render deploys after CI passes      |
+  |              -> Vercel auto-deploy (frontend/)      |
   +-----------------------------------------------------+
 ```
 
@@ -125,34 +124,38 @@ CI green**. Next: you run the real import (to-do list), then "LOCK IN".
 5. The page shows "Backend online · v0.1.0". `/health` never touches the
    database.
 
-### Flow 2: nightly keep-alive (all times IST)
+### Flow 2: nightly keep-alive (all times IST, D-052)
 
-1. 03:27 and 03:28: "Flash wake-up" calls `GET /health`. This wakes Render.
-   The first call may time out (cron-job.org waits only 30 s); that is
-   expected, so its alerts are off.
-2. 03:30: "Flash DB heartbeat" calls `GET /health/db` with header
-   `X-Ping-Token`. Render is warm, so it answers fast.
+1. 03:30: the only job, "Flash DB heartbeat", calls `GET /health/db` with
+   header `X-Ping-Token`. Render is usually asleep and answers with its
+   wake-up page while it spins up. cron-job.org rejects that page ("output
+   too large"), so this first run fails every night. Expected.
+2. 03:32, 03:34, 03:36, 03:38: the same call again. Render is warm now.
 3. FastAPI checks the header against `PING_TOKEN` (`secrets.compare_digest`).
    Missing or wrong: 401. `PING_TOKEN` unset on Render: 503.
 4. FastAPI connects to Supabase through the Session pooler and runs one upsert:
    `heartbeat` row `id=1` gets `last_seen = now()` from the database clock.
 5. Supabase records activity, so the free project does not pause.
-6. FastAPI returns `{"db":"ok","latency_ms":N}`. If anything fails (Render
-   down, DB down, wrong token), cron-job.org emails you.
+6. FastAPI returns `{"db":"ok","latency_ms":N}`. A success resets the job's
+   failure count, so the nightly first failure never adds up.
+7. Alerts: "execution fails" is OFF (it would email every night); "job
+   disabled" is ON (cron-job.org disables a job after many failures in a
+   row, i.e. nights with no success). Backstop: Supabase emails a pause
+   warning before it pauses an idle project.
 
 ### Flow 3: you push code
 
 1. `git push` to `main` on GitHub.
-2. Three things start in parallel. They do not wait for each other:
-   - GitHub Actions CI: ruff, backend pytest, scripts pytest, typecheck, build.
-   - Render: `pip install -r requirements.txt && alembic upgrade head`
-     (migrations hit Supabase during the build), then starts
-     `uvicorn app.main:app`. If the build or migration fails, the old version
-     keeps serving.
-   - Vercel: `npm install` and `npm run build` in `frontend/`, with
-     `VITE_API_URL` baked in, then publishes to the CDN.
-3. Check CI with `gh run watch`. A red CI does not stop Render or Vercel from
-   deploying, so do not push to `main` with failing checks.
+2. GitHub Actions CI runs three jobs: backend (ruff, backend and scripts
+   pytest on SQLite), backend on Postgres 17 (`alembic upgrade head`,
+   `alembic check`, pytest), frontend (typecheck, build).
+3. Render waits for CI ("After CI Checks Pass", D-050). Then it runs
+   `pip install -r requirements.txt && alembic upgrade head` (migrations hit
+   Supabase during the build) and starts `uvicorn app.main:app`. If the
+   build or migration fails, the old version keeps serving.
+4. Vercel does not wait for CI: `npm install` and `npm run build` in
+   `frontend/`, with `VITE_API_URL` baked in, then publish to the CDN.
+5. Check CI with `gh run watch`. Keep `main` green.
 
 ### Flow 4: real data to a shareable sample (you run it, agents never do)
 
@@ -162,7 +165,21 @@ CI green**. Next: you run the real import (to-do list), then "LOCK IN".
    name map in `D:\FlashPrivate\private\`.
 3. It writes `data\sample\redacted_sample.json` (gitignored). Only this file
    is shared with agents and the planner.
-4. Phase 2 parsers are built and tested against that sample.
+4. Parsers are built and tested against that sample and fake fixtures.
+   For full-data coverage, the full redacted file goes to
+   `D:\FlashPrivate\private\` (D-051), never the repo.
+
+### Flow 5: real data into the database (you run it, agents never do)
+
+1. From `backend\` on your PC: `python -m app.cli import-sms --input
+   D:\FlashPrivate\raw`. `DATABASE_URL` in `backend\.env` points at Supabase.
+2. The importer streams the XML, keeps only bank-registry senders and never
+   stores OTP, promotional or MMS messages.
+3. Per message: `raw_messages` (dedupe on `content_hash`), engine parse,
+   `parse_results`, then for money a `transactions` row (merged on its dedupe
+   key) linked in `transaction_sources`, plus `duplicate_candidates` pairs.
+4. It prints counts only. `reparse` after a parser version bump; `stats` for
+   totals. Details: [docs/data-model.md](docs/data-model.md).
 
 ### Where each setting lives
 
@@ -295,13 +312,14 @@ backend\.venv\Scripts\python.exe scripts\redact_sms.py --private-dir D:\FlashPri
 # On the 288-message sample
 backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input data\sample\redacted_sample.json
 
-# On the full data: redact everything (no --limit) into a separate file, check it, then measure
-backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --output data\sample\redacted_full.json --verify
-backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input data\sample\redacted_full.json
+# On the full data: redact everything (no --limit) into the PRIVATE folder, check it, then measure
+backend\.venv\Scripts\python.exe scripts\redact_sms.py --input D:\FlashPrivate\raw --private-dir D:\FlashPrivate\private --output D:\FlashPrivate\private\redacted_full.json --verify
+backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input D:\FlashPrivate\private\redacted_full.json
 ```
 
-`redacted_full.json` stays in `data\sample\` (gitignored). Only run the
-coverage step if the first command ends with `Leaks: 0`.
+The full redacted file never goes in the repo, not even in gitignored
+`data\` (D-051). Only run the coverage step if the first command ends with
+`Leaks: 0`.
 
 ### Import pipeline (you run these; agents never touch Supabase or real data)
 
@@ -350,8 +368,10 @@ git add -p                                        # stage piece by piece
 git commit -m "feat(scope): what and why"
 git switch main; git merge --no-ff feat/short-name
 git branch -d feat/short-name
-git push                                          # CI + Render + Vercel all start
+git push                                          # CI + Vercel start; Render waits for CI
 git log --oneline --graph -15                     # recent history
+git tag -n                                        # phase tags with their messages
+git log --oneline phase-1-done..phase-2-done      # what one phase changed
 ```
 
 ### Push and CI
@@ -365,19 +385,47 @@ gh repo view --web                                # open the repo in the browser
 
 ## Open items
 
-1. Starlette warns `httpx` with `TestClient` is deprecated (suggests `httpx2`).
-   Kept `httpx` until the replacement is verified (DECISIONS D-010).
-2. Import speed: about 8 database round trips per stored message. Fine for a
-   few thousand bank SMS over the Supabase pooler; batch the lookups if a
-   future source is much larger.
-3. Name detection covers the usual bank positions only; skim the sample.
-4. Replace the placeholder PWA icons before launch (UI spec: Phase 3, D-020).
-5. GitHub cannot enforce required checks on a private repo on the free plan;
-   "required" means Render deploys only after all CI jobs pass (D-050).
-6. Bank vocabulary covers HDFC wording only. Each new bank's survey should add
-   its fixed phrases to `BANK_VOCABULARY` in `scripts/redact_sms.py`.
+1. Overnight cron check pending: the first night on the new schedule is
+   15 Nov 2026 (D-052).
+2. Reconcile (Phase 3): 18 open duplicate candidates, and 1 refund that was
+   merged into another transaction on its dedupe key; check both.
+3. 44 foreign-currency messages deferred (D-035).
+4. 153 messages from banks without a parser (SBI, ICICI, India Post, Kotak,
+   PhonePe): a parser plus `reparse`, no re-import needed.
+5. HDFC H09 word slot: the word is still mapped in the private name map; the
+   template accepts any word, so parsing is unaffected.
+6. Import speed: ~6 min for 917 messages (about 8 round trips each over the
+   pooler). Batch the lookups if a much larger source arrives.
+7. Starlette warns `httpx` with `TestClient` is deprecated (suggests `httpx2`).
+   Kept `httpx` until the replacement is verified (D-010).
+8. Name detection in redaction covers the usual bank positions only; skim
+   new samples. Bank vocabulary covers HDFC wording only: each new bank's
+   survey adds its fixed phrases to `BANK_VOCABULARY`.
+9. Replace the placeholder PWA icons before launch (UI spec later, D-020).
+10. GitHub cannot enforce required checks on a private repo on the free plan;
+    Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-14: Phase 2 lock-in, real import
+
+- Your real import on Supabase (counts only): migration `0002` (head). Dry
+  run equal to the import: read 2,543; skipped mms 451, otp 12, promotional
+  61, unregistered_sender 1,102; raw new 917; parsed 720; unknown
+  foreign_currency_deferred 44, no_parser_for_bank 153; is_money 679;
+  transactions new 678, merged 1; candidates 18. About 6 min.
+- Re-import (batch 3): raw new 0, duplicate 917, transactions 0.
+  Reparse dry run: reparsed 0.
+- Stats: import_batches 2, raw_messages 917, parse_results 917,
+  transactions 678, transaction_sources 679, duplicate_candidates 18 (open).
+  Active transactions: debit 539, credit 134, refund 5. Parse results:
+  credit 134, debit 539, mandate 8, other_info 29, refund 6,
+  upcoming_debit 4. Months 2026-01 to 2026-11. Batch ids start at 2 (the dry
+  run used id 1; see data-model.md).
+- Docs: full redacted file moved to the private folder (D-051); one cron
+  heartbeat job with retries (D-052); PLAN phases 0-2 done; CHANGELOG.md;
+  docs/HANDOFF.md; CLAUDE.md points to the handoff.
+- Tags: `phase-0-done`, `phase-1-done`, `phase-2-done`.
 
 ### 2026-11-14: Phase 2 Part A, schema, import pipeline, dedupe
 

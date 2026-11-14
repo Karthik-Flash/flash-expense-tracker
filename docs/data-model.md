@@ -91,6 +91,11 @@ clearing finished elements. Per SMS:
    link it in `transaction_sources`.
 5. New transaction: record duplicate candidates.
 
+Ids can skip: on Postgres a dry run uses sequence values and rolls back,
+and sequences never give values back. On the real import the dry run took
+batch id 1, so the first saved batch is 2. Harmless; nothing depends on
+ids being dense.
+
 Commits every 500 messages. All steps for one message share a transaction,
 so a crash loses only uncommitted messages; a re-run skips the committed
 ones as duplicates and finishes the rest. The batch row records versions,
