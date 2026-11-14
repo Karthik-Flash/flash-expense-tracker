@@ -1,4 +1,5 @@
 from pathlib import Path
+from uuid import UUID
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,6 +25,8 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     # Shared secret for the X-Ping-Token header on /health/db.
     ping_token: str = ""
+    # Owner of imported data until auth exists (single user).
+    owner_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
 
     _normalize_url = field_validator("database_url")(normalize_database_url)
 
