@@ -29,7 +29,11 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] `scripts/redact_sms.py`: default-deny, keep-list, HMAC fakes
 - [x] Agent deny rules: `D:\FlashPrivate\`, every `.env`, `*.xml` outside `mobile/`
 - [x] Supabase, Render, Vercel, cron-job.org set up and tested (13 Nov 2026)
-- [ ] Overnight cron check on the new schedule (first night 15 Nov, D-052)
+- [x] Overnight check of the Render heartbeat (15 Nov): fails every night
+      ("output too large"); replaced by the Data API ping (D-053)
+- [x] Migration `0003`: `keepalive.ping()` for the Data API, RLS on `heartbeat`
+- [ ] Keep-alive switch-over: Data API, cron job, security check (to-do list)
+- [ ] Overnight check of the new keep-alive (first night after the switch)
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -53,12 +57,17 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Your to-do list
 
-1. Morning of 15 Nov: cron-job.org "Flash DB heartbeat" history should show
-   a failed 03:30 run and a 200 at 03:32 or later, and `heartbeat.last_seen`
-   should have moved (D-052).
-2. If `data\sample\redacted_full.json` exists from an earlier run, delete it.
+1. Keep-alive switch-over (D-053), after this change is deployed (Render
+   log shows `Running upgrade 0002 -> 0003`): follow
+   [infra/README.md](infra/README.md) section 4. Data API on with exposed
+   schemas `keepalive` only, publishable key into your password manager,
+   edit the cron job, then run the security check (cheat sheet, "Check the
+   live system"). Every table line must say `blocked`.
+2. The morning after: the job history shows a 200 at 03:30 and
+   `heartbeat.last_seen` moved.
+3. If `data\sample\redacted_full.json` exists from an earlier run, delete it.
    The full file now lives in `D:\FlashPrivate\private\` (D-051).
-3. Optional: refresh the sample with the newer redaction rules (STANDARD
+4. Optional: refresh the sample with the newer redaction rules (STANDARD
    sample command under "SMS redaction"; must end with `Leaks: 0`).
 
 ## Architecture
@@ -80,26 +89,31 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
                                    | 2. fetch(VITE_API_URL + "/health")
                                    |    from your browser, cross-origin
                                    v
-  +-----------------------------------------------------+        3. GET /health/db + X-Ping-Token
-  | Render  (Free web service, Singapore)               | <-----    03:30 03:32 03:34 03:36 03:38 IST
-  | https://flash-expense-tracker.onrender.com          |        +--------------------------------+
-  | Cloudflare edge -> uvicorn -> FastAPI (backend/)    |        | cron-job.org                   |
-  | Env: DATABASE_URL, PING_TOKEN, CORS_ORIGINS,        |        | one job: "Flash DB heartbeat"  |
-  |      PYTHON_VERSION                                 |        | 03:30 run wakes Render (fails) |
-  | Sleeps after 15 min idle; cold start ~50 s          |        | emails only if job disabled    |
-  +-----------------------------------------------------+        +--------------------------------+
+  +-----------------------------------------------------+
+  | Render  (Free web service, Singapore)               |
+  | https://flash-expense-tracker.onrender.com          |
+  | Cloudflare edge -> uvicorn -> FastAPI (backend/)    |
+  | Env: DATABASE_URL, PING_TOKEN, CORS_ORIGINS,        |
+  |      PYTHON_VERSION                                 |
+  | Sleeps after 15 min idle; cold start ~50 s          |
+  +-----------------------------------------------------+
                                    |
-                                   | 4. Postgres over TLS (sslmode=require)
+                                   | 3. Postgres over TLS (sslmode=require)
                                    |    via Supabase Session pooler, port 5432
                                    v
-  +-----------------------------------------------------+
-  | Supabase  (Free Postgres, Singapore)                |       5. python -m app.cli import-sms | reparse
-  | heartbeat, alembic_version, import_batches,         | <-----    | stats  (your PC, backend\.env)
-  | raw_messages, parse_results, transactions,          |
-  | transaction_sources, duplicate_candidates           |
-  | RLS on the pipeline tables; Data API off            |
+  +-----------------------------------------------------+        4. POST /rest/v1/rpc/ping (Data API)
+  | Supabase  (Free Postgres, Singapore)                | <-----    apikey + Content-Profile: keepalive
+  | heartbeat, alembic_version, import_batches,         |        +--------------------------------+
+  | raw_messages, parse_results, transactions,          |        | cron-job.org                   |
+  | transaction_sources, duplicate_candidates           |        | "Flash DB heartbeat"           |
+  | schema keepalive: ping() (SECURITY DEFINER)         |        | daily 03:30 IST                |
+  | RLS on heartbeat and the pipeline tables            |        | alerts: fails, disabled        |
+  | Data API on: exposes schema keepalive ONLY          |        +--------------------------------+
   | Pauses after 7 days idle (warning email first)      |
   +-----------------------------------------------------+
+         ^
+         | 5. python -m app.cli import-sms | reparse | stats
+         |    (your PC, Postgres via backend\.env)
 
   +-----------------------------------------------------+
   | GitHub  Karthik-Flash/flash-expense-tracker         |
@@ -124,24 +138,27 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 5. The page shows "Backend online · v0.1.0". `/health` never touches the
    database.
 
-### Flow 2: nightly keep-alive (all times IST, D-052)
+### Flow 2: nightly keep-alive (all times IST, D-053)
 
-1. 03:30: the only job, "Flash DB heartbeat", calls `GET /health/db` with
-   header `X-Ping-Token`. Render is usually asleep and answers with its
-   wake-up page while it spins up. cron-job.org rejects that page ("output
-   too large"), so this first run fails every night. Expected.
-2. 03:32, 03:34, 03:36, 03:38: the same call again. Render is warm now.
-3. FastAPI checks the header against `PING_TOKEN` (`secrets.compare_digest`).
-   Missing or wrong: 401. `PING_TOKEN` unset on Render: 503.
-4. FastAPI connects to Supabase through the Session pooler and runs one upsert:
-   `heartbeat` row `id=1` gets `last_seen = now()` from the database clock.
-5. Supabase records activity, so the free project does not pause.
-6. FastAPI returns `{"db":"ok","latency_ms":N}`. A success resets the job's
-   failure count, so the nightly first failure never adds up.
-7. Alerts: "execution fails" is OFF (it would email every night); "job
-   disabled" is ON (cron-job.org disables a job after many failures in a
-   row, i.e. nights with no success). Backstop: Supabase emails a pause
-   warning before it pauses an idle project.
+1. 03:30: cron-job.org job "Flash DB heartbeat" sends
+   `POST https://<ref>.supabase.co/rest/v1/rpc/ping` with headers `apikey`
+   (the publishable key), `Content-Profile: keepalive`,
+   `Content-Type: application/json` and body `{}`. Render is not involved.
+2. Supabase's Data API maps the publishable key to the `anon` role. Only the
+   `keepalive` schema is exposed, and `anon` may only execute
+   `keepalive.ping()`.
+3. `ping()` runs as its owner (SECURITY DEFINER) and upserts `heartbeat` row
+   `id=1` with `last_seen = now()`. It returns `{"ok": true}` and nothing
+   else.
+4. Supabase records activity, so the free project does not pause.
+5. Alerts: cron-job.org emails on a failed run and when it disables the job.
+   Backstop: Supabase emails a pause warning before it pauses an idle
+   project.
+6. `/health/db` with `X-Ping-Token` still works, for manual checks only.
+
+Until 15 Nov 2026 the job called Render's `/health/db` (D-052). Asleep,
+Render served its browser loading page to cron-job.org ("output too large")
+and never woke, so every run failed.
 
 ### Flow 3: you push code
 
@@ -188,7 +205,8 @@ Values are never written in git or chat. Keep them in your password manager.
 | Setting        | Used by          | Lives in                                                  |
 | -------------- | ---------------- | --------------------------------------------------------- |
 | `DATABASE_URL` | Render, Alembic  | Render env; `backend/.env` for local; password manager   |
-| `PING_TOKEN`   | `/health/db`     | Render env; cron-job.org job header; password manager    |
+| `PING_TOKEN`   | `/health/db`     | Render env; password manager (manual checks only)         |
+| Supabase publishable key | cron-job.org `apikey` header | cron-job.org job header; password manager. Never in git |
 | `CORS_ORIGINS` | FastAPI CORS     | Render env: `http://localhost:5173,https://flash-expense-tracker.vercel.app` |
 | `VITE_API_URL` | Frontend build   | Vercel env: `https://flash-expense-tracker.onrender.com`; `frontend/.env` for local |
 | `PYTHON_VERSION` | Render build   | Render env: `3.12.12`                                     |
@@ -208,10 +226,14 @@ Values are never written in git or chat. Keep them in your password manager.
   blocks it because only 5173 is allowed.
 - DB password: letters and digits only. `#` and `%` broke `DATABASE_URL`
   parsing.
-- Supabase shows "RLS disabled" / "UNRESTRICTED" on `heartbeat` and
-  `alembic_version`. Harmless while the Data API stays off; the app connects
-  as the `postgres` role directly. Turning the Data API back on would expose
-  these tables.
+- The Data API is on but exposes only the `keepalive` schema (D-053).
+  Never add `public` to the exposed schemas: Supabase grants `anon` access
+  to public tables by default, and RLS (no policies) is then the only guard.
+  `alembic_version` has no RLS, so it would be readable.
+- cron-job.org must POST, with `Content-Profile: keepalive`. Without the
+  header the Data API looks in its default schema and answers 404 or 406.
+  If `ping` answers 404 `PGRST202` right after the migration, the schema
+  cache is stale: run `NOTIFY pgrst, 'reload schema';` in the SQL editor.
 - Render's own health checks (every few seconds from `10.x` addresses in the
   log) are normal.
 - After changing `VITE_API_URL` in Vercel, redeploy the frontend; the value is
@@ -230,6 +252,24 @@ Invoke-RestMethod "$u/health"                                            # statu
 $t = Read-Host "PING_TOKEN"
 Invoke-RestMethod "$u/health/db" -Headers @{ "X-Ping-Token" = $t }       # db ok + latency_ms
 ```
+
+```powershell
+# Security check: ping works, every public table is unreachable (Data API, D-053)
+$ref = Read-Host "Supabase project ref"
+$k = Read-Host "Publishable key"
+$base = "https://$ref.supabase.co/rest/v1"
+Invoke-RestMethod "$base/rpc/ping" -Method Post -ContentType "application/json" -Body "{}" -Headers @{ apikey = $k; "Content-Profile" = "keepalive" }   # ok : True
+foreach ($p in "public", "keepalive") {
+  foreach ($t in "heartbeat", "transactions", "raw_messages", "alembic_version") {
+    try { Invoke-RestMethod "$base/$t" -Headers @{ apikey = $k; "Accept-Profile" = $p } | Out-Null; "LEAK: $p.$t answered" }
+    catch { "blocked $p.$t (HTTP $($_.Exception.Response.StatusCode.value__))" }
+  }
+}
+```
+
+Every table line must say `blocked` (406 for `public`: schema not exposed;
+404 for `keepalive`: no such table). Any `LEAK` line: switch the Data API
+off, then fix the exposed schemas.
 
 ### Run the apps locally
 
@@ -385,8 +425,8 @@ gh repo view --web                                # open the repo in the browser
 
 ## Open items
 
-1. Overnight cron check pending: the first night on the new schedule is
-   15 Nov 2026 (D-052).
+1. Keep-alive switch-over and its overnight check pending (D-053, to-do
+   list).
 2. Reconcile (Phase 3): 18 open duplicate candidates, and 1 refund that was
    merged into another transaction on its dedupe key; check both.
 3. 44 foreign-currency messages deferred (D-035).
@@ -406,6 +446,20 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-15: Keep-alive moved off Render (D-053)
+
+- The Render heartbeat failed every night: asleep, Render served its browser
+  loading page to cron-job.org ("output too large") and never woke.
+- Migration `0003` (Postgres only): schema `keepalive`, function
+  `keepalive.ping()` (SECURITY DEFINER, `search_path = public, pg_temp`),
+  EXECUTE revoked from PUBLIC and granted to `anon` when that role exists,
+  RLS enabled on `heartbeat`.
+- Tests (Postgres CI job): `ping()` as `anon` moves `last_seen`; `anon`
+  cannot read `heartbeat` or `transactions`, even with Supabase-style SELECT
+  grants; downgrade removes the schema; `alembic check` clean.
+- `/health/db` and `PING_TOKEN` unchanged, for manual checks.
+- Open: your switch-over (Data API, cron job, security check).
 
 ### 2026-11-14: Phase 2 lock-in, real import
 
