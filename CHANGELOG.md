@@ -9,6 +9,8 @@ Phase 1 is parsing, Phase 2 is the database and import (in
 
 - Plan aligned with Phase 3 steps 3A-3F (D-054) and the spend definition
   (D-055); doc fixes in HANDOFF and NOTES. No code.
+- D-015 garbled line removed; PLAN.md Phases 1 and 2 renumbered to match the
+  tags; owner labels next to categories (D-056). No code.
 
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 
