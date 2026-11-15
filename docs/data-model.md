@@ -23,8 +23,9 @@ SMS Backup XML --importer--> raw_messages --engine--> parse_results --money?--> 
 - `owner_id` (UUID) on `import_batches`, `raw_messages`, `transactions`. From
   setting `OWNER_ID`, default `00000000-0000-0000-0000-000000000001` until auth.
 - Postgres: row level security is **enabled with no policies** on every new
-  table. The Data API is off and the app connects as the table owner, so RLS
-  is defence in depth, not the access control.
+  table and on `heartbeat` (`0003`). The app connects as the table owner. The
+  Data API exposes only the `keepalive` schema (D-053), so RLS is defence in
+  depth, not the access control.
 
 ## Tables
 

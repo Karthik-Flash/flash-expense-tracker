@@ -398,3 +398,25 @@ wake-up page while it spins up); a later run succeeds and resets the failure
 count. Notifications: "execution fails" off, "job disabled" on. Supabase's
 pause warning email is the backstop.
 
+Superseded by D-053 (15 Nov 2026): Render never woke for cron-job.org.
+
+## D-053 Keep-alive through the Supabase Data API, one schema only (2026-11-15)
+
+Supersedes D-052. The keep-alive no longer goes through Render: asleep, Render
+served its browser loading page to cron-job.org ("output too large") and
+never woke, so every run failed. Now cron-job.org job "Flash DB heartbeat"
+sends `POST https://<ref>.supabase.co/rest/v1/rpc/ping` daily at 03:30 IST
+with headers `apikey` (publishable key), `Content-Profile: keepalive` and
+`Content-Type: application/json`, body `{}`. Alerts on failure and on
+disable.
+
+Narrow exception to "the Data API is off": it is on, and its exposed schemas
+are `keepalive` only. Migration `0003` creates that schema and one function,
+`keepalive.ping()`: SECURITY DEFINER with `search_path = public, pg_temp`,
+it upserts the heartbeat row and returns `{"ok": true}`, nothing else.
+EXECUTE is revoked from PUBLIC and granted to `anon` only. `heartbeat` gets
+RLS with no policies, like the pipeline tables. The publishable key lives
+only in the cron-job.org header and the password manager, never in git.
+`/health/db` and `PING_TOKEN` stay for manual checks. A PowerShell check
+(infra/README.md, section 4) proves the public tables are unreachable.
+

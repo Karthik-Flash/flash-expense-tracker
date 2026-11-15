@@ -2,7 +2,7 @@
 
 For a fresh Claude Code session with no memory of earlier work. Read this
 first, then [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase
-in [PLAN.md](PLAN.md). State as of 14 Nov 2026: Phases 0-2 done (tags
+in [PLAN.md](PLAN.md). State as of 15 Nov 2026: Phases 0-2 done (tags
 `phase-0-done`, `phase-1-done`, `phase-2-done`); next is Phase 3.
 
 ## Goal and locked stack
@@ -14,10 +14,10 @@ Monorepo.
 | Part | Stack (exact pins) | Hosting |
 | ---- | ------------------ | ------- |
 | Backend | Python 3.12.12, FastAPI 0.162.5, SQLAlchemy 2.1.8, Alembic 1.20.1, psycopg 3.3.9, pydantic-settings 2.16.2 | Render free, Singapore |
-| Database | Postgres (Supabase free, Singapore, Session pooler, Data API off); SQLite for local and tests | Supabase |
+| Database | Postgres (Supabase free, Singapore, Session pooler; Data API exposes only `keepalive`, D-053); SQLite for local and tests | Supabase |
 | Frontend | Vite 8, React 19, TypeScript 7, Tailwind 4, vite-plugin-pwa | Vercel |
 | Tools | pytest 9.2.0, ruff 0.17.4, httpx 0.28.1 | GitHub Actions |
-| Keep-alive | cron-job.org, one job (D-052) | |
+| Keep-alive | cron-job.org calls `keepalive.ping()` via the Data API (D-053) | |
 
 The stack is locked. Never install a package you cannot verify (PyPI owner,
 source repo); ask first (D-010).
@@ -68,7 +68,7 @@ backend/            Render root
   app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py
   app/importers/      sms_backup.py (streaming XML importer)
   app/cli.py          python -m app.cli import-sms | reparse | stats
-  alembic/versions/   0001 heartbeat, 0002 import pipeline tables
+  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping()
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
 frontend/           Vercel root; src/App.tsx shows backend status, survives cold starts
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests)
@@ -114,9 +114,13 @@ npm ci; npm run dev; npm run typecheck; npm run build
   needs the header and answers 401 without it)
 - Repo (private): https://github.com/Karthik-Flash/flash-expense-tracker
 
-Render sleeps after 15 min idle (cold start ~50 s). cron-job.org "Flash DB
-heartbeat" calls `/health/db` at 03:30-03:38 IST; the first run fails by
-design while Render wakes (D-052). This keeps Supabase from pausing.
+Render sleeps after 15 min idle (cold start ~50 s). The keep-alive does not
+use Render: cron-job.org "Flash DB heartbeat" sends
+`POST https://<ref>.supabase.co/rest/v1/rpc/ping` daily at 03:30 IST
+(`apikey` = publishable key, `Content-Profile: keepalive`). That runs
+`keepalive.ping()`, which writes the heartbeat row so Supabase does not
+pause. The Data API exposes only the `keepalive` schema; never add `public`
+(D-053). `/health/db` with `X-Ping-Token` stays for manual checks.
 
 ## Data pipeline as built
 
@@ -149,7 +153,8 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 
 ## Open items and known limits
 
-- Overnight cron check pending: first night on the new schedule is 15 Nov.
+- Keep-alive switch-over is the user's (Data API settings, cron job, security
+  check in infra/README.md section 4), then one overnight check (D-053).
 - Reconcile (Phase 3) is not built: 18 open duplicate candidates and 1
   merged refund to review; self-transfers, card bill payments, refund
   linking and AutoPay + card spend merging all wait for it (D-029 to D-032,

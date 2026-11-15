@@ -18,7 +18,8 @@ settings; keep it in sync when you change the service. How the pieces connect:
 [NOTES.md, Architecture](../NOTES.md#architecture).
 
 Keep these in a password manager, never in git or chat:
-`DATABASE_URL`, `PING_TOKEN`, the Supabase database password.
+`DATABASE_URL`, `PING_TOKEN`, the Supabase database password, the Supabase
+publishable key.
 
 ## 0. Generate PING_TOKEN
 
@@ -55,9 +56,9 @@ This prints 64 hex characters. Save it as `PING_TOKEN`. It is sent in the
    - The `postgresql://` scheme is fine as is; the app switches it to the
      pinned psycopg driver.
    - Result: `postgresql://postgres.<ref>:<password>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require`
-5. Turn off the Data API, because the app talks to Postgres directly. Go to
-   **Project Settings > Data API** and switch **Enable Data API** off. Tables
-   are then not reachable through the public REST URL.
+5. The app talks to Postgres directly and does not need the Data API. It is
+   on only for the keep-alive and exposes only the `keepalive` schema; set it
+   up in section 4 (D-053). Until then, leave **Enable Data API** off.
 
 ## 2. Render (backend)
 
@@ -131,35 +132,71 @@ redeploy the frontend.
 
 ## 4. cron-job.org (keep Supabase active)
 
-Supabase pauses free projects after 7 days without activity. A daily call to
-`/health/db` writes the heartbeat row, which counts as activity.
+Supabase pauses free projects after 7 days without activity. Once a day,
+cron-job.org calls `keepalive.ping()` through the Supabase Data API. The
+function writes the heartbeat row, which counts as activity (D-053). Render
+is not involved.
 
-One job does it (D-052). Render is usually asleep at night: the first call
-gets Render's wake-up page, which cron-job.org rejects ("output too large").
-The same job repeats every two minutes, so a later run reaches the warm
-service and succeeds, which resets the failure count.
+Do this after migration `0003` reached Supabase: the Render deploy log shows
+`Running upgrade 0002 -> 0003`.
 
-1. Go to https://console.cron-job.org/signup and create an account. Confirm
-   the email.
-2. Open **Settings** and set **Time zone** to `Asia/Kolkata`.
-3. Create the job: **Cronjobs > Create cronjob**.
+1. **Supabase Data API, one schema only.** Supabase > **Project Settings >
+   Data API**:
+   - Switch **Enable Data API** on.
+   - **Exposed schemas**: remove every entry (`public`, `graphql_public`) and
+     add `keepalive`. It must be the only one. Save.
+   - Never expose `public`. Supabase grants `anon` access to public tables
+     by default, and `alembic_version` has no RLS.
+2. **Publishable key.** Supabase > **Project Settings > API Keys**: copy the
+   publishable key (`sb_publishable_...`). It goes only into your password
+   manager and the cron-job.org header, never into git or chat. Note the
+   project ref: the `<ref>` in `https://<ref>.supabase.co`.
+3. **cron-job.org account** (once): sign up at
+   https://console.cron-job.org/signup, confirm the email, and set
+   **Settings > Time zone** to `Asia/Kolkata`.
+4. **The job.** Edit "Flash DB heartbeat" (or **Cronjobs > Create cronjob**):
    - **Title**: `Flash DB heartbeat`.
-   - **URL**: `https://<your-service>.onrender.com/health/db` (no token in the URL).
-   - **Execution schedule**: **Custom**. Days: every day. Hours: `3`.
-     Minutes: `30`, `32`, `34`, `36`, `38`.
-   - **Notifications**: **execution of the cronjob fails** OFF (the 03:30
-     run fails every night by design). **The cronjob will be disabled
-     because of too many failures** ON.
-   - Open the **Advanced** tab. Under **Headers**, add key `X-Ping-Token` with
-     your `PING_TOKEN` as the value. Leave **Request method** on `GET`.
-   - Click **Create**.
-4. Click **Test run**. Expect HTTP 200 with `{"db":"ok",...}`. If Render was
-   asleep the first test fails with "output too large"; run it again. A 401
-   means the header is missing or wrong.
-5. Backstop: Supabase emails a warning before it pauses an idle project.
+   - **URL**: `https://<ref>.supabase.co/rest/v1/rpc/ping`
+   - **Execution schedule**: every day at `03:30`.
+   - **Notifications**: **execution of the cronjob fails** ON, **the cronjob
+     will be disabled because of too many failures** ON.
+   - **Advanced**: **Request method** `POST`. **Headers**: `apikey` = the
+     publishable key; `Content-Profile` = `keepalive`; `Content-Type` =
+     `application/json`. Remove the old `X-Ping-Token` header. **Request
+     body**: `{}`.
+   - Save.
+5. Click **Test run**. Expect HTTP 200 with `{"ok" : true}`.
+   - 401: the `apikey` header is missing or wrong.
+   - 404 `PGRST202`: stale schema cache. In the SQL editor run
+     `NOTIFY pgrst, 'reload schema';` and test again.
+   - 406 `PGRST106`: `keepalive` is not in the exposed schemas, or the
+     `Content-Profile` header is missing.
+6. **Security check.** Run it from PowerShell and keep the output:
 
-Until 14 Nov 2026 a separate "Flash wake-up" job called `/health` at 03:27
-and 03:28. It was deleted; do not recreate it (D-052).
+```powershell
+# Security check: ping works, every public table is unreachable (Data API, D-053)
+$ref = Read-Host "Supabase project ref"
+$k = Read-Host "Publishable key"
+$base = "https://$ref.supabase.co/rest/v1"
+Invoke-RestMethod "$base/rpc/ping" -Method Post -ContentType "application/json" -Body "{}" -Headers @{ apikey = $k; "Content-Profile" = "keepalive" }   # ok : True
+foreach ($p in "public", "keepalive") {
+  foreach ($t in "heartbeat", "transactions", "raw_messages", "alembic_version") {
+    try { Invoke-RestMethod "$base/$t" -Headers @{ apikey = $k; "Accept-Profile" = $p } | Out-Null; "LEAK: $p.$t answered" }
+    catch { "blocked $p.$t (HTTP $($_.Exception.Response.StatusCode.value__))" }
+  }
+}
+```
+
+Every table line must say `blocked` (406 for `public`: schema not exposed;
+404 for `keepalive`: no such table). Any `LEAK` line: switch the Data API
+off, then fix the exposed schemas.
+
+7. Backstop: Supabase emails a warning before it pauses an idle project.
+
+History: until 15 Nov 2026 the job called Render's `/health/db` (D-023,
+D-052). Asleep, Render served its browser loading page to cron-job.org,
+which failed with "output too large", and Render never woke. `/health/db`
+and `PING_TOKEN` stay for manual checks.
 
 There are no scheduled GitHub workflows, on purpose.
 
@@ -178,36 +215,40 @@ Invoke-RestMethod "$u/health/db" -Headers @{ "X-Ping-Token" = $t }
 
 1. Open https://supabase.com/dashboard and the project.
 2. Open cron-job.org, job "Flash DB heartbeat", and check its history. Find
-   when it last returned 200. A failed 03:30 run alone is normal (D-052).
+   when it last returned 200.
 3. If the project already shows **Paused**, click **Resume** and wait until it
    is active.
-4. Run the `/health/db` test. Expect `db: ok`.
+4. In cron-job.org click **Test run**. Expect `{"ok" : true}`.
 5. Fix whatever stopped the heartbeat (see the next entry).
 
-### Email: cron-job.org "job disabled"
+### Email: cron-job.org "job failed" or "job disabled"
 
-The job failed many runs in a row: no night reached a 200. One failed 03:30
-run per night is normal and never triggers this.
-
-1. Open the Render dashboard. The service must show **Live**. If a deploy
-   failed, read its log and fix that first.
-2. Run the `/health` test, then the `/health/db` test.
-   - 401: the cron header and Render's `PING_TOKEN` do not match.
-   - 503 "ping token not configured": `PING_TOKEN` is missing on Render.
-   - 503 "database unavailable": check Supabase (paused? password changed?).
-3. In cron-job.org, open the job, click **Test run**, expect 200 (run it a
-   second time if the first gets Render's wake-up page).
-4. Switch the job back to **Enabled**.
+1. In cron-job.org, open the job's history and the failed run's response.
+   - 401: the `apikey` header is missing or the key was rotated. Copy the
+     current publishable key from Supabase (password manager too).
+   - 404 `PGRST202` or 406 `PGRST106`: check section 4, steps 1 and 5.
+   - 5xx or timeout: Supabase may be paused or down. Check the dashboard;
+     click **Resume** if it is paused.
+2. Click **Test run**, expect 200 and `{"ok" : true}`.
+3. If the job was disabled, switch it back to **Enabled**.
+4. After any change to the Data API settings, run the security check
+   (section 4, step 6).
 
 ### Rotate PING_TOKEN
 
 1. Generate a new token (section 0). Save it in the password manager.
 2. Render > service > **Environment**: set `PING_TOKEN` to the new value, then
    **Save, rebuild, and deploy**. Wait for **Live**.
-3. cron-job.org > "Flash DB heartbeat" > **Advanced** > **Headers**: set
-   `X-Ping-Token` to the new value. Save.
-4. Run the `/health/db` test with the new token (expect 200) and click
-   **Test run** in cron-job.org (expect 200).
+3. Run the `/health/db` test with the new token (expect 200). The cron job
+   does not use `PING_TOKEN`.
+
+### Rotate the Supabase publishable key
+
+1. Supabase > **Project Settings > API Keys**: create a new publishable key.
+   Save it in the password manager.
+2. cron-job.org > "Flash DB heartbeat" > **Advanced** > **Headers**: set
+   `apikey` to the new key. **Test run**, expect 200.
+3. Delete the old publishable key in Supabase.
 
 ### Rotate the database password
 
