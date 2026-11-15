@@ -128,7 +128,7 @@ sum over a subset of that partition (invariant I16).
 
 ## B. Reconcile rules
 
-`RECONCILE_VERSION = "reconcile-1.1.0"`; bump on any change that can alter a
+`RECONCILE_VERSION = "reconcile-1.2.0"`; bump on any change that can alter a
 role or a link. All rules live in one pure module (`app/engine/reconcile.py`,
 stdlib only, no database).
 
@@ -168,8 +168,8 @@ stdlib only, no database).
 | `unique_10min` | `DUP_autopay_card` | Linked: the only partner, inside 10 minutes |
 | `within_24h` | `DUP_autopay_card` | Candidate: more than 10 minutes apart |
 | `same_amount` | `DUP_same_amount` | Candidate |
-| `different_references` | `DUP_same_amount` | Candidate: two different per-payment references |
 | `recorded_at_import` | `DUP_legacy` | Candidate: recorded in `duplicate_candidates`, found by no rule now |
+| `different_references` | `DUP_legacy` | Candidate: recorded at import, but the two sides carry different references (D-069) |
 | `names_partner_account` | `ST_pair` | Linked: one leg names the account the other is on |
 | `no_own_text` | `ST_pair` | Candidate: unique, but neither leg names the other's account |
 | `same_merchant` | `RF_same_amount` | Linked |
@@ -190,7 +190,7 @@ handles two transactions that may be one event.
 | | D1 `DUP_autopay_card` | D2 `DUP_same_amount` |
 | -- | -- | -- |
 | Inputs | Active debits | Active transactions |
-| Match | Same bank, `account_last4` (both carry the card's last 4) and amount. One leg has channel `e_mandate` (AutoPay success, H08 or H13), the other `debit_card` or `credit_card`. If both merchants have a `brand_id`, the ids are equal | Same bank, `account_last4`, direction and amount (the D-047 rule), and not a D1 pair. This is the rule that recorded the existing candidates, so none can be lost (D-062). A pair whose two sides carry different per-payment references is probably two payments [A3]; it is still a candidate, marked `different_references` for the review and counted on its own stats line. A mandate ID (hint `mandate_reference`) is not a per-payment reference |
+| Match | Same bank, `account_last4` (both carry the card's last 4) and amount. One leg has channel `e_mandate` (AutoPay success, H08 or H13), the other `debit_card` or `credit_card`. If both merchants have a `brand_id`, the ids are equal | Same bank, `account_last4`, direction and amount (the D-047 rule), and not a D1 pair. A pair where both sides carry a reference and the references differ is two payments [A3] and is not proposed (D-069); it is kept only when it was recorded at import (`DUP_legacy`). A mandate ID is never a match key: two messages with one mandate ID can still be a candidate |
 | Window | Linked: 10 minutes. Candidate: 24 hours. Ten minutes is what Phase 2 recorded the 18 pairs with [A1]; the AutoPay SMS carries only a date, so a late SMS is still shown to the owner up to a day | 10 minutes, as recorded in Phase 2 |
 | Zero | Nothing | Nothing |
 | One (unique pair) | **Linked** inside 10 minutes; candidate between 10 minutes and 24 hours | Candidate. Two equal payments minutes apart are common (two tickets, two coffees), so this is never automatic |
@@ -216,8 +216,8 @@ handles two transactions that may be one event.
 - **Counting partners for D1.** Every card spend inside the 24 hours
   counts. A pair is linked only when it is inside 10 minutes and neither
   side has another partner inside 24 hours.
-- **References never match anything.** A shared mandate ID neither makes a
-  pair nor prevents one; references only label a candidate.
+- **References never make a match.** A shared mandate ID neither makes a
+  pair nor prevents one. Two different references prevent one (D-069).
 - **The existing 18 candidates.** `duplicate_candidates` is frozen: import
   keeps recording into it for now, its `status` column is never written, and
   Reconcile does not read it for decisions (C1). Reconcile finds its own
@@ -506,7 +506,7 @@ every row and running recompute gives the same rows back.
 derive_runs    id, owner_id, started_at, finished_at, status, trigger, versions, counts
                status in (running, done, failed)
                trigger in (import, reparse, owner, manual)
-               versions JSON: {"merchant": "merchant-1.1.1", "reconcile": "reconcile-1.1.0"}
+               versions JSON: {"merchant": "merchant-1.1.1", "reconcile": "reconcile-1.2.0"}
                counts JSON: counts only
 txn_derived    transaction_id -> transactions (primary key), owner_id,
                merchant_key, merchant_kind, merchant_confidence, display_name,

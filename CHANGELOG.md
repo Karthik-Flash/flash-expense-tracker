@@ -43,6 +43,9 @@ Phase 1 is parsing, Phase 2 is the database and import.
   pair; owner "same" and "different" decisions are an input.
   `reconcile-stats` adds links, candidates by reason, AutoPay + card time
   gaps and the fate of the existing candidates.
+- `reconcile-1.2.0` (D-069): a same-amount pair with two different
+  references is two payments. Reconcile no longer proposes it and import
+  no longer records it; pairs already recorded are kept.
 
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 

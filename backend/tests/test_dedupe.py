@@ -100,8 +100,10 @@ def test_candidate_rule(change: dict, expected: bool) -> None:
     assert is_candidate(txn(), txn(**change)) is expected
 
 
-def test_shared_reference_is_not_a_candidate() -> None:
-    assert not is_candidate(txn(reference="r1"), txn(reference="r1"))
+def test_two_references_are_not_a_candidate() -> None:
+    assert not is_candidate(txn(reference="r1"), txn(reference="r1"))  # shared
+    assert not is_candidate(txn(reference="r1"), txn(reference="r2"))  # two payments
+    assert is_candidate(txn(reference="r1"), txn())  # one side has none
 
 
 def test_mandate_reference_never_merges_monthly_charges() -> None:

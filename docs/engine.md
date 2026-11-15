@@ -216,7 +216,7 @@ transactions):
 
 ## Reconcile: roles and links
 
-`app/engine/reconcile.py` (`reconcile-1.1.0`; design in
+`app/engine/reconcile.py` (`reconcile-1.2.0`; design in
 [design/phase-3-backbone.md](design/phase-3-backbone.md), D-059 to D-067)
 gives every transaction exactly one role, and links transactions that are,
 or may be, one event. Pure and stdlib only: no database, clock, network or
@@ -313,8 +313,8 @@ include both ends.
 | Kind | Rule | Compatible pair | Unique pair | Role effect of a link |
 | ---- | ---- | --------------- | ----------- | --------------------- |
 | `duplicate` | `DUP_autopay_card` | Two debits, same bank, card last 4 and amount; one `e_mandate`, one `debit_card` or `credit_card`; not two different brands; at most 24 hours apart | Linked (`unique_10min`) at most 10 minutes apart; candidate (`within_24h`) beyond | The earliest (then lowest id) keeps its role; the other is `duplicate` |
-| `duplicate` | `DUP_same_amount` | Same bank, `account_last4`, direction and amount, at most 10 minutes apart, not a pair of the rule above | Always a candidate: `different_references` when both carry different per-payment references, else `same_amount` | none |
-| `duplicate` | `DUP_legacy` | A pair from `legacy_pairs`, both active, that no rule found | Always a candidate (`recorded_at_import`) | none |
+| `duplicate` | `DUP_same_amount` | Same bank, `account_last4`, direction and amount, at most 10 minutes apart, not a pair of the rule above, and not two different references (D-069) | Always a candidate (`same_amount`) | none |
+| `duplicate` | `DUP_legacy` | A pair from `legacy_pairs`, both active, that no rule found | Always a candidate: `different_references` when both sides carry a reference and they differ, else `recorded_at_import` | none |
 | `self_transfer` | `ST_pair` | A debit and a credit of the same amount on two different listed own bank accounts or wallets, at most 24 hours apart; both legs unexplained or `ST_own_text` | Linked (`names_partner_account`) when one leg's text names the account the other leg is on; else candidate (`no_own_text`) | Both legs `self_transfer` (rule `ST_pair`, basis owner) |
 | `refund` | `RF_same_amount` | A refund and a purchase (role `spend` or `card_bill_counted`) of the same amount, same bank and `account_last4`, purchase at most 30 days before | Linked (`same_merchant`) when the merchant keys are equal; else candidate (`different_merchant`) | none: a refund is role `refund`, linked or not |
 | `refund` | `RF_partial` | As above with a larger purchase and equal merchant keys; only for a refund with no full-amount pair and no owner link | Always a candidate (`partial`) | none |
@@ -331,8 +331,10 @@ include both ends.
   the pair for good: no rule proposes it again, and it is dropped from
   `legacy_pairs` too. A decision about a transaction that is not in the
   input is ignored. A role decision wins over a link.
-- **References never match anything**; a mandate ID is never a per-payment
-  reference (D-046). They only label a `DUP_same_amount` candidate.
+- **References never make a match**; a mandate ID is never a match key
+  (D-046). Two different references rule a same-amount pair out: they are
+  two payments (D-069). Such a pair is kept only when it was recorded at
+  import, as `DUP_legacy` with reason `different_references`.
 - A duplicate group is every transaction joined by linked duplicate links.
   A rule's group has two members; a larger one is the owner's.
 - Errors (`ValueError`, never with a value from the data): an unknown kind

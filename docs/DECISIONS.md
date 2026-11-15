@@ -366,6 +366,9 @@ cross-message judgement, moves to Reconcile (Phase 3).
 Superseded in part by D-062 (15 Nov 2026): nothing merges, and the `status`
 of a `duplicate_candidates` row is never written.
 
+Narrowed by D-069 (16 Nov 2026): two different references are two payments,
+not a candidate.
+
 ## D-048 Real data lives in Supabase; AI tools never connect to it (2026-11-14)
 
 Supabase Postgres holds the real imported data. It is protected by the Data
@@ -628,6 +631,9 @@ decide candidates in `duplicate_candidates.status`.
   lowest id, for now. Step 3C-3 reports whether that choice changes the
   merchant shown for an AutoPay and card pair; the planner decides then.
 
+Narrowed by D-069 (16 Nov 2026): a same-amount pair with two different
+references is no longer proposed; recorded ones are kept.
+
 ## D-063 Wallet top-ups (2026-11-15)
 
 Updates D-029. A wallet top-up is a self-transfer only when the owner lists
@@ -689,3 +695,21 @@ text and a UPI ID, `display_name` is the cleaned name in title case, not the
 UPI ID. The key stays the UPI ID, and kinds and keys do not change. The
 round-trip rule (normalising a display name gives the same key) holds only
 when the display name comes from the same text as the key.
+
+## D-069 Two different references are two payments (2026-11-16)
+
+Narrows D-047 and D-062. A same-amount pair where both transactions carry a
+reference and the references differ is two payments, not a possible
+duplicate.
+
+- Reconcile (`reconcile-1.2.0`) no longer proposes such a pair. It keeps one
+  only when the pair is already recorded in `duplicate_candidates` (rule
+  `DUP_legacy`, reason `different_references`), so no existing candidate is
+  lost.
+- Import's `is_candidate` has the same exclusion, so the recorded list stops
+  growing with such pairs.
+- A pair where one side has no reference is still a candidate. Two messages
+  with the same mandate ID are still a candidate in Reconcile.
+- Why: nearly every UPI transaction carries a reference (116 of 127 in the
+  redacted sample), so every pair of equal payments close in time would
+  have become a review item.

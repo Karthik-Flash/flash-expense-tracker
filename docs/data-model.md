@@ -70,9 +70,10 @@ printed.
      same-amount subscription charges would become one transaction.
    - Zero amounts create no transaction (counted as `zero_amount`).
 3. **Fuzzy candidates**, recorded and never merged: same owner, bank,
-   `account_last4`, direction and amount within 10 minutes, without a shared
-   reference, gives one `duplicate_candidates` row (rule
-   `same_amount_10min`). Typical case: an AutoPay success SMS and the card
+   `account_last4`, direction and amount within 10 minutes gives one
+   `duplicate_candidates` row (rule `same_amount_10min`), unless both
+   carry a reference: equal references are one mandate, different ones are
+   two payments (D-069). Typical case: an AutoPay success SMS and the card
    "Spent" SMS for the same charge (D-047).
 4. Different directions never merge or match: a self-transfer is a debit and
    a credit for Reconcile to pair.

@@ -29,8 +29,8 @@ compatible partner for that rule; otherwise every pair is a candidate. A
 candidate changes no role and no total.
   duplicate: DUP_autopay_card   AutoPay success + card spend, same bank, card and amount.
                                 Unique inside 10 minutes: linked. Up to 24 hours: candidate
-             DUP_same_amount    same bank, account, direction and amount inside 10 minutes:
-                                always a candidate
+             DUP_same_amount    same bank, account, direction and amount inside 10 minutes,
+                                not two different references: always a candidate
              DUP_legacy         a pair recorded at import that no rule found: candidate
   self_transfer: ST_pair        debit on one own account, credit on another, same amount,
                                 24 hours. Unique and one leg names the other's account:
@@ -54,7 +54,7 @@ from datetime import datetime, timedelta
 
 from app.engine.merchant import MERCHANT_VERSION, Merchant, channel_for, normalise_merchant, parts
 
-RECONCILE_VERSION = "reconcile-1.1.0"
+RECONCILE_VERSION = "reconcile-1.2.0"
 VERSIONS = {"merchant": MERCHANT_VERSION, "reconcile": RECONCILE_VERSION}
 
 ROLES = (
@@ -119,8 +119,8 @@ LINK_REASONS = (
     "unique_10min",  # DUP_autopay_card, linked
     "within_24h",  # DUP_autopay_card, more than 10 minutes apart
     "same_amount",  # DUP_same_amount
-    "different_references",  # DUP_same_amount, two different per-payment references
     "recorded_at_import",  # DUP_legacy
+    "different_references",  # DUP_legacy, the two sides carry different references
     "names_partner_account",  # ST_pair, linked
     "no_own_text",  # ST_pair, neither leg names the other's account
     "same_merchant",  # RF_same_amount, linked
@@ -531,13 +531,13 @@ def _owner_only(run: _Run, kind: str) -> None:
             run.links[kind, a, b] = Link(kind, a, b, "linked", "OWNER_link", "owner_same", "owner")
 
 
-def _payment_reference(t: Txn) -> str | None:
-    """A reference that names one payment. A mandate ID repeats every month (D-046)."""
-    return t.reference if t.reference and "mandate_reference" not in t.hints else None
+def _two_payments(a: Txn, b: Txn) -> bool:
+    """Both carry a reference and the references differ: two payments (D-069)."""
+    return bool(a.reference and b.reference and a.reference != b.reference)
 
 
 def _duplicates(run: _Run, rows: list[Txn], legacy_pairs: Iterable[Pair]) -> None:
-    """Design B1. References never match anything; they only label a candidate."""
+    """Design B1. References never make a match; two different ones rule a pair out."""
     debits = [t for t in rows if t.direction == "debit" and t.account_last4]
     autopay = [t for t in debits if t.channel == "e_mandate"]
     cards = [t for t in debits if t.channel in CARD_CHANNELS]
@@ -558,21 +558,18 @@ def _duplicates(run: _Run, rows: list[Txn], legacy_pairs: Iterable[Pair]) -> Non
         lambda t: (t.bank, t.account_last4, t.direction, t.amount_paise),
         DUP_LINK_WINDOW,
     ):
-        if _pair(a, b) not in d1:
-            references = {_payment_reference(a), _payment_reference(b)}
-            two_payments = None not in references and len(references) == 2
-            d2[_pair(a, b)] = (
-                "candidate",
-                "different_references" if two_payments else "same_amount",
-            )
+        if _pair(a, b) not in d1 and not _two_payments(a, b):
+            d2[_pair(a, b)] = ("candidate", "same_amount")
     _emit(run, "duplicate", "DUP_same_amount", d2)
     _owner_only(run, "duplicate")
 
     for a, b in {(min(p), max(p)) for p in legacy_pairs}:  # none may be lost (D-062)
         known = ("duplicate", a, b) in run.links or (a, b) in run.different["duplicate"]
         if a != b and a in run.by_id and b in run.by_id and not known:
+            two = _two_payments(run.by_id[a], run.by_id[b])
+            reason = "different_references" if two else "recorded_at_import"
             run.links["duplicate", a, b] = Link(
-                "duplicate", a, b, "candidate", "DUP_legacy", "recorded_at_import", "engine"
+                "duplicate", a, b, "candidate", "DUP_legacy", reason, "engine"
             )
 
     # Groups. A rule links a pair only when neither side has another partner, so a group a
