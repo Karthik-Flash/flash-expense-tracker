@@ -4,8 +4,8 @@ For a fresh Claude Code session with no memory of earlier work. Read this
 first, then [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase
 in [PLAN.md](PLAN.md). State as of 15 Nov 2026: Phases 0-2 done (tags
 `phase-0-done`, `phase-1-done`, `phase-2-done`); Phase 3 is in progress
-(3B merchant engine and 3C-2 Reconcile roles are built; NOTES.md has the
-current step).
+(3B merchant engine and the Reconcile engine in memory, steps 3C-2, 3C-3 and
+3C-5, are built; NOTES.md has the current step).
 
 ## Goal and locked stack
 
@@ -66,7 +66,7 @@ backend/            Render root
   app/config.py       settings from env / backend/.env (DATABASE_URL, PING_TOKEN, CORS_ORIGINS, OWNER_ID)
   app/db.py           engine, SessionLocal, Base
   app/models.py       ORM models; UtcDateTime column type
-  app/engine/         stdlib-only parser: senders, money, timeparse, filters (OTP), models, parsers/{base,hdfc}, merchant (+ brands.json), reconcile (roles, in memory)
+  app/engine/         stdlib-only parser: senders, money, timeparse, filters (OTP), models, parsers/{base,hdfc}, merchant (+ brands.json), reconcile (roles and links, in memory)
   app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py
   app/importers/      sms_backup.py (streaming XML importer)
   app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats
@@ -158,13 +158,15 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 - Keep-alive switched to the Data API RPC and verified 15 Nov (security
   check 8/8 blocked, cron test run 200, `last_seen` moved); the first
   scheduled 03:30 run is still to check (D-053).
-- Reconcile (3C) is partly built. Done: the approved design
-  (`docs/design/phase-3-backbone.md`, D-059 to D-067) and step 3C-2, one
-  role per transaction in memory plus `reconcile-stats`. Not built: owner
-  data in the database, duplicates, pair links, storage, `recompute`, the
-  terminal review (steps 3C-3 to 3C-8). So the 18 open duplicate
-  candidates and the 1 merged refund are still to review, and nothing is
-  stored or shown yet.
+- Reconcile (3C) is partly built. Done, all in memory: the approved design
+  (`docs/design/phase-3-backbone.md`, D-059 to D-067), one role per
+  transaction (3C-2), duplicates (3C-3), pair linking for self-transfers,
+  refunds and the FD second credit (3C-5), and `reconcile-stats`. Not
+  built: the card bill pair rule, owner data in the database (3C-4),
+  storage and `recompute` (3C-6), the terminal review (3C-7), the export
+  (3C-8). So the 18 open duplicate candidates and the 1 merged refund are
+  still to review, owner decisions cannot be entered yet, and nothing is
+  stored or shown.
 - Foreign currency is deferred: 44 messages (D-035).
 - Only HDFC has a parser: 153 messages from SBI, ICICI, India Post, Kotak
   and PhonePe sit as `no_parser_for_bank`. Add a parser (docs/engine.md,

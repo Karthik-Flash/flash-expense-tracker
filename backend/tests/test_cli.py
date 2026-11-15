@@ -1,6 +1,8 @@
 """CLI commands and I9: output holds counts only. Synthetic data only."""
 
 import re
+import uuid
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -12,7 +14,8 @@ from app.engine.merchant import MERCHANT_VERSION
 from app.engine.parsers.hdfc import PARSER_VERSION
 from app.engine.reconcile import RECONCILE_VERSION, ROLES, RULES
 from app.importers import sms_backup
-from tests.smsdata import FIXTURES, NEVER_STORED, SBI_ROW, full_rows, write_backup
+from app.models import DuplicateCandidate, Transaction
+from tests.smsdata import FIXTURES, NEVER_STORED, SBI_ROW, WHEN, full_rows, write_backup
 
 
 @pytest.fixture
@@ -135,9 +138,97 @@ def test_reconcile_stats_prints_counts_only_and_writes_nothing(run, backup, db_e
     uncertain = sum(int(n) for key, n in by_direction.items() if key.endswith(" uncertain"))
     assert re.search(rf"uncertain credits\s+{uncertain}\n", out)
     assert re.search(r"not counted yet\n  foreign currency\s+\d+\n  no parser\s+1\n", out)
+    assert "debit duplicate" in by_direction  # the line is always there
+    assert (
+        len(re.findall(r"  \w+ (?:linked|candidate)\s+\d+\n", sections["links by kind and status"]))
+        == 8
+    )
+    assert re.search(r"by time gap\n  up to 10 min\s+\d+\n  10-60 min\s+\d+\n  1-24 h\s+\d+\n", out)
+    existing = dict(re.findall(r"  ([a-z ]+?)\s+(\d+)\n", sections["existing candidates"]))
+    assert list(existing) == [
+        "recorded",
+        "linked",
+        "still candidate",
+        "decided different",
+        "not active",
+        "lost",
+    ]
+    assert existing["lost"] == "0"
+    assert int(existing["recorded"]) == int(existing["linked"]) + int(existing["still candidate"])
     assert out.rstrip().endswith(cli.NO_INCOME_PARTY)
     assert_no_values(out)
     assert not any(k in out for k in ("brand:", "vpa:", "name:", "R5_"))
+
+
+def test_reconcile_stats_counts_links_and_existing_candidates(run, db_engine) -> None:
+    owner = uuid.uuid4()
+
+    def row(key: str, channel: str, minute: int, amount: int) -> Transaction:
+        return Transaction(
+            owner_id=owner,
+            dedupe_key=key,
+            type="debit",
+            direction="debit",
+            amount_paise=amount,
+            currency="INR",
+            account_last4="0002",
+            channel=channel,
+            counterparty_raw="TEST STREAMING",
+            txn_time_utc=WHEN + timedelta(minutes=minute),
+            time_inferred=False,
+            bank="HDFC",
+            hints=[],
+            status="active",
+        )
+
+    with sessionmaker(db_engine)() as session:
+        rows = [
+            row("a", "e_mandate", 0, 49_900),
+            row("b", "debit_card", 3, 49_900),  # AutoPay + card, 3 minutes: linked
+            row("c", "e_mandate", 0, 19_900),
+            row("d", "debit_card", 45, 19_900),  # 45 minutes: candidate
+            row("e", "upi", 0, 5_000),
+            row("f", "upi", 2, 5_000),  # same amount, 2 minutes: candidate
+        ]
+        session.add_all(rows)
+        session.flush()
+        ids = [r.id for r in rows]
+        for a, b in ((0, 1), (4, 5), (0, 5)):  # the last one: no rule finds it any more
+            session.add(
+                DuplicateCandidate(
+                    txn_a=ids[a], txn_b=ids[b], rule="same_amount_10min", status="open"
+                )
+            )
+        session.commit()
+    before = snapshot(db_engine)
+    out = run("reconcile-stats")
+    assert snapshot(db_engine) == before
+    for label, n in {
+        "debit duplicate": 1,
+        "debit spend": 5,
+        "DUP_autopay_card": 1,
+        "duplicate candidate": 3,
+        "duplicate linked": 1,
+        "refund linked": 0,
+        "duplicate recorded_at_import": 1,
+        "duplicate same_amount": 1,
+        "duplicate within_24h": 1,
+        "up to 10 min": 1,
+        "10-60 min": 1,
+        "1-24 h": 0,
+        "same merchant key": 2,
+        "brand on neither": 2,
+        "earlier message is autopay": 2,
+        "earlier message is card": 0,
+        "recorded": 3,
+        "linked": 1,
+        "still candidate": 2,
+        "decided different": 0,
+        "not active": 0,
+        "lost": 0,
+    }.items():
+        assert re.search(rf"^  {re.escape(label)}\s+{n}$", out, flags=re.M), label
+    assert "TEST STREAMING" not in out and "0002" not in out and "49" not in out
 
 
 def test_merchant_review_refuses_without_a_terminal(db_engine, backup: Path, capsys) -> None:

@@ -34,6 +34,15 @@ Phase 1 is parsing, Phase 2 is the database and import.
   reads one transaction, owner data in memory, and `totals()` (Spent, Paid
   back, Net, Income as sums over roles).
 - `python -m app.cli reconcile-stats`: counts only, read-only.
+- 3C-3 and 3C-5: `reconcile-1.1.0`. `derive()` also returns links.
+  Duplicates: a unique AutoPay + card spend pair inside 10 minutes is
+  linked and counts once; every other same-amount pair is a candidate;
+  no existing candidate is lost. Pair linking: the second leg of a
+  self-transfer, refund to purchase (30 days, same card or account), the
+  FD second credit (candidate only). A link is made only for a unique
+  pair; owner "same" and "different" decisions are an input.
+  `reconcile-stats` adds links, candidates by reason, AutoPay + card time
+  gaps and the fate of the existing candidates.
 
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 

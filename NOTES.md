@@ -49,12 +49,17 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Phase 3C-2: decisions recorded; `merchant-1.1.1` (D-068); roles in
       memory (`reconcile-1.0.0`, [docs/engine.md](docs/engine.md)) and
       `reconcile-stats`
-- [ ] Phase 3C-2: your `reconcile-stats` run on the real data (counts only,
-      safe to paste)
+- [x] Phase 3C-3 and 3C-5: duplicates and pair linking in memory
+      (`reconcile-1.1.0`); `reconcile-stats` shows links, candidates and the
+      existing candidates
+- [ ] Your `reconcile-stats` run on the real data (counts only, safe to
+      paste). It now answers: how many of the 18 pairs link, the AutoPay +
+      card time gaps, and which message carries the brand
 - [ ] Private look at the merged refund's two source messages (cheat sheet,
       "Merged refund"); tell the planner "one event" or "two events" only
-- [ ] Phase 3C-3 to 3C-8: duplicates, owner tables and `owner-load`, pair
-      links, storage and `recompute`, terminal review, `owner-export`
+- [ ] Phase 3C-4, 3C-6, 3C-7, 3C-8: owner tables and `owner-load`, storage
+      and `recompute`, terminal review, `owner-export`; the card bill pair
+      rule when credit card SMS appear
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -400,7 +405,7 @@ cd backend
 .\.venv\Scripts\python.exe -m app.cli merchant-stats
 # 8. PRIVATE, your screen only: merchants with real names. Never paste or redirect it
 .\.venv\Scripts\python.exe -m app.cli merchant-review --kind unsure --sample 30 --seed 1
-# 9. Reconcile roles: read-only, counts only (roles, rules, paybacks by basis, uncertain credits)
+# 9. Reconcile: read-only, counts only (roles, rules, links, candidates, existing candidates)
 .\.venv\Scripts\python.exe -m app.cli reconcile-stats
 ```
 
@@ -416,6 +421,8 @@ cd backend
 - `reconcile-stats` runs with empty owner data until step 3C-4, so every
   basis is `engine` and the no-income-party warning always shows. Until
   then your own transfers count as spend and pocket money as a payback.
+  In its output, "existing candidates ... lost" must be 0; tell the
+  planner if it is not.
 
 **Merged refund (PRIVATE, your screen only).** Two refund messages became
 one transaction in Phase 2. To see both source messages, open the Supabase
@@ -474,10 +481,12 @@ gh repo view --web                                # open the repo in the browser
 
 1. Keep-alive: switch-over verified 15 Nov; first scheduled 03:30 run still
    to check (D-053, to-do list).
-2. Reconcile (3C): roles exist in memory only (3C-2). Still open: 18 open
-   duplicate candidates (3C-3), and 1 refund that was merged into another
-   transaction on its dedupe key (your private check, D-064). No owner
-   data, links or stored roles until 3C-4 to 3C-6.
+2. Reconcile (3C): roles and links exist in memory only (3C-2, 3C-3, 3C-5).
+   Still open: your `reconcile-stats` run to see how the 18 duplicate
+   candidates come out; 1 refund that was merged into another transaction
+   on its dedupe key (your private check, D-064); the planner's decisions
+   on the duplicate primary (Q9) and on narrowing same-amount candidates.
+   No owner data, decisions or stored roles until 3C-4 to 3C-7.
 3. 44 foreign-currency messages deferred (D-035).
 4. 153 messages from banks without a parser (SBI, ICICI, India Post, Kotak,
    PhonePe): a parser plus `reparse`, no re-import needed.
@@ -495,6 +504,22 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-16: Phase 3C-3 and 3C-5, duplicates and pair linking in memory
+
+- `reconcile-1.1.0`: `derive(txns, owner, legacy_pairs)` returns roles and
+  links. A link has a kind, two ids, a status (linked or candidate), a
+  rule, a reason and who decided.
+- A rule links only a unique pair; anything else is a candidate, and a
+  candidate changes no role and no total. Duplicates: AutoPay + card
+  spend (linked inside 10 minutes, candidate up to 24 hours), same-amount
+  pairs (candidates), pairs recorded at import (never lost). Pair links:
+  second leg of a self-transfer, refund to purchase, FD second credit.
+- Owner link decisions ("same", "different") are an input of the engine;
+  there is no way to enter them yet (3C-4, 3C-7).
+- Not built: the card bill pair rule (no credit card SMS seen).
+- On the redacted sample: 0 links and 0 candidates (no pair exists there).
+- Tests: 502 backend (67 new: 66 links, 1 CLI), 89 scripts; ruff clean.
 
 ### 2026-11-16: Phase 3C-2, decisions, merchant 1.1.1, roles in memory
 
