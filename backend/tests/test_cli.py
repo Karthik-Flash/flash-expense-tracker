@@ -8,6 +8,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app import cli
+from app.engine.merchant import MERCHANT_VERSION
 from app.engine.parsers.hdfc import PARSER_VERSION
 from app.importers import sms_backup
 from tests.smsdata import FIXTURES, NEVER_STORED, SBI_ROW, full_rows, write_backup
@@ -93,19 +94,63 @@ def test_missing_input_is_an_error(db_engine: Engine, tmp_path: Path, capsys) ->
     assert "input not found" in capsys.readouterr().err
 
 
+def snapshot(db_engine: Engine) -> list:
+    with db_engine.connect() as conn:
+        return [list(conn.execute(select(model))) for model in cli.TABLES]
+
+
 def test_merchant_stats_prints_counts_only_and_writes_nothing(run, backup: Path, db_engine) -> None:
     run("import-sms", "--input", str(backup))
-
-    def snapshot() -> list:
-        with db_engine.connect() as conn:
-            return [list(conn.execute(select(model))) for model in cli.TABLES]
-
-    before = snapshot()
+    before = snapshot(db_engine)
     out = run("merchant-stats")
-    assert snapshot() == before
-    assert "merchant-stats (merchant-1.0.0, read-only)" in out
+    assert snapshot(db_engine) == before
+    assert f"merchant-stats ({MERCHANT_VERSION}, read-only)" in out
     assert re.search(r"transactions examined\s+\d+", out)
     assert "R4_card" in out and "dictionary hits" in out
+    assert re.search(r"kind by direction\n(  .*\n)*  refund business\s+\d+", out)
+    assert "distinct merchant keys by kind" in out
+    assert re.search(r"  95%\s+\d+", out)
     assert_no_values(out)
     keys = {"brand:", "vpa:", "name:"}
     assert not any(k in out for k in keys)
+
+
+def test_merchant_review_refuses_without_a_terminal(db_engine, backup: Path, capsys) -> None:
+    factory = sessionmaker(db_engine)
+    assert cli.main(["import-sms", "--input", str(backup)], factory) == 0
+    capsys.readouterr()
+    assert cli.main(["merchant-review"], factory) == 2
+    out = capsys.readouterr()
+    assert out.out == "" and "only to a terminal" in out.err
+
+
+def test_merchant_review_filters_and_shows_no_amounts(run, backup, db_engine, monkeypatch) -> None:
+    run("import-sms", "--input", str(backup))
+    monkeypatch.setattr(cli, "is_terminal", lambda: True)
+    before = snapshot(db_engine)
+
+    def review(*flags: str) -> list[str]:
+        lines = run("merchant-review", *flags).splitlines()
+        assert lines[0] == lines[-1] == cli.PRIVATE
+        assert lines[-2] == f"{len(lines) - 3} keys"
+        return lines[1:-2]
+
+    every = review()
+    assert every and all(row.count(" | ") == 5 for row in every)
+    assert all(" | business " in row for row in review("--kind", "business"))
+    assert all(
+        " | person low | " in row for row in review("--kind", "person", "--confidence", "low")
+    )
+    assert all("R4_card" in row for row in review("--reason", "R4_card"))
+    refunds = review("--direction", "refund")
+    assert refunds and len(refunds) < len(every)
+    assert len(review("--sample", "2", "--seed", "1")) == 2
+    assert review("--sample", "2", "--seed", "1") == review("--sample", "2", "--seed", "1")
+    assert snapshot(db_engine) == before
+
+    out = "\n".join(every)
+    values = set()
+    for fx in FIXTURES:
+        values.add(fx["expected"].get("reference"))
+        values |= set(re.findall(r"(?:Rs\.?|INR) ?[\d,]+(?:\.\d+)?", fx["body"]))
+    assert not sorted(v for v in values if v and v in out)

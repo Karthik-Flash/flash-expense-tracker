@@ -16,6 +16,10 @@ Phase 1 is parsing, Phase 2 is the database and import.
 - Pure merchant engine `merchant-1.0.0`: business, person, unsure or none,
   a stable merchant key, and a dictionary of 74 national brands (D-057).
 - `python -m app.cli merchant-stats`: counts only, read-only.
+- `merchant-1.1.0` (D-058): brand aliases anchored at the start, a display
+  name for every merchant, UPI handle signals, 186 business keywords.
+  `merchant-stats` adds kind by direction, keys by kind and key coverage;
+  owner-only `merchant-review` (terminal only).
 
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 

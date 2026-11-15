@@ -9,7 +9,8 @@ Rules, in order (codes appear in Merchant.reasons):
   R0 no counterparty text, or channel atm: kind none
   R1 clean (NFKC, casefold, whitespace, outer punctuation); split a UPI ID
   R2 strip a payment-gateway prefix from the name (PAYTM*, RAZ*, ...)
-  R3 brand dictionary, whole tokens, longest alias wins, a tie is no match
+  R3 brand dictionary, whole tokens, anchored at the start of the name (after a
+     leading "www") or of the UPI local part; longest alias wins, a tie is no match
   R4 channel card or autopay: business
   R5 business and person signals; both or neither: unsure
 
@@ -20,13 +21,14 @@ can alter a key or a kind bumps it.
 
 import json
 import re
+import string
 import unicodedata
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import Literal
 
-MERCHANT_VERSION = "merchant-1.0.0"
+MERCHANT_VERSION = "merchant-1.1.0"
 
 Kind = Literal["business", "person", "unsure", "none"]
 Confidence = Literal["high", "low"]
@@ -47,18 +49,37 @@ PARSER_CHANNELS: dict[str, Channel] = {
 
 GATEWAY_PREFIXES = ("paytm", "raz", "pyu", "cca")  # only when followed by "*"
 HONORIFICS = frozenset("mr mrs ms dr shri smt".split())
+# Whole tokens only. Never a word of one or two letters, and never a word that
+# is also a common Indian given name or surname.
 BUSINESS_WORDS = frozenset(
     """
     pvt private ltd limited llp inc corp corporation company enterprise enterprises
     traders trading industries services solutions technologies agency agencies
-    store stores mart supermarket bazaar retail
+    associates consultants consultancy ventures group distributors suppliers
+    wholesale wholesalers exports imports impex infotech logistics
+    store stores mart supermarket bazaar retail shop shoppe emporium depot outlet
+    showroom kirana provision provisions bhandar general centre center corner point
     restaurant restaurants cafe hotel hotels dhaba bakery bakers sweets foods kitchen
-    canteen caterers pharmacy pharma medical medicals chemist chemists hospital
-    hospitals clinic diagnostics labs college school university academy institute
-    motors automobiles fuels petroleum garments textiles electronics mobiles hardware
-    jewellers travels tours bank finance insurance
+    canteen caterers catering mess tiffin tiffins bhojanalaya juice juices tea chai
+    coffee snacks biryani pizza dairy milk fruits vegetables chicken mutton meat
+    wines bar lounge hostel hostels lodge inn residency resort resorts
+    pharmacy pharma medical medicals medicos chemist chemists drugs surgicals hospital
+    hospitals clinic diagnostics diagnostic labs lab dental opticals optical
+    college school university academy institute coaching classes tuition tutorials
+    xerox photostat stationery stationers printers books library
+    motors automobiles garage tyres spares fuels petroleum petrol
+    garments textiles fashion fashions boutique tailors footwear sarees silks
+    electronics electricals mobiles computers telecom communications hardware paints
+    furniture steel cement builders developers constructions properties realty
+    jewellers jewellery salon saloon parlour laundry cleaners gym fitness studio
+    travels tours cabs taxi couriers packers movers transport
+    bank finance insurance
     """.split()
 )
+# UPI handles (the part after "@"). Consumer apps' handles are a person signal;
+# business handles a business signal, like a merchant-style local part.
+CONSUMER_HANDLES = frozenset("okaxis okhdfcbank okicici oksbi".split())
+BUSINESS_HANDLE_PREFIXES = ("okbiz",)
 TLDS = "com|in|net|org|io|app"
 
 _DOMAIN = re.compile(rf"(?<![\w@])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:{TLDS})(?![\w@])")
@@ -153,15 +174,18 @@ def alias_index() -> dict[tuple[str, ...], str]:
     return index
 
 
-def match_brand(words: tuple[str, ...]) -> tuple[str | None, bool]:
-    """(brand_id, tie). Whole-token runs only; the longest alias wins."""
+def match_brand(*starts: tuple[str, ...]) -> tuple[str | None, bool]:
+    """(brand_id, tie). Aliases match whole tokens at the start of each word list.
+
+    Callers pass the name words and the UPI local part words. The longest alias
+    wins (tokens, then characters); two brands of the same length: a tie, no match.
+    """
     index = alias_index()
-    longest = max(map(len, index))
     found = {
-        (n, len(" ".join(words[i : i + n])), index[words[i : i + n]])
-        for n in range(1, longest + 1)
-        for i in range(len(words) - n + 1)
-        if words[i : i + n] in index
+        (n, len(" ".join(words[:n])), index[words[:n]])
+        for words in starts
+        for n in range(1, len(words) + 1)
+        if words[:n] in index
     }
     if not found:
         return None, False
@@ -190,6 +214,15 @@ def _vpa_words(vpa: str | None) -> tuple[str, ...]:
     return tuple(w for w in re.split(r"[.\-_*]+", vpa.split("@")[0]) if w) if vpa else ()
 
 
+def _name_words(words: tuple[str, ...]) -> tuple[str, ...]:
+    return words[1:] if words[:1] == ("www",) else words
+
+
+def _display(p: Parts) -> str:
+    """UPI ID in lower case when there is one (it is the key), else the name in title case."""
+    return p.vpa if p.vpa else string.capwords(p.name)
+
+
 def normalise_merchant(counterparty: str | None, channel: Channel) -> Merchant:
     """Raw counterparty text plus merchant channel -> Merchant (see module docstring)."""
     if channel == "atm":
@@ -206,7 +239,7 @@ def normalise_merchant(counterparty: str | None, channel: Channel) -> Merchant:
     if p.gateway:
         reasons.append("R2_gateway")
 
-    brand_id, tie = match_brand(p.tokens or _vpa_words(p.vpa))
+    brand_id, tie = match_brand(_name_words(p.tokens), _vpa_words(p.vpa))
     if brand_id:
         brand = brands()[brand_id]
         reasons.append("R3_brand")
@@ -214,23 +247,23 @@ def normalise_merchant(counterparty: str | None, channel: Channel) -> Merchant:
     if tie:
         reasons.append("R3_tie")
 
-    key = _key(p)
+    key, display = _key(p), _display(p)
     if channel in ("card", "autopay"):
         reasons.append(f"R4_{channel}")
-        return Merchant("business", "high", key, None, None, (*reasons,))
+        return Merchant("business", "high", key, display, None, (*reasons,))
 
     business, person = _signals(p)
     reasons += business + person
     if business and not person:
         low = business == ["R5_digits"]
         reasons.append("R5_business")
-        return Merchant("business", "low" if low else "high", key, None, None, (*reasons,))
+        return Merchant("business", "low" if low else "high", key, display, None, (*reasons,))
     if person and not business:
         sure = "R5_honorific" in person or {"R5_mobile_vpa", "R5_person_name"} <= set(person)
         reasons.append("R5_person")
-        return Merchant("person", "high" if sure else "low", key, None, None, (*reasons,))
+        return Merchant("person", "high" if sure else "low", key, display, None, (*reasons,))
     reasons.append("R5_unsure_mixed" if business else "R5_unsure_none")
-    return Merchant("unsure", "low", key, None, None, (*reasons,))
+    return Merchant("unsure", "low", key, display, None, (*reasons,))
 
 
 def _signals(p: Parts) -> tuple[list[str], list[str]]:
@@ -244,6 +277,7 @@ def _signals(p: Parts) -> tuple[list[str], list[str]]:
             ("R5_keyword", has_keyword),
             ("R5_domain", has_domain),
             ("R5_merchant_vpa", bool(local and _MERCHANT_LOCAL.fullmatch(local))),
+            ("R5_business_handle", handle.startswith(BUSINESS_HANDLE_PREFIXES)),
             ("R5_digits", any(ch.isdigit() for w in words for ch in w)),
         )
         if hit
@@ -259,6 +293,7 @@ def _signals(p: Parts) -> tuple[list[str], list[str]]:
         for code, hit in (
             ("R5_honorific", bool(words) and words[0] in HONORIFICS and len(words) > 1),
             ("R5_mobile_vpa", bool(local and _MOBILE.fullmatch(local))),
+            ("R5_consumer_vpa", handle in CONSUMER_HANDLES),
             ("R5_person_name", person_name),
         )
         if hit
