@@ -43,6 +43,9 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Phase 3B-2: `merchant-1.1.0` (D-058), wider survey, `merchant-review`
 - [ ] Phase 3B: your `merchant-stats` run on the real data (counts only),
       and your own look with `merchant-review` (never pasted)
+- [x] Phase 3C-1: design of the derived-data backbone and Reconcile
+      ([docs/design/phase-3-backbone.md](docs/design/phase-3-backbone.md));
+      no code yet, 11 open questions for the planner
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -457,6 +460,17 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-15: Phase 3C-1, backbone and Reconcile design
+
+- `docs/design/phase-3-backbone.md`: design only, nothing built. Eleven
+  roles and the totals as sums over them; Reconcile rules for duplicates,
+  self-transfers, card bills, refunds, FD moves, paybacks and income; six
+  owner tables and three derived tables (migrations `0004`, `0005`); one
+  `recompute` command; invariants I10 to I21; owner file and commands;
+  `reconcile-stats` lines; build steps 3C-2 to 3C-8.
+- Waiting for the planner: questions Q1 to Q11 and conflicts C1 to C9 in
+  section I of that file.
 
 ### 2026-11-15: Phase 3B-2, merchant engine 1.1.0 and merchant-review
 
