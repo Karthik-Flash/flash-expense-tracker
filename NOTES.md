@@ -20,7 +20,9 @@ Quick reference and progress log. Updated after every task.
 **Phase 0-2 complete** (12-14 Nov 2026): scaffold and deploy, redaction,
 HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
 Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
-`phase-1-done`, `phase-2-done`. Next: Phase 3 ([docs/PLAN.md](docs/PLAN.md)).
+`phase-1-done`, `phase-2-done`. Next: Phase 3, steps 3A-3F
+([docs/PLAN.md](docs/PLAN.md), D-054); now in 3A (docs done; UI spec and
+mockup next).
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
@@ -35,6 +37,8 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Keep-alive switch-over verified (15 Nov): security check 8/8 blocked
       (public 406, keepalive 404), cron test run 200, `last_seen` moved
 - [ ] Overnight check of the new keep-alive (first scheduled run 03:30 IST)
+- [x] Phase 3A-1: PLAN aligned with Phase 3 (D-054), spend definition (D-055)
+- [ ] Phase 3A: one-page UI design spec and clickable mockup, approved by you
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -364,7 +368,7 @@ recursively). Every command prints counts only.
 
 ```powershell
 cd backend
-# 1. Migrate (Render also runs this on deploy; repeating is safe). Expect 0002 (head)
+# 1. Migrate (Render also runs this on deploy; repeating is safe). Expect 0003 (head)
 .\.venv\Scripts\python.exe -m alembic upgrade head; .\.venv\Scripts\python.exe -m alembic current
 # 2. Dry run: full pipeline inside one transaction, rolled back. Saves nothing
 .\.venv\Scripts\python.exe -m app.cli import-sms --input D:\FlashPrivate\raw --dry-run
@@ -441,6 +445,19 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-15: Phase 3A-1, docs alignment
+
+- `docs/PLAN.md`: Phase 3 replaced by steps 3A-3F (normalise, reconcile,
+  categorise, auth and read-only API, minimal dashboard); Phases 4-6 are now
+  full deploy and PWA, Android and live SMS, statements and insights. Phases
+  0-2 marked done with their tags (PLAN's Phase 1/2 labels are swapped
+  against the tags; left as is).
+- DECISIONS: D-054 Phase 3 scope and order (timing in D-028 superseded),
+  D-055 spend definition (Spent, Paid back, Net).
+- Fixes: HANDOFF decision range now D-001..D-055; import cheat sheet expects
+  head `0003`. D-015's duplicated fragment is still there: it has been there
+  since the entry was written, so there is no clean version to restore.
 
 ### 2026-11-15: Keep-alive moved off Render (D-053)
 

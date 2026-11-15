@@ -5,6 +5,11 @@ What shipped in each phase. Decision numbers refer to
 Phase 1 is parsing, Phase 2 is the database and import (in
 [docs/PLAN.md](docs/PLAN.md) these are its Phases 2 and 1).
 
+## Phase 3A: groundwork (15 Nov 2026, in progress, tag `phase-3a-done` when done)
+
+- Plan aligned with Phase 3 steps 3A-3F (D-054) and the spend definition
+  (D-055); doc fixes in HANDOFF and NOTES. No code.
+
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 
 - Migration `0002`: `import_batches`, `raw_messages`, `parse_results`,

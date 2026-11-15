@@ -203,6 +203,8 @@ other messages or the user's own accounts (transfers, card bill payments,
 refund linking, cross-message duplicates) is decided in the Reconcile stage,
 Phase 2-3.
 
+Timing superseded by D-054 (15 Nov 2026): Reconcile is step 3C.
+
 ## D-029 Self-transfers are transfers (2026-11-14)
 
 Money moved between the user's own accounts or wallets is a transfer, not
@@ -420,3 +422,33 @@ only in the cron-job.org header and the password manager, never in git.
 `/health/db` and `PING_TOKEN` stay for manual checks. A PowerShell check
 (infra/README.md, section 4) proves the public tables are unreachable.
 
+## D-054 Phase 3 scope and order (2026-11-15)
+
+Phase 3 runs in steps 3A to 3F as in `docs/PLAN.md`: 3A groundwork (docs, UI
+design spec, clickable mockup), 3B merchant normalisation, 3C reconcile, 3D
+categorise, 3E auth and read-only API, 3F minimal dashboard. Each step ends
+with tests green, a counts-only check on real data run by the owner, and a
+tag (`phase-3a-done` ... `phase-3f-done`). Engine work (3B-3D) comes before
+auth and the API, so the API is built once on the final data shape and no
+real data is reachable from the internet before a screen needs it.
+Supersedes the timing in D-028 ("Phase 2-3"): Reconcile is step 3C.
+
+## D-055 Spend definition for Phase 3 (2026-11-15)
+
+- Spent = debits that count, minus refunds.
+- Not spend: self-transfers between own accounts; FD movements;
+  `upcoming_debit` notices; a card bill payment when that card's purchases
+  are tracked in the data.
+- Spend: a card bill payment when that card's purchases are not tracked
+  (category "Card bill"); payments to people (category "People"); ATM
+  withdrawals (category "Cash"). The exact "tracked" test is defined in 3C.
+- Paybacks: a credit from a person is a payback unless that person is marked
+  as an income source (pocket money, stipend, salary). A payback is not
+  income.
+- The dashboard shows Spent, Paid back, and Net = Spent - Paid back. Net is
+  the headline.
+- A payback counts in the month it arrives. It reduces the month total only.
+  Linking it to one purchase or category is Phase 6 (splits).
+- If the engine is unsure whether a credit is from a person, it goes to the
+  unknown queue and spend is not reduced.
+- Income (non-payback credits) is shown separately and never reduces spend.

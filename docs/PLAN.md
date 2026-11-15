@@ -4,14 +4,16 @@ Summary of phases 0 to 6. Draft from Phase 0; the planner owns this file and
 refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
-**Status (14 Nov 2026):** Phases 0, 1 and 2 done. **Next: Phase 3:
-Normalization and categorization.**
+**Status (15 Nov 2026):** Phases 0, 1 and 2 done. **Next: Phase 3:
+Normalise, reconcile, categorise and minimal dashboard.**
 
 Prompt labels differ from this file's order: the parsing prompts were called
 "Phase 1" and the import prompt "Phase 2". Both are done; this file keeps its
 own numbering. What shipped: [CHANGELOG.md](../CHANGELOG.md).
 
 ## Phase 0: Scaffold and walking skeleton (done 13 Nov 2026)
+
+Done: tag `phase-0-done` (CHANGELOG Phase 0).
 
 Monorepo, Python 3.12 venv, FastAPI `/health`, Vite React PWA that shows
 backend status and survives cold starts, CI (ruff, pytest, typecheck, build),
@@ -39,6 +41,8 @@ Last open Phase 0 items:
 
 ## Phase 1: Data model and idempotent ingestion (done 14 Nov 2026)
 
+Done: tag `phase-2-done` (CHANGELOG Phase 2).
+
 As built: migration `0002` with `import_batches`, `raw_messages`,
 `parse_results`, `transactions`, `transaction_sources`,
 `duplicate_candidates` ([data-model.md](data-model.md), D-046 to D-050). A
@@ -54,6 +58,8 @@ Draft scope as planned:
 
 ## Phase 2: SMS parsing engine (done 14 Nov 2026)
 
+Done: tag `phase-1-done` (CHANGELOG Phase 1).
+
 As built: HDFC parser `hdfc-1.1.1` ([engine.md](engine.md), D-041 to D-045),
 fake-fixture tests, per-bank versions and `python -m app.cli reparse`. Other
 banks are stored with `no_parser_for_bank` and need only a parser plus
@@ -65,24 +71,55 @@ reparse. Draft scope as planned:
 - Parser registry with versions. Re-parse stored raw messages when a version
   changes.
 
-## Phase 3: Normalization and categorization (next)
+## Phase 3: Normalise, reconcile, categorise and minimal dashboard (next)
 
-- Merchant canonicalization (token cleanup plus fuzzy matching).
-- Rule-based categories with user overrides that become rules.
-- Self-transfer detection between own accounts, so money is not counted twice.
+Goal: the owner logs in on their phone and sees their real spending,
+correctly counted and categorised, on a minimal dashboard. Scope and order:
+D-054. What counts as spend: D-055.
 
-## Phase 4: Insights engine
+Steps, in this order. Each ends with tests green, a counts-only check on real
+data run by the owner, and a tag (`phase-3a-done` ... `phase-3f-done`).
 
-- Recurring payment and subscription detection.
-- Monthly budgets, unusual-spend detection, cash-flow summaries.
-- All day and month buckets in IST.
+- 3A Groundwork: docs alignment; a one-page UI design spec and a clickable
+  dashboard mockup with fake numbers, both approved by the owner before any
+  screen is built.
+- 3B Merchant normalisation: raw counterparty -> merchant, marked person,
+  business or unsure. Pure engine. The built-in dictionary holds only
+  well-known public brands. The owner's own merchants and people are learned
+  from corrections and live only in the database.
+- 3C Reconcile: a "my accounts / my UPI IDs" list; self-transfers (D-029);
+  card bill payments (D-030); refund linking (D-031); AutoPay + card spend
+  (D-032, D-047); the open duplicate candidates. It links and flags, never
+  deletes, and is safe to re-run. Unclear duplicates are reviewed by the
+  owner in the terminal.
+- 3D Categorise: rules -> merchant dictionary -> owner corrections.
+  Corrections always win and survive reparse.
+- 3E Auth and read-only API: Supabase Auth, single user, sign-ups off; JWT
+  verified in FastAPI; no data endpoint without auth. The Data API stays
+  keepalive-only (D-053).
+- 3F Minimal dashboard: month net spend (with spent and paid back), category
+  breakdown, transaction list with category correction, and a count of
+  unknown and not-yet-counted items.
 
-## Phase 5: Frontend
+Done when: the owner privately checks one normal month and one messy month
+against the bank statement and reports "match" or the difference in rupees;
+nothing is double-counted; a corrected category stays corrected.
 
-- Transaction list with search and filters, correction UI, dashboards.
-- Manual entry. Offline-first PWA with sync.
+Known limits: HDFC and INR only. Foreign-currency (D-035) and other-bank
+messages are not in totals and appear as a "not counted yet" count. A month
+is a calendar month in IST, computed from a from/to date range so salary
+cycles can replace it later. The server can take about a minute to wake
+until Phase 4.
 
-## Phase 6: Android shell and hardening
+## Phase 4: Full deploy and installable offline-first PWA
 
-- Capacitor Android app that reads SMS on device and sends them to ingestion.
-- Auth, data export and backup, error monitoring, production deploy review.
+No detail yet.
+
+## Phase 5: Android shell and live SMS
+
+No detail yet.
+
+## Phase 6: Statements, Gmail, insights, differentiators
+
+Budget cycles, P2P tagging, roommate splits, subscription tracker,
+first-salary mode. No detail yet.
