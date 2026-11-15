@@ -97,7 +97,7 @@ npm ci; npm run dev; npm run typecheck; npm run build
   temp SQLite file; environment variables override `.env`. Tests do this
   themselves.
 - Postgres tests: set `TEST_DATABASE_URL` to a disposable container (CI uses
-  a `postgres:17` service). Locally: `docker desktop start`, then run
+  a `postgres:17` service). Locally, ask the user first, then `docker desktop start` and run
   `postgres:17` on a free port such as 15432 (Windows reserves some ports).
 - CI (`.github/workflows/ci.yml`), three jobs: backend (ruff, backend and
   scripts pytest), backend on Postgres 17 (`alembic upgrade head`,
@@ -153,8 +153,9 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 
 ## Open items and known limits
 
-- Keep-alive switch-over is the user's (Data API settings, cron job, security
-  check in infra/README.md section 4), then one overnight check (D-053).
+- Keep-alive switched to the Data API RPC and verified 15 Nov (security
+  check 8/8 blocked, cron test run 200, `last_seen` moved); the first
+  scheduled 03:30 run is still to check (D-053).
 - Reconcile (Phase 3) is not built: 18 open duplicate candidates and 1
   merged refund to review; self-transfers, card bill payments, refund
   linking and AutoPay + card spend merging all wait for it (D-029 to D-032,
