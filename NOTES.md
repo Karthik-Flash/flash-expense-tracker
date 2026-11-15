@@ -32,8 +32,9 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Overnight check of the Render heartbeat (15 Nov): fails every night
       ("output too large"); replaced by the Data API ping (D-053)
 - [x] Migration `0003`: `keepalive.ping()` for the Data API, RLS on `heartbeat`
-- [ ] Keep-alive switch-over: Data API, cron job, security check (to-do list)
-- [ ] Overnight check of the new keep-alive (first night after the switch)
+- [x] Keep-alive switch-over verified (15 Nov): security check 8/8 blocked
+      (public 406, keepalive 404), cron test run 200, `last_seen` moved
+- [ ] Overnight check of the new keep-alive (first scheduled run 03:30 IST)
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -57,17 +58,11 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Your to-do list
 
-1. Keep-alive switch-over (D-053), after this change is deployed (Render
-   log shows `Running upgrade 0002 -> 0003`): follow
-   [infra/README.md](infra/README.md) section 4. Data API on with exposed
-   schemas `keepalive` only, publishable key into your password manager,
-   edit the cron job, then run the security check (cheat sheet, "Check the
-   live system"). Every table line must say `blocked`.
-2. The morning after: the job history shows a 200 at 03:30 and
-   `heartbeat.last_seen` moved.
-3. If `data\sample\redacted_full.json` exists from an earlier run, delete it.
+1. The morning after the switch-over: the job history shows a 200 at 03:30
+   and `heartbeat.last_seen` moved (D-053).
+2. If `data\sample\redacted_full.json` exists from an earlier run, delete it.
    The full file now lives in `D:\FlashPrivate\private\` (D-051).
-4. Optional: refresh the sample with the newer redaction rules (STANDARD
+3. Optional: refresh the sample with the newer redaction rules (STANDARD
    sample command under "SMS redaction"; must end with `Leaks: 0`).
 
 ## Architecture
@@ -425,8 +420,8 @@ gh repo view --web                                # open the repo in the browser
 
 ## Open items
 
-1. Keep-alive switch-over and its overnight check pending (D-053, to-do
-   list).
+1. Keep-alive: switch-over verified 15 Nov; first scheduled 03:30 run still
+   to check (D-053, to-do list).
 2. Reconcile (Phase 3): 18 open duplicate candidates, and 1 refund that was
    merged into another transaction on its dedupe key; check both.
 3. 44 foreign-currency messages deferred (D-035).
@@ -459,7 +454,10 @@ gh repo view --web                                # open the repo in the browser
   cannot read `heartbeat` or `transactions`, even with Supabase-style SELECT
   grants; downgrade removes the schema; `alembic check` clean.
 - `/health/db` and `PING_TOKEN` unchanged, for manual checks.
-- Open: your switch-over (Data API, cron job, security check).
+- Switch-over done and verified by you the same day: security check 8/8
+  blocked (public 406, keepalive 404), cron test run 200, `last_seen` moved.
+  Open: the first scheduled 03:30 run.
+- CLAUDE.md: ask before starting Docker Desktop.
 
 ### 2026-11-14: Phase 2 lock-in, real import
 

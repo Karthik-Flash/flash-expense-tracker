@@ -33,6 +33,7 @@ first**, then [NOTES.md](NOTES.md) for current status and
   Every non-trivial algorithm ships with a pytest test.
 - No scheduled GitHub workflows. Keep-alive pings live on cron-job.org.
 - Never install a package you cannot verify (PyPI owner, source repo). Ask first.
+- Ask before starting Docker Desktop.
 - Exact dependency pins only (`==` in requirements, exact versions in
   `package.json`, `frontend/.npmrc` has `save-exact=true`); commit lockfiles.
 - Never skip tests or loosen lint to get CI green. If stuck, stop and report.
