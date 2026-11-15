@@ -449,7 +449,7 @@ every row and running recompute gives the same rows back.
 derive_runs    id, owner_id, started_at, finished_at, status, trigger, versions, counts
                status in (running, done, failed)
                trigger in (import, reparse, owner, manual)
-               versions JSON: {"merchant": "merchant-1.1.0", "reconcile": "reconcile-1.0.0"}
+               versions JSON: {"merchant": "merchant-1.1.1", "reconcile": "reconcile-1.0.0"}
                counts JSON: counts only
 txn_derived    transaction_id -> transactions (primary key), owner_id,
                merchant_key, merchant_kind, merchant_confidence, display_name,
@@ -608,7 +608,7 @@ Never names, amounts, references or account digits. Exact lines (`n` is a
 count; counter sections print only the rows that occur):
 
 ```
-reconcile-stats (reconcile-1.0.0, merchant-1.1.0, read-only)
+reconcile-stats (reconcile-1.0.0, merchant-1.1.1, read-only)
 transactions (active)                  n
 last recompute                         #n done | none
   stored rows that differ from now     n

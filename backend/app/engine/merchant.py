@@ -15,8 +15,8 @@ Rules, in order (codes appear in Merchant.reasons):
   R5 business and person signals; both or neither: unsure
 
 Rules, signal lists, the dictionary and the key format are all part of
-MERCHANT_VERSION: corrections are keyed on merchant_key, so any change that
-can alter a key or a kind bumps it.
+MERCHANT_VERSION: any change that can alter a key, a kind or a display name
+bumps it. Owner data stores text, never a merchant_key (D-065).
 """
 
 import json
@@ -28,7 +28,7 @@ from functools import cache
 from pathlib import Path
 from typing import Literal
 
-MERCHANT_VERSION = "merchant-1.1.0"
+MERCHANT_VERSION = "merchant-1.1.1"
 
 Kind = Literal["business", "person", "unsure", "none"]
 Confidence = Literal["high", "low"]
@@ -218,9 +218,9 @@ def _name_words(words: tuple[str, ...]) -> tuple[str, ...]:
     return words[1:] if words[:1] == ("www",) else words
 
 
-def _display(p: Parts) -> str:
-    """UPI ID in lower case when there is one (it is the key), else the name in title case."""
-    return p.vpa if p.vpa else string.capwords(p.name)
+def _display(p: Parts) -> str | None:
+    """The name in title case when there is name text, else the UPI ID in lower case."""
+    return string.capwords(p.name) if p.tokens else p.vpa  # parts() never returns neither
 
 
 def normalise_merchant(counterparty: str | None, channel: Channel) -> Merchant:

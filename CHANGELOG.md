@@ -20,6 +20,8 @@ Phase 1 is parsing, Phase 2 is the database and import.
   name for every merchant, UPI handle signals, 186 business keywords.
   `merchant-stats` adds kind by direction, keys by kind and key coverage;
   owner-only `merchant-review` (terminal only).
+- `merchant-1.1.1` (D-068): a name beside a UPI ID is the display name;
+  the UPI ID stays the key.
 
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 

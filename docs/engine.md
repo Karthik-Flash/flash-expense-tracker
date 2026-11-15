@@ -118,7 +118,7 @@ prove that.
 
 ## Merchant normalisation
 
-`app/engine/merchant.py` (`merchant-1.1.0`, D-057, D-058) turns a transaction's
+`app/engine/merchant.py` (`merchant-1.1.1`, D-057, D-058, D-068) turns a transaction's
 `counterparty_raw` into a stable merchant. Pure and stdlib only; the only I/O
 is loading `brands.json` once.
 
@@ -178,9 +178,12 @@ so a key change needs no data migration; recompute checks that no
 transaction loses its owner match (D-065).
 
 **Display name**, for every kind except `none`: the brand's name on a
-dictionary match; else the UPI ID in lower case when there is one (it is
-the key); else the cleaned name in title case, gateway prefix removed.
-Normalising a display name again gives the same key (tested).
+dictionary match; else the cleaned name in title case, gateway prefix
+removed, when there is name text; else the UPI ID in lower case. A name
+beside a UPI ID is shown, and the UPI ID stays the key (`merchant-1.1.1`,
+D-068). Normalising a display name again gives the same key when the
+display name comes from the same text as the key, so not for a name shown
+beside a UPI ID (tested).
 
 **Dictionary** `app/engine/brands.json`: `id`, `name`, `aliases`. Only
 well-known national brands from public knowledge, nothing from the owner's
@@ -189,7 +192,8 @@ only in the database. Each display name is also an alias, and no alias may
 belong to two brands (checked at load and in tests). No categories yet.
 
 **Version.** `MERCHANT_VERSION` covers rules, word lists, dictionary and key
-format: bump it on any change that can alter a kind or a key.
+format: bump it on any change that can alter a kind, a key or a display
+name.
 
 **Commands** (from `backend\`, read-only, engine runs in memory over active
 transactions):

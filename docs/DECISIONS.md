@@ -545,6 +545,7 @@ Changes to D-057, version `merchant-1.1.0`:
 
 Migration-plan wording superseded by D-065 (15 Nov 2026): owner data stores
 text, so a key change needs a recompute check, not a data migration.
+Display name beside a UPI ID superseded by D-068 (15 Nov 2026).
 
 ## D-059 Derived-data backbone (2026-11-15)
 
@@ -680,3 +681,11 @@ Revisit in Phase 5, when the server takes in SMS itself.
 Reconcile in 3C does not close mandates on cancellation (hint
 `mandate_cancelled`). Mandates are not transactions and touch no total; they
 belong with subscriptions in Phase 6. `docs/data-model.md` is corrected.
+
+## D-068 Display name prefers the name (2026-11-15)
+
+Changes D-058, version `merchant-1.1.1`. When a counterparty has both name
+text and a UPI ID, `display_name` is the cleaned name in title case, not the
+UPI ID. The key stays the UPI ID, and kinds and keys do not change. The
+round-trip rule (normalising a display name gives the same key) holds only
+when the display name comes from the same text as the key.
