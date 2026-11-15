@@ -2,8 +2,7 @@
 
 What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
-Phase 1 is parsing, Phase 2 is the database and import (in
-[docs/PLAN.md](docs/PLAN.md) these are its Phases 2 and 1).
+Phase 1 is parsing, Phase 2 is the database and import.
 
 ## Phase 3A: groundwork (15 Nov 2026, in progress, tag `phase-3a-done` when done)
 

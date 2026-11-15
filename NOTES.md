@@ -446,6 +446,11 @@ gh repo view --web                                # open the repo in the browser
 
 ## Log
 
+### 2026-11-15: Phase 3A-1c, stale phase-numbering notes
+
+- `docs/PLAN.md` and `CHANGELOG.md` no longer say PLAN.md numbers Phases 1
+  and 2 differently; PLAN.md now states its numbers match the tags.
+
 ### 2026-11-15: Phase 3A-1b, docs follow-up
 
 - D-015: garbled duplicate line removed.

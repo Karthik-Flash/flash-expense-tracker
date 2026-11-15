@@ -7,9 +7,7 @@ NOTES.md entry.
 **Status (15 Nov 2026):** Phases 0, 1 and 2 done. **Next: Phase 3:
 Normalise, reconcile, categorise and minimal dashboard.**
 
-Prompt labels differ from this file's order: the parsing prompts were called
-"Phase 1" and the import prompt "Phase 2". Both are done; this file keeps its
-own numbering. What shipped: [CHANGELOG.md](../CHANGELOG.md).
+Phase numbers in this file match the git tags and CHANGELOG.md.
 
 ## Phase 0: Scaffold and walking skeleton (done 13 Nov 2026)
 
