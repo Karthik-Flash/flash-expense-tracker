@@ -1,4 +1,7 @@
-"""Reconcile roles in memory (reconcile-1.0.0, step 3C-2). Fake values only."""
+"""Reconcile roles from one transaction (step 3C-2). Fake values only.
+
+Links between transactions: test_reconcile_links.py.
+"""
 
 import json
 import random
@@ -13,6 +16,9 @@ from app.engine.reconcile import (
     COUNTED,
     CREDIT_ONLY,
     DEBIT_ONLY,
+    LINK_KINDS,
+    LINK_REASONS,
+    LINK_RULES,
     RECONCILE_VERSION,
     ROLES,
     RULES,
@@ -67,7 +73,7 @@ def credit(party: str | None, **fields) -> Txn:
 
 
 def one(t: Txn, owner: OwnerData | None = None) -> Derived:
-    return derive([t], owner)[t.id]
+    return derive([t], owner).roles[t.id]
 
 
 # (transaction, owner data, role, rule, basis): one row or more for every rule code.
@@ -119,10 +125,12 @@ def test_one_case_per_rule(t, owner, role, rule, basis) -> None:
 
 def test_every_role_and_every_rule_is_reached() -> None:
     # No rule gives "duplicate" before step 3C-3, and the owner cannot set it as a role.
+    # The role duplicate and these three rules need two transactions: test_reconcile_links.py.
+    by_link = {"OWNER_link", "DUP_autopay_card", "ST_pair"}
     assert {role for _, _, role, _, _ in CASES} | {"duplicate"} == set(ROLES)
-    assert {rule for _, _, _, rule, _ in CASES} == set(RULES)
+    assert {rule for _, _, _, rule, _ in CASES} | by_link == set(RULES)
     assert len(ROLES) == 11 and set(COUNTED) | DEBIT_ONLY | CREDIT_ONLY <= set(ROLES)
-    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.0.0"
+    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.1.0"
 
 
 def test_unexplained_debit_is_spend_and_unexplained_credit_is_uncertain() -> None:
@@ -151,7 +159,7 @@ def test_a_party_overrides_the_engine_both_ways() -> None:
 def test_card_bill_tracked_test_at_59_60_and_61_days(days: int, role: str) -> None:
     purchase = txn(1, party="TEST SHOP", channel="credit_card", account_last4="0004")
     payment = txn(2, party="TEST CARD BILLER", txn_time_utc=T0 + days * DAY)
-    d = derive([purchase, payment], OWNER)
+    d = derive([purchase, payment], OWNER).roles
     assert (d[2].role, d[2].rule, d[2].basis) == (f"card_bill_{role}", "CB_own_text", "owner")
     assert d[1].role == "spend"
 
@@ -169,11 +177,13 @@ def test_card_bill_tracked_test_at_59_60_and_61_days(days: int, role: str) -> No
 def test_card_bill_counts_when_no_purchase_proves_tracking(purchase: dict) -> None:
     fields = {"channel": "credit_card", "account_last4": "0004"} | purchase
     payment = txn(2, party="TEST CARD BILLER", txn_time_utc=T0 + 10 * DAY)
-    assert derive([txn(1, **fields), payment], OWNER)[2].role == "card_bill_counted"
+    roles = derive([txn(1, **fields), payment], OWNER).roles
+    assert roles[2].role == "card_bill_counted"
     at_payment_time = txn(
         1, channel="credit_card", account_last4="0004", txn_time_utc=T0 + 10 * DAY
     )
-    assert derive([at_payment_time, payment], OWNER)[2].role == "card_bill_excluded"
+    roles = derive([at_payment_time, payment], OWNER).roles
+    assert roles[2].role == "card_bill_excluded"
 
 
 def test_masked_upi_id_must_fit_handle_and_end() -> None:
@@ -290,22 +300,24 @@ def random_txns(seed: int, n: int = 400) -> list[Txn]:
 def test_exactly_one_role_each_same_output_in_any_order() -> None:
     txns = random_txns(1)
     owner = OwnerData(OWNER.accounts, OWNER.parties, {5: "ignored", 6: "self_transfer"})
-    first = derive(txns, owner)
+    result = derive(txns, owner)
+    first = result.roles
     assert list(first) == [t.id for t in txns]  # one result per transaction, ordered by id
     assert all(
         d.role in ROLES and d.rule in RULES and d.reasons[0] == d.rule for d in first.values()
     )
     assert all(d.basis in ("engine", "owner") for d in first.values())
-    assert derive(txns, owner) == first
+    assert derive(txns, owner) == result
     shuffled = random.Random(2).sample(txns, len(txns))
-    assert derive(shuffled, owner) == first and list(derive(shuffled, owner)) == list(first)
+    assert derive(shuffled, owner) == result
+    assert list(derive(shuffled, owner).roles) == list(first)
     assert {d.role for d in first.values()} >= set(ROLES) - {"duplicate", "card_bill_counted"}
-    assert all(d.basis == "engine" for d in derive(txns).values())  # empty owner data
+    assert all(d.basis == "engine" for d in derive(txns).roles.values())  # no owner data
 
 
 def test_i18_roles_respect_direction() -> None:
     txns = random_txns(3)
-    derived = derive(txns, OWNER)
+    derived = derive(txns, OWNER).roles
     for t in txns:
         role = derived[t.id].role
         assert not (role in DEBIT_ONLY and t.direction != "debit")
@@ -325,7 +337,7 @@ def naive_totals(txns: list[Txn], derived: dict[int, Derived], start, end) -> tu
 @pytest.mark.parametrize("seed", [4, 5, 6])
 def test_i16_totals_equal_the_sums_over_roles(seed: int) -> None:
     txns = random_txns(seed)
-    derived = derive(txns, OWNER)
+    derived = derive(txns, OWNER).roles
     assert sum(Counter(d.role for d in derived.values()).values()) == len(txns)
     rng = random.Random(seed)
     ranges = [(T0 - DAY, T0 + 400 * DAY), (T0, T0)]
@@ -352,7 +364,7 @@ def test_totals_range_is_start_inclusive_end_exclusive_and_ist_months_work() -> 
         credit("TEST", id=5, amount_paise=7, txn_time_utc=first_minute + DAY),  # uncertain
         txn(6, amount_paise=900, txn_time_utc=datetime(2026, 11, 30, 18, 30, tzinfo=UTC)),  # Dec
     ]
-    t = totals(txns, derive(txns), *november)
+    t = totals(txns, derive(txns).roles, *november)
     assert (t.spent_paise, t.paid_back_paise, t.net_paise, t.income_paise) == (
         15_000,
         3_000,
@@ -379,9 +391,16 @@ def test_engine_runs_over_the_redacted_sample() -> None:
                     p.counterparty_raw,
                     p.txn_time_utc,
                     p.hints,
+                    p.reference,
                 )
             )
-    derived = derive(txns)
+    result = derive(txns)
+    derived = result.roles
+    assert all(x.kind in LINK_KINDS and x.rule in LINK_RULES for x in result.links)
+    assert all(x.decided_by == "engine" and x.reason in LINK_REASONS for x in result.links)
+    linked = {i for x in result.links if x.status == "linked" for i in (x.txn_a, x.txn_b)}
+    assert all(d.duplicate_of in derived for d in derived.values() if d.role == "duplicate")
+    assert all(d.rule.startswith(("DUP_", "ST_pair")) <= (i in linked) for i, d in derived.items())
     assert txns and list(derived) == [t.id for t in txns]
     assert all(d.role in ROLES and d.basis == "engine" for d in derived.values())
     times = [t.txn_time_utc for t in txns]

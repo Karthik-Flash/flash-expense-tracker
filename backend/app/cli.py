@@ -27,7 +27,15 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.engine.merchant import MERCHANT_VERSION, channel_for, normalise_merchant, parts
-from app.engine.reconcile import RECONCILE_VERSION, OwnerData, Txn, derive
+from app.engine.reconcile import (
+    DUP_LINK_WINDOW,
+    LINK_KINDS,
+    RECONCILE_VERSION,
+    OwnerData,
+    Result,
+    Txn,
+    derive,
+)
 from app.importers.sms_backup import import_sms
 from app.models import (
     DuplicateCandidate,
@@ -289,9 +297,74 @@ def reconcile_txns(session: Session) -> list[Txn]:
             t.counterparty_raw,
             t.txn_time_utc,
             t.hints,
+            t.reference,
         ).where(t.status == "active")
     )
-    return [Txn(*row[:9], tuple(row[9] or ())) for row in rows]
+    return [Txn(*row[:9], tuple(row[9] or ()), row[10]) for row in rows]
+
+
+def autopay_card_counts(txns: list[Txn], result: Result) -> tuple[Counter, Counter]:
+    """AutoPay + card spend pairs (linked or candidate): by time gap, and merchant facts."""
+    by_id = {t.id: t for t in txns}
+    gaps = Counter({"up to 10 min": 0, "10-60 min": 0, "1-24 h": 0})
+    facts = Counter(
+        dict.fromkeys(
+            (
+                "same merchant key",
+                "brand on both",
+                "brand on autopay only",
+                "brand on card only",
+                "brand on neither",
+                "earlier message is autopay",
+                "earlier message is card",
+            ),
+            0,
+        )
+    )
+    for link in result.links:
+        if link.rule != "DUP_autopay_card":
+            continue
+        a, b = by_id[link.txn_a], by_id[link.txn_b]
+        autopay, card = (a, b) if a.channel == "e_mandate" else (b, a)
+        gap = abs(a.txn_time_utc - b.txn_time_utc)
+        hour = timedelta(hours=1)
+        gaps[
+            "up to 10 min" if gap <= DUP_LINK_WINDOW else "10-60 min" if gap <= hour else "1-24 h"
+        ] += 1
+        ma, mc = (
+            normalise_merchant(t.counterparty_raw, channel_for(t.channel, t.hints))
+            for t in (autopay, card)
+        )
+        facts["same merchant key"] += ma.merchant_key == mc.merchant_key
+        brand = {
+            (True, True): "both",
+            (True, False): "autopay only",
+            (False, True): "card only",
+            (False, False): "neither",
+        }[bool(ma.brand_id), bool(mc.brand_id)]
+        facts[f"brand on {brand}"] += 1
+        first = min(autopay, card, key=lambda t: (t.txn_time_utc, t.id))
+        facts["earlier message is autopay" if first is autopay else "earlier message is card"] += 1
+    return gaps, facts
+
+
+def legacy_counts(legacy: set[tuple[int, int]], txns: list[Txn], owner: OwnerData, result: Result):
+    """What became of each pair recorded in duplicate_candidates. "lost" must be 0."""
+    active = {t.id for t in txns}
+    links = {(x.txn_a, x.txn_b): x.status for x in result.links if x.kind == "duplicate"}
+    counts = dict.fromkeys(
+        ("linked", "still candidate", "decided different", "not active", "lost"), 0
+    )
+    for pair in legacy:
+        if not set(pair) <= active:
+            counts["not active"] += 1
+        elif owner.links.get(("duplicate", *pair)) == "different":
+            counts["decided different"] += 1
+        elif pair in links:
+            counts["linked" if links[pair] == "linked" else "still candidate"] += 1
+        else:
+            counts["lost"] += 1
+    return counts
 
 
 NO_INCOME_PARTY = (
@@ -304,8 +377,18 @@ def cmd_reconcile_stats(session: Session, args: argparse.Namespace) -> None:
     """Run Reconcile in memory over active transactions. Read-only, counts only."""
     txns = reconcile_txns(session)
     owner = OwnerData()  # owner tables arrive in step 3C-4; until then every basis is engine
-    derived = derive(txns, owner)
-    by_direction, by_rule, paybacks = Counter(), Counter(), Counter(engine=0, owner=0)
+    recorded = session.execute(select(DuplicateCandidate.txn_a, DuplicateCandidate.txn_b))
+    legacy = {(min(a, b), max(a, b)) for a, b in recorded}
+    result = derive(txns, owner, legacy)
+    derived = result.roles
+    by_direction, by_rule = Counter({"debit duplicate": 0}), Counter()
+    paybacks = Counter(engine=0, owner=0)
+    by_status = Counter(
+        dict.fromkeys((f"{k} {s}" for k in LINK_KINDS for s in ("linked", "candidate")), 0)
+    )
+    by_status.update(f"{x.kind} {x.status}" for x in result.links)
+    by_reason = Counter(f"{x.kind} {x.reason}" for x in result.links if x.status == "candidate")
+    gaps, facts = autopay_card_counts(txns, result)
     for t in txns:
         d = derived[t.id]
         by_direction[f"{t.direction} {d.role}"] += 1
@@ -327,6 +410,18 @@ def cmd_reconcile_stats(session: Session, args: argparse.Namespace) -> None:
     line("matched by two or more rules", sum(len(d.reasons) > 1 for d in derived.values()))
     print_counter("paybacks by basis", paybacks)
     line("uncertain credits", sum(d.role == "uncertain" for d in derived.values()))
+    print_counter("links by kind and status", by_status)
+    print_counter("candidates by kind and reason", by_reason)
+    print("autopay and card pairs by time gap")
+    for label, n in gaps.items():
+        line(label, n, 2)
+    print("autopay and card pairs, merchant")
+    for label, n in facts.items():
+        line(label, n, 2)
+    print("existing candidates")
+    line("recorded", len(legacy), 2)
+    for label, n in legacy_counts(legacy, txns, owner, result).items():
+        line(label, n, 2)
     print("not counted yet")
     line("foreign currency", unknown.get("foreign_currency_deferred", 0), 2)
     line("no parser", unknown.get("no_parser_for_bank", 0), 2)
@@ -335,6 +430,7 @@ def cmd_reconcile_stats(session: Session, args: argparse.Namespace) -> None:
     line("parties", len(owner.parties), 2)
     line("income sources", sum(p.income for p in owner.parties), 2)
     line("role decisions", len(owner.roles), 2)
+    line("link decisions", len(owner.links), 2)
     if not any(p.income for p in owner.parties):
         print(NO_INCOME_PARTY)
 

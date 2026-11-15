@@ -53,7 +53,7 @@ body      --normalise-----> one line, single spaces
 | `parsers/<bank>.py` | The bank's templates and `PARSER_VERSION`. |
 | `parsers/__init__.py` | Registry: bank code -> parser. |
 | `merchant.py` | Counterparty text -> merchant (below). |
-| `reconcile.py` | One role per transaction, totals (below). |
+| `reconcile.py` | One role per transaction, links, totals (below). |
 
 ## Results
 
@@ -214,37 +214,45 @@ transactions):
   so it cannot be piped, redirected or captured by a tool. Agents never run
   it on real data.
 
-## Reconcile: one role per transaction
+## Reconcile: roles and links
 
-`app/engine/reconcile.py` (`reconcile-1.0.0`; design in
+`app/engine/reconcile.py` (`reconcile-1.1.0`; design in
 [design/phase-3-backbone.md](design/phase-3-backbone.md), D-059 to D-067)
-gives every transaction exactly one role. Pure and stdlib only: no database,
-clock, network or randomness, and the same input in any order gives the same
-output. Built so far (step 3C-2): every rule that reads one transaction.
-Duplicates (3C-3) and pair links (3C-5) come later, so no rule gives the
-role `duplicate` yet.
+gives every transaction exactly one role, and links transactions that are,
+or may be, one event. Pure and stdlib only: no database, clock, network or
+randomness, and the same input in any order gives the same output. Built so
+far, all in memory: roles from one transaction (step 3C-2), duplicates
+(3C-3) and pair linking (3C-5). Not built: the card bill pair rule, owner
+tables, storage.
 
 ```python
 from app.engine.reconcile import OwnerData, Txn, derive, totals
 
-derived = derive(txns, owner)  # {transaction id: Derived}
-d = derived[txn.id]
-d.role, d.rule, d.basis, d.reasons  # "payback", "CR_person_signal", "engine", (...)
-t = totals(txns, derived, start, end)  # start <= txn_time_utc < end
+result = derive(txns, owner, legacy_pairs)
+d = result.roles[txn.id]  # Derived
+d.role, d.rule, d.basis, d.reasons, d.duplicate_of
+for link in result.links:  # Link, ordered by kind and ids
+    link.kind, link.txn_a, link.txn_b, link.status, link.rule, link.reason, link.decided_by
+t = totals(txns, result.roles, start, end)  # start <= txn_time_utc < end
 t.spent_paise, t.paid_back_paise, t.net_paise, t.income_paise
 ```
 
 - **Input.** One `Txn` per active transaction (`id`, `bank`, `type`,
   `direction`, `amount_paise`, `account_last4`, `channel`,
-  `counterparty_raw`, `txn_time_utc`, `hints`) and an `OwnerData`, which may
-  be empty: `accounts` (`OwnAccount`: `kind`, `bank`, `last4`, `texts`),
-  `parties` (`Party`: `kind`, `income`, `texts`) and `roles` (transaction id
-  -> the owner's role decision). The engine versions are
-  `reconcile.VERSIONS`.
-- **Output.** One `Derived` per transaction: `role`, `rule` (the code of the
-  rule that decided), `basis` (`engine`: the transaction's wording alone;
-  `owner`: the rule read owner data), `reasons` (every rule that matched,
-  the deciding one first).
+  `counterparty_raw`, `txn_time_utc`, `hints`, `reference`). An `OwnerData`,
+  which may be empty: `accounts` (`OwnAccount`: `kind`, `bank`, `last4`,
+  `texts`), `parties` (`Party`: `kind`, `income`, `texts`), `roles`
+  (transaction id -> the owner's role decision) and `links` (`(kind, lower
+  id, higher id)` -> `"same"` or `"different"`). `legacy_pairs`: the id pairs
+  recorded in `duplicate_candidates` at import, read-only. The engine
+  versions are `reconcile.VERSIONS`.
+- **Output.** `Result(roles, links)`. `roles` holds one `Derived` per
+  transaction: `role`, `rule` (the code of the rule that decided), `basis`
+  (`engine`: the transaction's wording alone; `owner`: the rule read owner
+  data), `reasons` (every rule that matched, the deciding one first) and
+  `duplicate_of` (the primary, only for role `duplicate`). `links` holds
+  `Link`s: `kind`, `txn_a` < `txn_b`, `status` (`linked` or `candidate`),
+  `rule`, `reason`, `decided_by` (`engine` or `owner`).
 
 **Roles and totals** (D-060).
 
@@ -260,7 +268,7 @@ t.spent_paise, t.paid_back_paise, t.net_paise, t.income_paise
 Net = Spent - Paid back. `totals()` takes any two aware datetimes; a month
 is an IST month (D-002), so pass IST midnights. Amounts stay integer paise.
 
-**Rules, in order.** The first match decides.
+**Role rules from one transaction, in order.** The first match decides.
 
 | Rule | Evidence | Role | Basis |
 | ---- | -------- | ---- | ----- |
@@ -295,14 +303,54 @@ Only when none of those matched:
   to the payment itself (both ends included).
 - A guess never lowers Net: an unexplained debit is `spend`, an unexplained
   credit is `uncertain`.
-- Bad input raises `ValueError`. The message never holds a value from the
-  data.
+
+**Link rules.** A rule links a pair only when it is **unique**: each side has
+exactly one compatible partner for that rule. Otherwise every pair involved
+is a candidate. Nothing is greedy, and "closest in time" never wins. A
+candidate changes no role and no total. Windows compare `txn_time_utc` and
+include both ends.
+
+| Kind | Rule | Compatible pair | Unique pair | Role effect of a link |
+| ---- | ---- | --------------- | ----------- | --------------------- |
+| `duplicate` | `DUP_autopay_card` | Two debits, same bank, card last 4 and amount; one `e_mandate`, one `debit_card` or `credit_card`; not two different brands; at most 24 hours apart | Linked (`unique_10min`) at most 10 minutes apart; candidate (`within_24h`) beyond | The earliest (then lowest id) keeps its role; the other is `duplicate` |
+| `duplicate` | `DUP_same_amount` | Same bank, `account_last4`, direction and amount, at most 10 minutes apart, not a pair of the rule above | Always a candidate: `different_references` when both carry different per-payment references, else `same_amount` | none |
+| `duplicate` | `DUP_legacy` | A pair from `legacy_pairs`, both active, that no rule found | Always a candidate (`recorded_at_import`) | none |
+| `self_transfer` | `ST_pair` | A debit and a credit of the same amount on two different listed own bank accounts or wallets, at most 24 hours apart; both legs unexplained or `ST_own_text` | Linked (`names_partner_account`) when one leg's text names the account the other leg is on; else candidate (`no_own_text`) | Both legs `self_transfer` (rule `ST_pair`, basis owner) |
+| `refund` | `RF_same_amount` | A refund and a purchase (role `spend` or `card_bill_counted`) of the same amount, same bank and `account_last4`, purchase at most 30 days before | Linked (`same_merchant`) when the merchant keys are equal; else candidate (`different_merchant`) | none: a refund is role `refund`, linked or not |
+| `refund` | `RF_partial` | As above with a larger purchase and equal merchant keys; only for a refund with no full-amount pair and no owner link | Always a candidate (`partial`) | none |
+| `fd` | `FD_pair` | An `FD_channel` credit and an unexplained credit, same bank and amount, at most 3 days apart | Always a candidate (`second_credit`) | none |
+| any | `OWNER_link` | The owner said "same" about a pair no rule proposed | Linked (`owner_same`) | As for the kind; an fd link gives `fd_move`, a refund link gives the credit role `refund` |
+
+- **Unexplained**: the role comes from the engine's default rules (`CR_*`
+  or `DB_*` with basis engine) or from `ST_masked`. A transaction whose role
+  the owner fixed is never paired by a rule.
+- A pair with more than one partner on a side is a candidate with reason
+  `several_partners`. A pair the owner called the same counts as a partner.
+- **Owner link decisions.** "same" links the pair (reason `owner_same`,
+  decided by owner) and keeps the rule that found it. "different" removes
+  the pair for good: no rule proposes it again, and it is dropped from
+  `legacy_pairs` too. A decision about a transaction that is not in the
+  input is ignored. A role decision wins over a link.
+- **References never match anything**; a mandate ID is never a per-payment
+  reference (D-046). They only label a `DUP_same_amount` candidate.
+- A duplicate group is every transaction joined by linked duplicate links.
+  A rule's group has two members; a larger one is the owner's.
+- Errors (`ValueError`, never with a value from the data): an unknown kind
+  or verdict, ids out of order, a "same" pair that cannot be that kind (two
+  amounts as one duplicate, two debits as a transfer, a refund larger than
+  its purchase), owner decisions that contradict each other, refunds linked
+  by the owner that add up to more than the purchase, one account number
+  under two own accounts.
 - **Version.** Bump `RECONCILE_VERSION` on any change that can alter a role,
-  a rule code or a basis.
+  a rule code, a basis or a link.
 
 **Command** (from `backend\`): `python -m app.cli reconcile-stats`.
 Read-only, in memory, counts only, safe to paste: role by direction, role by
 rule, transactions matched by two or more rules, paybacks by basis,
-uncertain credits, messages not counted yet, owner data counts, and a
-warning line when the owner data lists no income party. The command passes
-empty owner data until the owner tables exist (step 3C-4).
+uncertain credits, links by kind and status, candidates by kind and reason,
+AutoPay + card pairs by time gap and by merchant facts (same key, brand
+hits, which message is earlier), what became of the existing
+`duplicate_candidates` pairs ("lost" must be 0), messages not counted yet,
+owner data counts, and a warning line when the owner data lists no income
+party. The command passes empty owner data until the owner tables exist
+(step 3C-4).

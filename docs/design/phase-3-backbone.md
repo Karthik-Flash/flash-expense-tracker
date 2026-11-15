@@ -128,7 +128,7 @@ sum over a subset of that partition (invariant I16).
 
 ## B. Reconcile rules
 
-`RECONCILE_VERSION = "reconcile-1.0.0"`; bump on any change that can alter a
+`RECONCILE_VERSION = "reconcile-1.1.0"`; bump on any change that can alter a
 role or a link. All rules live in one pure module (`app/engine/reconcile.py`,
 stdlib only, no database).
 
@@ -148,11 +148,36 @@ stdlib only, no database).
 - **Unique pair**: a compatible pair where each side has no other compatible
   partner for that rule. Only a unique pair can ever be linked by a rule.
   There is no "closest in time wins" and no greedy matching: if a side has
-  two possible partners, every pair in that cluster is a candidate.
+  two possible partners, every pair in that cluster is a candidate. A pair
+  the owner called the same counts as a partner; a pair the owner called
+  different does not.
+- **Link**: kind (`duplicate`, `self_transfer`, `refund`, `fd`), the two
+  transaction ids (lower first), status, the rule, a reason code, and who
+  decided (`engine` or `owner`).
 - **Link status**: `linked` (applied) or `candidate` (waiting for the owner,
-  changes nothing).
-- **Owner decisions**: a *link decision* says yes or no to one pair for one
-  rule; a *role decision* fixes one transaction's role. Both always win.
+  changes no role and no total).
+- **Owner decisions**: a *link decision* says "same" or "different" to one
+  pair for one kind; a *role decision* fixes one transaction's role. Both
+  always win, and a role decision wins over a link. A decision about a
+  transaction that is not active is kept and not applied. A decision that
+  cannot hold (two amounts called one duplicate, two debits called a
+  transfer) is an error.
+
+| Reason | Rule | Meaning |
+| ------ | ---- | ------- |
+| `unique_10min` | `DUP_autopay_card` | Linked: the only partner, inside 10 minutes |
+| `within_24h` | `DUP_autopay_card` | Candidate: more than 10 minutes apart |
+| `same_amount` | `DUP_same_amount` | Candidate |
+| `different_references` | `DUP_same_amount` | Candidate: two different per-payment references |
+| `recorded_at_import` | `DUP_legacy` | Candidate: recorded in `duplicate_candidates`, found by no rule now |
+| `names_partner_account` | `ST_pair` | Linked: one leg names the account the other is on |
+| `no_own_text` | `ST_pair` | Candidate: unique, but neither leg names the other's account |
+| `same_merchant` | `RF_same_amount` | Linked |
+| `different_merchant` | `RF_same_amount` | Candidate |
+| `partial` | `RF_partial` | Candidate |
+| `second_credit` | `FD_pair` | Candidate |
+| `several_partners` | any rule that can link | Candidate: a side has more than one partner |
+| `owner_same` | the rule that found the pair, or `OWNER_link` | Linked by the owner |
 
 Windows compare `txn_time_utc`. For most messages that is the SMS arrival
 time [A12], so windows are generous and uniqueness does the real work.
@@ -179,21 +204,32 @@ handles two transactions that may be one event.
   then). It keeps its normal role. Every other member gets role
   `duplicate` and `duplicate_of` = the primary. Later rules look only at
   primaries.
-- **Owner**: yes on a pair links it (rule or not, as long as bank, direction
-  and amount agree). No removes the pair for good, from links and from
-  candidates. A no between two members of a group that rules built sends
-  that group's rule links back to candidates. The review command refuses a
-  decision that contradicts an earlier owner decision.
+- **Owner**: "same" on a pair links it (rule or not, as long as bank,
+  direction and amount agree). "different" removes the pair for good: it is
+  never proposed again, by a rule or from the import-time list. A rule
+  links a pair only when neither side has another partner, and a pair the
+  owner called the same counts as a partner. So a group that a rule built
+  has exactly two members, and a larger group is the owner's own. Owner
+  decisions that contradict each other (A same as B, B same as C, A
+  different from C) are an error in the engine; the review command refuses
+  such a decision before it is saved.
+- **Counting partners for D1.** Every card spend inside the 24 hours
+  counts. A pair is linked only when it is inside 10 minutes and neither
+  side has another partner inside 24 hours.
+- **References never match anything.** A shared mandate ID neither makes a
+  pair nor prevents one; references only label a candidate.
 - **The existing 18 candidates.** `duplicate_candidates` is frozen: import
   keeps recording into it for now, its `status` column is never written, and
   Reconcile does not read it for decisions (C1). Reconcile finds its own
   pairs from the transactions. Every open legacy pair between two active
   transactions must come out as linked or candidate (D-062); a test and a
-  `reconcile-stats` line check that none is lost.
+  `reconcile-stats` line check that none is lost. The recorded pairs are an
+  input of the derive, read-only: one that no rule finds any more (a
+  reparse moved a time) comes out as a candidate under rule `DUP_legacy`.
 - **Tests**: a table of pairs where changing one field at a time (bank,
   last 4, amount, direction, channel, minute 10 against minute 11, brand)
   flips the result; unique against many; a group of three; primary choice;
-  owner yes and no; the group falling back after a no; legacy coverage; I15
+  owner "same" and "different"; contradicting decisions; legacy coverage; I15
   and I17.
 
 ### B2. Self-transfers (D-029)
@@ -222,8 +258,16 @@ handles two transactions that may be one event.
   top-up shows). A wallet that is not listed is spend at that wallet.
   Wallet spends never appear in bank SMS, so listing a wallet takes that
   money out of the totals; the owner chooses.
-- **Owner**: a yes link decision on a pair makes both legs `self_transfer`;
-  a no removes the pair. A role decision works for a single leg.
+- **Owner**: a "same" link decision on a pair (one debit, one credit, equal
+  amounts) makes both legs `self_transfer`; "different" removes the pair. A
+  role decision works for a single leg.
+- **Which legs S2 looks at.** A leg must be on a listed own bank account or
+  wallet (bank and last 4), must not be a duplicate, and must be either
+  identified by S1 or still unexplained: its role is the engine's default
+  from wording alone (spend, payback, uncertain) or S3. A leg whose role
+  the owner fixed, a credit from an owner party, a refund, an FD move and a
+  card bill are never paired. A linked partner takes `self_transfer` with
+  rule `ST_pair` and basis `owner`.
 - **Tests**: text match by name and by UPI ID; text under a credit card or
   FD account does not give `self_transfer`; pair windows at 24 hours and
   just past; unique against many; a leg that names the partner's account
@@ -257,6 +301,9 @@ Tracked gives `card_bill_excluded`; not tracked gives `card_bill_counted`
 - A card at a bank with no parser can have no purchases in the data, so its
   bill always counts. That is the D-055 intent.
 - A debit card has no bill; this rule never looks at it.
+- **Not built yet: `CB_pair`.** It never changes a role, and no credit card
+  SMS has been seen [A6]. It is built when N01 or N02 appear, together
+  with link kind `card_bill`.
 - Today's data has no credit card SMS [A6], so on real data the only hits
   will be `CB_own_text` payments to cards at other banks, all counted.
 - **Tests**: purchase 59 days before against 61; purchase on another card or
@@ -280,10 +327,14 @@ for the category view in 3D.
 | One, full | Same merchant key: **linked**. Different key: candidate |
 | One, partial | Candidate. Amounts differ, so it is never automatic |
 | Many | Every pair a candidate |
-| Guard | The refunds linked to one purchase never add up to more than the purchase; a link that would break this stays a candidate |
+| Guard | The refunds linked to one purchase never add up to more than the purchase. A rule link cannot break this: it is a unique pair of equal amounts, and an owner link on the same purchase makes the rule's pair a candidate. Owner links that add up to more than the purchase are an error |
 | Stored | `txn_links` row, kind `refund` |
-| Owner | Yes links a refund to a purchase. The owner may also link a plain credit to a purchase as its refund (a UPI refund that the bank worded as a credit): that credit then gets role `refund`. No removes the pair |
+| Owner | "same" links a refund to a purchase (a debit and a credit, the credit no larger). The owner may also link a plain credit to a purchase as its refund (a UPI refund that the bank worded as a credit): that credit then gets role `refund`. "different" removes the pair |
 
+- **Uniqueness is per rule.** A full-amount pair is unique among full-amount
+  pairs. A partial match is proposed only for a refund with no full-amount
+  pair and no owner link, so one refund from a shop the owner uses every
+  day does not produce a candidate for every larger purchase there.
 - **The refund merged on its dedupe key.** Two refund messages carried the
   same bank, direction, amount and reference, so Phase 2 made them one
   transaction with two sources. Either the bank sent one reversal twice
@@ -305,7 +356,7 @@ for the category view in 3D.
 | -- | -- |
 | `FD_channel` | A transaction with channel `fd` (H14, FD closed early) has role `fd_move`. The wording says so; no window |
 | `FD_own_text` | A transaction that points at an own account of kind `fd` has role `fd_move` |
-| `FD_pair` | A credit on an own bank account with the same amount as an `FD_channel` credit, same bank, within 3 days: **candidate** only. If a second credit SMS does follow a closure [A9], the owner confirms once and that credit becomes `fd_move` instead of an uncertain credit |
+| `FD_pair` | An unexplained credit (its role is the engine's default from wording alone) with the same amount as an `FD_channel` credit, same bank, within 3 days: **candidate** only. The account need not be listed: every transaction in the data is on one of the owner's accounts. If a second credit SMS does follow a closure [A9], the owner confirms once and that credit becomes `fd_move` instead of an uncertain credit |
 | Zero / many | No pair: nothing. Several: every pair a candidate |
 | Stored | Role and rule; `txn_links` rows of kind `fd` for pairs |
 | Owner | Link decision for a pair; role decision for a single transaction (for example the debit that opens an FD, which has no wording of its own today) |
@@ -393,9 +444,11 @@ One run, in this order:
 - Two rules match one transaction: the earlier row wins. Every matching
   rule code is kept in `role_reasons`, and `reconcile-stats` counts such
   transactions.
-- One transaction in unique pairs of two different kinds (for example a
-  self-transfer pair and a card bill pair): both pairs become candidates.
-  One movement has one explanation.
+- One transaction linked by rules of two different kinds cannot happen.
+  Duplicates are settled first and only primaries go on; the transfer rule
+  takes only legs that nothing else explains (B2); a purchase must still
+  count as spend to take a refund (B4); `FD_pair` never links. One
+  movement has one explanation.
 - A transaction with two partners of the same kind: candidates (B0).
 - One text listed in two places (two accounts, two parties, or an account
   and a party), or two texts that give the same merchant key in different
@@ -430,7 +483,8 @@ party_texts           id, owner_id, party_id -> parties, text
 owner_link_decisions  id, owner_id, kind, txn_a -> transactions, txn_b -> transactions,
                       verdict, decided_at, source
                       kind in (duplicate, self_transfer, card_bill, refund, fd)
-                      verdict in (yes, no); source in (terminal, file, app)
+                      verdict in (same, different); source in (terminal, file, app)
+                      (kind card_bill waits for CB_pair, B3)
                       UNIQUE (owner_id, kind, txn_a, txn_b); CHECK (txn_a < txn_b)
 owner_roles           transaction_id -> transactions (primary key), owner_id, role,
                       decided_at, source
@@ -452,7 +506,7 @@ every row and running recompute gives the same rows back.
 derive_runs    id, owner_id, started_at, finished_at, status, trigger, versions, counts
                status in (running, done, failed)
                trigger in (import, reparse, owner, manual)
-               versions JSON: {"merchant": "merchant-1.1.1", "reconcile": "reconcile-1.0.0"}
+               versions JSON: {"merchant": "merchant-1.1.1", "reconcile": "reconcile-1.1.0"}
                counts JSON: counts only
 txn_derived    transaction_id -> transactions (primary key), owner_id,
                merchant_key, merchant_kind, merchant_confidence, display_name,
@@ -463,9 +517,9 @@ txn_derived    transaction_id -> transactions (primary key), owner_id,
                CHECK role_basis in (engine, owner)
                CHECK (role = 'duplicate') = (duplicate_of IS NOT NULL)
 txn_links      id, owner_id, kind, txn_a -> transactions, txn_b -> transactions,
-               status, rule, decided_by
+               status, rule, reason, decided_by
                kind as in owner_link_decisions; status in (linked, candidate)
-               decided_by in (rule, owner)
+               decided_by in (engine, owner)
                UNIQUE (kind, txn_a, txn_b); CHECK (txn_a < txn_b)
 ```
 
@@ -540,7 +594,7 @@ Continuing after I9. Each gets a test of the same name.
 | I11 | Recompute twice: the second run changes no derived row |
 | I12 | Derived data is a pure function of its input: deleting all derived rows and recomputing gives back the same rows |
 | I13 | Import, reparse and recompute never change an owner table |
-| I14 | The owner always wins: every active role decision equals the derived role; every yes link decision is a linked link; no pair with a no decision is linked or a candidate |
+| I14 | The owner always wins: every active role decision equals the derived role; every "same" link decision is a linked link; no pair with a "different" decision is linked or a candidate |
 | I15 | A duplicate group counts once: exactly one member has a role other than `duplicate`, and every other member points at it |
 | I16 | Totals equal the sums over roles: for any date range the roles partition the active transactions, and Spent, Paid back, Net and Income equal the formulas in section A (checked against a second, naive implementation on seeded random data) |
 | I17 | Ambiguity changes nothing: removing every candidate link leaves every role the same |
@@ -578,7 +632,7 @@ standard library reads and writes it, so the same shape works for a backup
     {"label": "Test Mess", "kind": "business", "texts": ["TEST FOODS 12"]}
   ],
   "decisions": [
-    {"kind": "duplicate", "a": 101, "b": 102, "verdict": "yes"},
+    {"kind": "duplicate", "a": 101, "b": 102, "verdict": "same"},
     {"kind": "role", "transaction": 103, "role": "self_transfer"}
   ]
 }
@@ -597,7 +651,7 @@ standard library reads and writes it, so the same shape works for a backup
 | Command | What it does |
 | ------- | ------------ |
 | `owner-load --input <file> [--dry-run]` | Checks the file, then makes the accounts and parties in the database equal to the file (matched by label, so unchanged entries keep their ids). Decisions in the file are added or updated, never removed. Then runs recompute. Loading the same file twice changes nothing. Prints counts only: accounts, identifiers, parties, texts, texts that match no transaction, decisions, derived rows changed. An error names the entry by position ("party 3: text listed twice"), never by value |
-| `reconcile-review [--kind K] [--limit N]` | Owner only. Shows one candidate at a time with real details (date in IST, amount, counterparty, channel, rule) between two `PRIVATE: do not paste this into any chat or file.` lines, and asks: yes, no, skip, quit. For an uncertain credit it asks for the role instead. Saves each answer as an owner decision and runs recompute at the end. **Refuses to run unless stdin and stdout are both a terminal**, with the same kind of message and exit code 2 as `merchant-review`. `K`: `duplicate`, `self_transfer`, `card_bill`, `refund`, `fd`, `uncertain_credit`, `no_payee`, `merged` (transactions with two or more source messages; display only) |
+| `reconcile-review [--kind K] [--limit N]` | Owner only. Shows one candidate at a time with real details (date in IST, amount, counterparty, channel, rule) between two `PRIVATE: do not paste this into any chat or file.` lines, and asks: same, different, skip, quit. For an uncertain credit it asks for the role instead. Saves each answer as an owner decision and runs recompute at the end. **Refuses to run unless stdin and stdout are both a terminal**, with the same kind of message and exit code 2 as `merchant-review`. `K`: `duplicate`, `self_transfer`, `card_bill`, `refund`, `fd`, `uncertain_credit`, `no_payee`, `merged` (transactions with two or more source messages; display only) |
 | `owner-export --output <file>` | Owner only. Writes every owner table in the file shape above, with each decision's transaction ids and dedupe keys, so decisions can be restored into a rebuilt database. Refuses a path inside the repository. Built in step 3C-8 (Q7, D-065) |
 
 Later the app writes the same owner tables through the API (3E, 3F); the
@@ -607,105 +661,71 @@ file stays as the bulk route and the backup.
 
 Read-only and counts only, safe to paste. It runs the same pure derive in
 memory, like `merchant-stats`, so it works before the derived tables exist.
-Never names, amounts, references or account digits. Exact lines (`n` is a
-count; counter sections print only the rows that occur):
+Never names, amounts, references or account digits. Lines as built in
+`reconcile-1.1.0` (`n` is a count; "role by", "candidates by" sections print
+only the rows that occur):
 
 ```
-reconcile-stats (reconcile-1.0.0, merchant-1.1.1, read-only)
+reconcile-stats (reconcile-1.1.0, merchant-1.1.1, read-only)
 transactions (active)                  n
-last recompute                         #n done | none
-  stored rows that differ from now     n
-roles
-  spend                                n
-  card_bill_counted                    n
-  refund                               n
-  payback                              n
-  income                               n
-  self_transfer                        n
-  card_bill_excluded                   n
-  fd_move                              n
-  duplicate                            n
-  ignored                              n
-  uncertain                            n
+role by direction
+  <direction> <role>                   n     ("debit duplicate" is always shown)
 role by rule
   <rule code>                          n
 matched by two or more rules           n
-owner data
-  accounts                             n
-  identifiers                          n
-  parties                              n
-  income sources                       n
-  texts                                n
-  texts matching no transaction        n
-  role decisions                       n
-  link decisions yes                   n
-  link decisions no                    n
-  decisions inactive                   n
-duplicates
-  pairs, same amount within 10 min     n
-    different references               n
-  linked by rule                       n
-  linked by owner                      n
-  candidates                           n
-  dismissed by owner                   n
-  groups                               n
-  largest group                        n
-  legacy candidates open               n
-    now linked                         n
-    now candidate                      n
-    not covered                        n
-autopay and card spend
-  autopay successes                    n
-  one card spend within 10 min         n
-  one card spend within 24 h           n
-  several card spends                  n
-  no card spend                        n
-self-transfers
-  by own text                          n
-  pairs linked                         n
-  pair candidates                      n
-  masked UPI ID, held as uncertain     n
-  debits with no payee                 n
-card bills
-  credit legs by hint                  n
-  debit legs by own text               n
-  excluded, card tracked               n
-  counted, card not tracked            n
-  pair candidates                      n
-refunds
-  refunds                              n
-  linked, same amount                  n
-  candidates, same amount              n
-  candidates, partial                  n
-  standalone                           n
-  transactions with 2+ sources         n
-fd
-  fd credits                           n
-  pair candidates                      n
-credits
-  credits examined                     n
-  payback, owner basis                 n
-  payback, engine basis                n
-    by R5_mobile_vpa                   n
-    by R5_consumer_vpa                 n
-    by R5_honorific                    n
-  income                               n
-  uncertain, name only                 n
-  uncertain, business                  n
-  uncertain, unsure                    n
-  uncertain, no text                   n
-  same-amount debit within 10 min      n
-months (IST) with uncertain credits    n
+paybacks by basis
+  engine                               n
+  owner                                n
+uncertain credits                      n
+links by kind and status
+  <kind> candidate                     n     (all eight rows are always shown)
+  <kind> linked                        n
+candidates by kind and reason
+  <kind> <reason>                      n
+autopay and card pairs by time gap
+  up to 10 min                         n
+  10-60 min                            n
+  1-24 h                               n
+autopay and card pairs, merchant
+  same merchant key                    n
+  brand on both                        n
+  brand on autopay only                n
+  brand on card only                   n
+  brand on neither                     n
+  earlier message is autopay           n
+  earlier message is card              n
+existing candidates
+  recorded                             n
+  linked                               n
+  still candidate                      n
+  decided different                    n
+  not active                           n
+  lost                                 n
 not counted yet
   foreign currency                     n
   no parser                            n
+owner data
+  accounts                             n
+  parties                              n
+  income sources                       n
+  role decisions                       n
+  link decisions                       n
 warning: owner data lists no income party (only when that is so)
 ```
 
-"legacy candidates ... not covered" must be 0. "same-amount debit within
-10 min" counts credits that follow or precede an equal debit on the same
-account: money that bounced. Both sides are counted (spend and payback), so
-Net is unchanged; the line only tells the owner how common it is.
+- "existing candidates" are the pairs in `duplicate_candidates`. **"lost"
+  must be 0**: a recorded pair between two active transactions that is
+  neither a link nor decided different. "not active" counts recorded pairs
+  where a transaction is no longer active.
+- "autopay and card pairs" covers every `DUP_autopay_card` link, linked or
+  candidate. The merchant lines answer Q9 on real data without a name: how
+  often the two messages give the same merchant key, which side hits the
+  brand dictionary, and which message is the earlier one (the primary).
+- Lines that arrive with later steps: last recompute and stored rows that
+  differ (3C-6); owner texts that match no transaction and inactive
+  decisions (3C-4, 3C-7); card bill lines; transactions with two or more
+  sources; months with uncertain credits; credits with a same-amount debit
+  inside 10 minutes.
 
 ## H. Build plan
 
@@ -717,9 +737,9 @@ owner's counts-only run.
 | Step | What | Tests | Heavy |
 | ---- | ---- | ----- | ----- |
 | 3C-2 | `app/engine/reconcile.py`: input and output dataclasses (transactions, an in-memory owner-data structure, one role with rule and basis), every role rule that reads one transaction only (B7 step 3: wording, owner texts and parties, the tracked test), owner role decisions, `totals()`. First `reconcile-stats`: role by direction, role by rule, paybacks by basis, uncertain credits, not counted yet, the income warning. On real data the owner data stays empty until 3C-4. Owner run | One case per row of B6 and B7; I16 against a naive second implementation on seeded random data; I18; stats prints no values | |
-| 3C-3 | Duplicates: pair finding by amount bucket, D1 and D2, unique-pair rule, groups, primary, legacy coverage. Stats sections. Owner run: tells whether [A1] and [A2] hold. Report whether the choice of primary changes the merchant shown for an AutoPay + card pair (Q9) | The B1 table; I15, I17; legacy coverage on fixtures | yes |
+| 3C-3 | **Built in memory (`reconcile-1.1.0`).** Duplicates: pair finding by amount bucket, D1 and D2, unique-pair rule, groups, primary, legacy coverage. Stats sections. Owner run: tells whether [A1] and [A2] hold. Report whether the choice of primary changes the merchant shown for an AutoPay + card pair (Q9) | The B1 table; I15, I17; legacy coverage on fixtures | yes |
 | 3C-4 | Migration `0004`, owner models, `owner-load` with validation. The loaded owner data feeds the rules built in 3C-2 (S1, S3, `CB_own_text`, `FD_own_text`, parties, income); party display names in the merchant step. Owner run | File validation (every rejection, no values in errors); load twice changes nothing; I13; RLS on the new tables; party overrides | |
-| 3C-5 | Pair linking: one matcher (window, unique pair, guard) used by S2, `CB_pair`, `FD_pair` and refund links | Zero, one, many for every rule; window edges; I19; refund guard | yes |
+| 3C-5 | **Built in memory (`reconcile-1.1.0`), except `CB_pair`** (B3: waits for credit card SMS). Pair linking: one matcher (window, unique pair) used by S2, `FD_pair` and refund links | Zero, one, many for every rule; window edges; I19; refund guard | yes |
 | 3C-6 | Migration `0005`, `recompute` (compare and write), triggers in `import-sms`, `reparse` and `owner-load`, stale flag in `stats`, the key-change check | I10, I11, I12, I20, I21; key-change stop and `--accept-key-changes`; SQLite and Postgres | yes |
 | 3C-7 | `reconcile-review` and the two decision tables in use; decisions in `owner-load` | I14; refusal without a terminal; contradicting decision refused; inactive decisions | |
 | 3C-8 | `owner-export`. Docs (`data-model.md`, `engine.md`), DECISIONS, owner's full review, tag `phase-3c-done` | Export then load into an empty database restores every owner row | |
