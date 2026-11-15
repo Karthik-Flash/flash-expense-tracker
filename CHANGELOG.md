@@ -23,6 +23,18 @@ Phase 1 is parsing, Phase 2 is the database and import.
 - `merchant-1.1.1` (D-068): a name beside a UPI ID is the display name;
   the UPI ID stays the key.
 
+## Phase 3C: Reconcile and the derived-data backbone (15 Nov 2026, in progress, tag `phase-3c-done` when done)
+
+- Design of the derived-data backbone and Reconcile
+  ([docs/design/phase-3-backbone.md](docs/design/phase-3-backbone.md)),
+  approved with D-059 to D-067: one role per transaction, owner data kept
+  apart from derived data, duplicates linked and never merged.
+- 3C-2: pure engine `reconcile-1.0.0`. Exactly one role per transaction
+  with the deciding rule and its basis (engine or owner), every rule that
+  reads one transaction, owner data in memory, and `totals()` (Spent, Paid
+  back, Net, Income as sums over roles).
+- `python -m app.cli reconcile-stats`: counts only, read-only.
+
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 
 - Migration `0002`: `import_batches`, `raw_messages`, `parse_results`,

@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from app import cli
 from app.engine.merchant import MERCHANT_VERSION
 from app.engine.parsers.hdfc import PARSER_VERSION
+from app.engine.reconcile import RECONCILE_VERSION, ROLES, RULES
 from app.importers import sms_backup
 from tests.smsdata import FIXTURES, NEVER_STORED, SBI_ROW, full_rows, write_backup
 
@@ -113,6 +114,30 @@ def test_merchant_stats_prints_counts_only_and_writes_nothing(run, backup: Path,
     assert_no_values(out)
     keys = {"brand:", "vpa:", "name:"}
     assert not any(k in out for k in keys)
+
+
+def test_reconcile_stats_prints_counts_only_and_writes_nothing(run, backup, db_engine) -> None:
+    run("import-sms", "--input", str(backup))
+    before = snapshot(db_engine)
+    out = run("reconcile-stats")
+    assert snapshot(db_engine) == before
+    assert f"reconcile-stats ({RECONCILE_VERSION}, {MERCHANT_VERSION}, read-only)" in out
+    active = int(re.search(r"transactions \(active\)\s+(\d+)", out).group(1))
+    sections = dict(re.findall(r"^(\S[^\n]*)\n((?:  .*\n)+)", out, flags=re.M))
+    by_direction = dict(re.findall(r"  (\w+ \w+)\s+(\d+)", sections["role by direction"]))
+    by_rule = dict(re.findall(r"  (\w+)\s+(\d+)", sections["role by rule"]))
+    assert active > 0 and sum(map(int, by_direction.values())) == active
+    assert sum(map(int, by_rule.values())) == active
+    assert {key.split()[1] for key in by_direction} <= set(ROLES) and set(by_rule) <= set(RULES)
+    assert {"debit spend", "credit refund", "credit payback", "credit fd_move"} <= set(by_direction)
+    paybacks = dict(re.findall(r"  (\w+)\s+(\d+)", sections["paybacks by basis"]))
+    assert paybacks == {"engine": by_direction["credit payback"], "owner": "0"}
+    uncertain = sum(int(n) for key, n in by_direction.items() if key.endswith(" uncertain"))
+    assert re.search(rf"uncertain credits\s+{uncertain}\n", out)
+    assert re.search(r"not counted yet\n  foreign currency\s+\d+\n  no parser\s+1\n", out)
+    assert out.rstrip().endswith(cli.NO_INCOME_PARTY)
+    assert_no_values(out)
+    assert not any(k in out for k in ("brand:", "vpa:", "name:", "R5_"))
 
 
 def test_merchant_review_refuses_without_a_terminal(db_engine, backup: Path, capsys) -> None:

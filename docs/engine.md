@@ -52,6 +52,8 @@ body      --normalise-----> one line, single spaces
 | `parsers/base.py` | `Template`, `BankParser`, field building. |
 | `parsers/<bank>.py` | The bank's templates and `PARSER_VERSION`. |
 | `parsers/__init__.py` | Registry: bank code -> parser. |
+| `merchant.py` | Counterparty text -> merchant (below). |
+| `reconcile.py` | One role per transaction, totals (below). |
 
 ## Results
 
@@ -211,3 +213,96 @@ transactions):
   into any chat or file.` It refuses to run when stdout is not a terminal,
   so it cannot be piped, redirected or captured by a tool. Agents never run
   it on real data.
+
+## Reconcile: one role per transaction
+
+`app/engine/reconcile.py` (`reconcile-1.0.0`; design in
+[design/phase-3-backbone.md](design/phase-3-backbone.md), D-059 to D-067)
+gives every transaction exactly one role. Pure and stdlib only: no database,
+clock, network or randomness, and the same input in any order gives the same
+output. Built so far (step 3C-2): every rule that reads one transaction.
+Duplicates (3C-3) and pair links (3C-5) come later, so no rule gives the
+role `duplicate` yet.
+
+```python
+from app.engine.reconcile import OwnerData, Txn, derive, totals
+
+derived = derive(txns, owner)  # {transaction id: Derived}
+d = derived[txn.id]
+d.role, d.rule, d.basis, d.reasons  # "payback", "CR_person_signal", "engine", (...)
+t = totals(txns, derived, start, end)  # start <= txn_time_utc < end
+t.spent_paise, t.paid_back_paise, t.net_paise, t.income_paise
+```
+
+- **Input.** One `Txn` per active transaction (`id`, `bank`, `type`,
+  `direction`, `amount_paise`, `account_last4`, `channel`,
+  `counterparty_raw`, `txn_time_utc`, `hints`) and an `OwnerData`, which may
+  be empty: `accounts` (`OwnAccount`: `kind`, `bank`, `last4`, `texts`),
+  `parties` (`Party`: `kind`, `income`, `texts`) and `roles` (transaction id
+  -> the owner's role decision). The engine versions are
+  `reconcile.VERSIONS`.
+- **Output.** One `Derived` per transaction: `role`, `rule` (the code of the
+  rule that decided), `basis` (`engine`: the transaction's wording alone;
+  `owner`: the rule read owner data), `reasons` (every rule that matched,
+  the deciding one first).
+
+**Roles and totals** (D-060).
+
+| Role | Direction | Total |
+| ---- | --------- | ----- |
+| `spend`, `card_bill_counted` | debit | Spent (+) |
+| `refund` | credit | Spent (-) |
+| `payback` | credit | Paid back (+) |
+| `income` | credit | Income (+) |
+| `uncertain` | credit | none (shown as "uncertain credits") |
+| `self_transfer`, `card_bill_excluded`, `fd_move`, `duplicate`, `ignored` | either | none |
+
+Net = Spent - Paid back. `totals()` takes any two aware datetimes; a month
+is an IST month (D-002), so pass IST midnights. Amounts stay integer paise.
+
+**Rules, in order.** The first match decides.
+
+| Rule | Evidence | Role | Basis |
+| ---- | -------- | ---- | ----- |
+| `OWNER_role` | An owner role decision. Any role except `duplicate`; it must fit the direction | as decided | owner |
+| `FD_channel` | Channel `fd` | `fd_move` | engine |
+| `FD_own_text` | Text of an own FD | `fd_move` | owner |
+| `CB_hint` | Credit with hint `card_bill_payment` | `card_bill_excluded` | engine |
+| `CB_own_text` | Debit to a text of an own credit card | `card_bill_excluded` when the card is tracked, else `card_bill_counted` | owner |
+| `ST_own_text` | Text of an own bank account or wallet | `self_transfer` | owner |
+| `RF_type` | Type `refund` | `refund` | engine |
+| `ST_masked` | Credit from a masked UPI ID whose handle and visible end fit an own UPI ID | `uncertain` | owner |
+
+Only when none of those matched:
+
+| Rule | Evidence | Role | Basis |
+| ---- | -------- | ---- | ----- |
+| `CR_income_party` | Credit from a party marked as income | `income` | owner |
+| `CR_person_party` | Credit from a party of kind person | `payback` | owner |
+| `CR_person_signal` | Credit; the merchant engine says person with `R5_honorific`, `R5_mobile_vpa` or `R5_consumer_vpa` | `payback` | engine |
+| `CR_name_only` | Credit; person on the shape of the name alone | `uncertain` | engine |
+| `CR_business` | Credit from a business (the engine, or a party of kind business) | `uncertain` | engine or owner |
+| `CR_unsure`, `CR_no_text` | Credit; merchant unsure, or no text | `uncertain` | engine |
+| `CR_own_account` | Credit from a text of an own credit card or FD that no rule above explains | `uncertain` | owner |
+| `DB_no_counterparty` | Debit with no payee text that is not an ATM withdrawal | `spend` | engine |
+| `DB_spend` | Any other debit | `spend` | engine |
+
+- **Text of** an account or party: the transaction's merchant key equals the
+  key of a text the owner listed (case, spacing and punctuation do not
+  matter). One text listed in two places is an error.
+- **Tracked** (D-059): the input holds a debit with channel `credit_card`,
+  the card's bank and one of its last 4, from 60 days before the payment up
+  to the payment itself (both ends included).
+- A guess never lowers Net: an unexplained debit is `spend`, an unexplained
+  credit is `uncertain`.
+- Bad input raises `ValueError`. The message never holds a value from the
+  data.
+- **Version.** Bump `RECONCILE_VERSION` on any change that can alter a role,
+  a rule code or a basis.
+
+**Command** (from `backend\`): `python -m app.cli reconcile-stats`.
+Read-only, in memory, counts only, safe to paste: role by direction, role by
+rule, transactions matched by two or more rules, paybacks by basis,
+uncertain credits, messages not counted yet, owner data counts, and a
+warning line when the owner data lists no income party. The command passes
+empty owner data until the owner tables exist (step 3C-4).

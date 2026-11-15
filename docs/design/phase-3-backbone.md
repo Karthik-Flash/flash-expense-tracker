@@ -377,8 +377,11 @@ One run, in this order:
 
    Rule codes for the rows that section B does not name: `RF_type` (row 4),
    `DB_spend` and `DB_no_counterparty` (row 7; the second is a debit with no
-   counterparty text that is not an ATM withdrawal), and `OWNER_role` (an
-   owner role decision, step 5).
+   counterparty text that is not an ATM withdrawal), `CR_own_account` (row
+   6: a credit from a text of an own credit card or FD that no earlier row
+   explains; `uncertain`), and `OWNER_role` (an owner role decision, step
+   5). A mask with no visible character (row 5) fits every own UPI ID on
+   that handle.
 
 4. Pair passes (B2, B3, B5, then B4), each with the unique-pair rule. A pair
    carries a role to an unidentified partner in one case only: B2 S2.

@@ -45,7 +45,16 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
       and your own look with `merchant-review` (never pasted)
 - [x] Phase 3C-1: design of the derived-data backbone and Reconcile
       ([docs/design/phase-3-backbone.md](docs/design/phase-3-backbone.md));
-      no code yet, 11 open questions for the planner
+      approved 15 Nov with the planner's answers (D-059 to D-067)
+- [x] Phase 3C-2: decisions recorded; `merchant-1.1.1` (D-068); roles in
+      memory (`reconcile-1.0.0`, [docs/engine.md](docs/engine.md)) and
+      `reconcile-stats`
+- [ ] Phase 3C-2: your `reconcile-stats` run on the real data (counts only,
+      safe to paste)
+- [ ] Private look at the merged refund's two source messages (cheat sheet,
+      "Merged refund"); tell the planner "one event" or "two events" only
+- [ ] Phase 3C-3 to 3C-8: duplicates, owner tables and `owner-load`, pair
+      links, storage and `recompute`, terminal review, `owner-export`
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -391,6 +400,8 @@ cd backend
 .\.venv\Scripts\python.exe -m app.cli merchant-stats
 # 8. PRIVATE, your screen only: merchants with real names. Never paste or redirect it
 .\.venv\Scripts\python.exe -m app.cli merchant-review --kind unsure --sample 30 --seed 1
+# 9. Reconcile roles: read-only, counts only (roles, rules, paybacks by basis, uncertain credits)
+.\.venv\Scripts\python.exe -m app.cli reconcile-stats
 ```
 
 - After a parser version bump: `python -m app.cli reparse --dry-run`, then
@@ -402,6 +413,28 @@ cd backend
   `--confidence high|low`, `--reason R5_digits`, `--direction
   debit|credit|refund`, `--sample N --seed S`. It shows real names, so it
   only prints to a console window (no pipe, no `>`).
+- `reconcile-stats` runs with empty owner data until step 3C-4, so every
+  basis is `engine` and the no-income-party warning always shows. Until
+  then your own transfers count as spend and pocket money as a payback.
+
+**Merged refund (PRIVATE, your screen only).** Two refund messages became
+one transaction in Phase 2. To see both source messages, open the Supabase
+dashboard, SQL Editor, and run this. It only reads. Never paste the result
+anywhere; tell the planner only "one event" or "two events" (D-064).
+
+```sql
+select t.id, t.type, t.txn_time_utc, r.id as raw_id, r.received_at, r.sender_raw, r.body
+from transactions t
+join transaction_sources s on s.transaction_id = t.id
+join raw_messages r on r.id = s.raw_message_id
+where t.id in (select transaction_id from transaction_sources
+               group by transaction_id having count(*) > 1)
+order by t.id, r.received_at;
+```
+
+Same wording and the same date inside both messages: the bank sent one
+refund twice (one event, nothing to fix). Different dates or wording, or
+two credits on the bank statement: two events.
 
 ### Template survey (reads only the redacted sample)
 
@@ -441,8 +474,10 @@ gh repo view --web                                # open the repo in the browser
 
 1. Keep-alive: switch-over verified 15 Nov; first scheduled 03:30 run still
    to check (D-053, to-do list).
-2. Reconcile (Phase 3): 18 open duplicate candidates, and 1 refund that was
-   merged into another transaction on its dedupe key; check both.
+2. Reconcile (3C): roles exist in memory only (3C-2). Still open: 18 open
+   duplicate candidates (3C-3), and 1 refund that was merged into another
+   transaction on its dedupe key (your private check, D-064). No owner
+   data, links or stored roles until 3C-4 to 3C-6.
 3. 44 foreign-currency messages deferred (D-035).
 4. 153 messages from banks without a parser (SBI, ICICI, India Post, Kotak,
    PhonePe): a parser plus `reparse`, no re-import needed.
@@ -460,6 +495,25 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-16: Phase 3C-2, decisions, merchant 1.1.1, roles in memory
+
+- Decisions: the backbone design is approved. D-059 to D-067 record the
+  planner's answers to Q1-Q11 and C1-C9, with pointers on D-029, D-031,
+  D-032, D-047, D-055, D-057 and D-058. Design doc, PLAN.md (new 3C
+  bullet), data-model.md and engine.md updated. The role `unknown` is now
+  `uncertain`.
+- `merchant-1.1.1` (D-068): a name beside a UPI ID is the display name; the
+  key stays the UPI ID.
+- `app/engine/reconcile.py` (`reconcile-1.0.0`): `derive()` gives every
+  transaction one role, the deciding rule and its basis; `totals()` sums
+  over roles. Owner data is an in-memory structure for now. No duplicates,
+  pair links, owner tables or storage yet.
+- `python -m app.cli reconcile-stats`: counts only. On the redacted sample:
+  127 transactions, 103 spend, 21 payback, 1 refund, 1 FD move, 1 uncertain
+  credit.
+- Tests: 435 backend (61 new: 1 merchant, 59 reconcile, 1 CLI), 89 scripts;
+  ruff clean.
 
 ### 2026-11-15: Phase 3C-1, backbone and Reconcile design
 
