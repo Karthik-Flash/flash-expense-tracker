@@ -36,10 +36,26 @@ Deploy (13 Nov 2026), all done and verified:
 
 Last open Phase 0 items:
 
-- [ ] Overnight cron check: first night on the new schedule is 15 Nov 2026
+- [ ] Overnight check of the D-053 keep-alive: first scheduled run 16 Nov 2026
+      03:30 IST; confirm job history 200 and `last_seen` moved
 - [x] Redaction run on the real backup; sample reviewed (14 Nov 2026)
 
-## Phase 1: Data model and idempotent ingestion (done 14 Nov 2026)
+## Phase 1: SMS parsing engine (done 14 Nov 2026)
+
+Done: tag `phase-1-done` (CHANGELOG Phase 1).
+
+As built: HDFC parser `hdfc-1.1.1` ([engine.md](engine.md), D-041 to D-045),
+fake-fixture tests, per-bank versions and `python -m app.cli reparse`. Other
+banks are stored with `no_parser_for_bank` and need only a parser plus
+reparse. Draft scope as planned:
+
+- Per-bank rule parsers built from `data/sample/redacted_sample.json`.
+- Golden-file tests: one fixture per message shape.
+- Amount to paise, debit/credit, account last 4, merchant text, balance.
+- Parser registry with versions. Re-parse stored raw messages when a version
+  changes.
+
+## Phase 2: Data model and idempotent ingestion (done 14 Nov 2026)
 
 Done: tag `phase-2-done` (CHANGELOG Phase 2).
 
@@ -55,21 +71,6 @@ Draft scope as planned:
   occurred_at UTC, parser_version, raw_message_id), `accounts`.
 - Alembic migration for this schema (after `0001` heartbeat).
 - `POST /ingest/sms` batch endpoint. Re-sending the same batch is a no-op.
-
-## Phase 2: SMS parsing engine (done 14 Nov 2026)
-
-Done: tag `phase-1-done` (CHANGELOG Phase 1).
-
-As built: HDFC parser `hdfc-1.1.1` ([engine.md](engine.md), D-041 to D-045),
-fake-fixture tests, per-bank versions and `python -m app.cli reparse`. Other
-banks are stored with `no_parser_for_bank` and need only a parser plus
-reparse. Draft scope as planned:
-
-- Per-bank rule parsers built from `data/sample/redacted_sample.json`.
-- Golden-file tests: one fixture per message shape.
-- Amount to paise, debit/credit, account last 4, merchant text, balance.
-- Parser registry with versions. Re-parse stored raw messages when a version
-  changes.
 
 ## Phase 3: Normalise, reconcile, categorise and minimal dashboard (next)
 
@@ -93,13 +94,14 @@ data run by the owner, and a tag (`phase-3a-done` ... `phase-3f-done`).
   deletes, and is safe to re-run. Unclear duplicates are reviewed by the
   owner in the terminal.
 - 3D Categorise: rules -> merchant dictionary -> owner corrections.
-  Corrections always win and survive reparse.
+  Corrections always win and survive reparse. Owner labels (D-056): create a
+  label and attach it to a transaction; stored like corrections.
 - 3E Auth and read-only API: Supabase Auth, single user, sign-ups off; JWT
   verified in FastAPI; no data endpoint without auth. The Data API stays
   keepalive-only (D-053).
 - 3F Minimal dashboard: month net spend (with spent and paid back), category
-  breakdown, transaction list with category correction, and a count of
-  unknown and not-yet-counted items.
+  breakdown, transaction list with category correction, label view (D-056),
+  and a count of unknown and not-yet-counted items.
 
 Done when: the owner privately checks one normal month and one messy month
 against the bank statement and reports "match" or the difference in rupees;
@@ -123,3 +125,6 @@ No detail yet.
 
 Budget cycles, P2P tagging, roommate splits, subscription tracker,
 first-salary mode. No detail yet.
+
+Revisit D-026 (investment, broker and exchange senders): decide whether to
+include them.

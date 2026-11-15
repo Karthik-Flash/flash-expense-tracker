@@ -446,6 +446,15 @@ gh repo view --web                                # open the repo in the browser
 
 ## Log
 
+### 2026-11-15: Phase 3A-1b, docs follow-up
+
+- D-015: garbled duplicate line removed.
+- `docs/PLAN.md`: Phase 1 is now the parsing engine and Phase 2 the data
+  model and ingestion, matching the tags; Phase 0 keep-alive check points at
+  the D-053 job (16 Nov 03:30 IST); Phase 6 revisits D-026.
+- D-056 owner labels: one fixed category per transaction plus at most one
+  owner label; totals ignore labels; label view in 3F, storage in 3D.
+
 ### 2026-11-15: Phase 3A-1, docs alignment
 
 - `docs/PLAN.md`: Phase 3 replaced by steps 3A-3F (normalise, reconcile,

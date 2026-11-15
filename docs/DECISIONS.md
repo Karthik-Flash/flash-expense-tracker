@@ -93,7 +93,6 @@ Superseded by D-016: default-deny, no person-vs-merchant guessing.
 ## D-015 Real data lives outside the repo (2026-11-13)
 
 SMS exports live in `D:\FlashPrivate\raw\`; the name map, redaction key and
-aw`; the name map, redaction key and
 private keep-list live in `D:\FlashPrivate\private\`. `redact_sms.py` has no
 default paths: `--input`, `--private-dir` and `--output` are explicit. Agents
 are denied that folder and run the script only on synthetic test files.
@@ -452,3 +451,20 @@ Supersedes the timing in D-028 ("Phase 2-3"): Reconcile is step 3C.
 - If the engine is unsure whether a credit is from a person, it goes to the
   unknown queue and spend is not reduced.
 - Income (non-payback credits) is shown separately and never reduces spend.
+
+## D-056 Owner labels next to categories (2026-11-15)
+
+- Every transaction has exactly one category from a fixed list. The list is
+  set in the UI design spec.
+- A transaction may also carry one label the owner creates, for example a
+  trip or an event. At most one label per transaction in Phase 3.
+- A label never replaces the category. Month and category totals ignore
+  labels, so a labelled spend still counts in its category and nothing is
+  counted twice.
+- A payback credit can carry a label too.
+- The label view shows that label's Spent, Paid back and Net, and its
+  breakdown by category, across all dates (a label can span months).
+- Labels are owner data: stored only in the database, kept apart from engine
+  output, and they survive reparse, like category corrections.
+- Not in Phase 3: owner-made categories, budgets per label, automatic
+  labelling.
