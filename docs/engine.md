@@ -118,7 +118,7 @@ prove that.
 
 ## Merchant normalisation
 
-`app/engine/merchant.py` (`merchant-1.0.0`, D-057) turns a transaction's
+`app/engine/merchant.py` (`merchant-1.1.0`, D-057, D-058) turns a transaction's
 `counterparty_raw` into a stable merchant. Pure and stdlib only; the only I/O
 is loading `brands.json` once.
 
@@ -142,16 +142,18 @@ H17); `netbanking`, `neft`, `imps` -> `bank_transfer`; `atm` -> `atm`;
 | R0 | No text left after cleaning (`R0_no_text`), or channel `atm` (`R0_atm`) | `none`, high, no key |
 | R1 | NFKC, casefold, collapse whitespace, strip outer punctuation (not `*`, the UPI mask). One `local@handle` is split off (`R1_vpa`); an `@` that is not a valid UPI ID is `R1_vpa_malformed` and stays name text | - |
 | R2 | Gateway prefix `PAYTM*`, `RAZ*`, `PYU*`, `CCA*` at the start of the name, only with `*` and only if text remains (`R2_gateway`). Cities are never stripped | - |
-| R3 | Brand dictionary on whole tokens of the name (or of the UPI local part split on `. - _ *` when there is no name). Longest alias wins (tokens, then characters); two brands of the same length: `R3_tie`, no match | `business`, high, `brand:<id>` |
+| R3 | Brand dictionary on whole tokens, anchored: an alias matches only at the start of the name (after the gateway prefix and a leading `www` word) or at the start of the UPI local part (split on `. - _ *`). An alias later in the text is no match. Longest alias wins (tokens, then characters); two brands of the same length, one from the name and one from the UPI ID: `R3_tie`, no match | `business`, high, `brand:<id>` |
 | R4 | Channel `card` or `autopay` (`R4_card`, `R4_autopay`) | `business`, high |
 | R5 | Signals, below | below |
 
 R5 signals. Business: `R5_keyword` (a word in `BUSINESS_WORDS`, or `M/S`),
 `R5_domain` (`name.com`, `.in`, `.net`, `.org`, `.io`, `.app`),
 `R5_merchant_vpa` (local part `q` + 6 or more digits, or starting `paytmqr`,
-`bharatpe`, `vyapar`, `gpay-`), `R5_digits` (a digit in the name). Person:
+`bharatpe`, `vyapar`, `gpay-`), `R5_business_handle` (handle starts with
+`okbiz`), `R5_digits` (a digit in the name). Person:
 `R5_honorific` (first word `mr mrs ms dr shri smt` and more words follow),
 `R5_mobile_vpa` (local part is a 10-digit mobile, optional `91`),
+`R5_consumer_vpa` (handle `okaxis`, `okhdfcbank`, `okicici` or `oksbi`),
 `R5_person_name` (2-4 words of letters only, no business keyword or domain).
 
 - Business signals only: `business` (`R5_business`), high unless
@@ -160,12 +162,24 @@ R5 signals. Business: `R5_keyword` (a word in `BUSINESS_WORDS`, or `M/S`),
   with a mobile UPI ID plus a person-shaped name, else low.
 - Both (`R5_unsure_mixed`) or neither (`R5_unsure_none`): `unsure`, low.
 
+`BUSINESS_WORDS` (186 words) holds common Indian shop and business words
+(`kirana`, `tiffin`, `mess`, `xerox`, `medicals`, `travels`, ...). Whole
+tokens only; never a word of one or two letters, never a word that is also
+a common Indian given name or surname. The handle lists
+(`CONSUMER_HANDLES`, `BUSINESS_HANDLE_PREFIXES`) sit next to it.
+
 **Merchant key.** `brand:<id>` on a dictionary match; else `vpa:<upi id>`
 (casefolded, mask kept); else `name:<words>`: casefolded, apostrophes
 removed, every other non-letter/digit a space, leading honorifics removed,
 single spaces. Case, spacing and punctuation do not change the key; `S.K.`
 and `SK` do (`s k` vs `sk`). Corrections will be keyed on it, so a key
-change is a version bump.
+change is a version bump; once merchant storage ships, a key change also
+needs a migration plan (D-058).
+
+**Display name**, for every kind except `none`: the brand's name on a
+dictionary match; else the UPI ID in lower case when there is one (it is
+the key); else the cleaned name in title case, gateway prefix removed.
+Normalising a display name again gives the same key (tested).
 
 **Dictionary** `app/engine/brands.json`: `id`, `name`, `aliases`. Only
 well-known national brands from public knowledge, nothing from the owner's
@@ -176,6 +190,19 @@ belong to two brands (checked at load and in tests). No categories yet.
 **Version.** `MERCHANT_VERSION` covers rules, word lists, dictionary and key
 format: bump it on any change that can alter a kind or a key.
 
-**Survey.** `python -m app.cli merchant-stats` runs the engine in memory
-over active transactions and prints counts only (kinds, reasons, key reuse,
-unsure shapes, UPI handles seen 5+ times). It writes nothing.
+**Commands** (from `backend\`, read-only, engine runs in memory over active
+transactions):
+
+- `python -m app.cli merchant-stats`: counts only, safe to paste. Kind by
+  channel, confidence and direction (debit, credit, refund), reason codes,
+  dictionary hits, distinct keys (by kind and confidence, seen once or more),
+  how many keys cover 50%, 80% and 95% of keyed transactions, keys with
+  both a debit and a credit, unsure shapes, UPI handles seen 5+ times.
+- `python -m app.cli merchant-review [--kind K] [--confidence C]
+  [--reason CODE] [--direction debit|credit|refund] [--sample N] [--seed S]`:
+  **owner only**. One line per merchant key: raw counterparty text, display
+  name, key, kind and confidence, reasons, number of transactions; never
+  amounts or references. First and last line: `PRIVATE: do not paste this
+  into any chat or file.` It refuses to run when stdout is not a terminal,
+  so it cannot be piped, redirected or captured by a tool. Agents never run
+  it on real data.

@@ -496,3 +496,31 @@ Supersedes the timing in D-028 ("Phase 2-3"): Reconcile is step 3C.
   (`channel_for`); parser output and the parser version are unchanged.
 - Any change to rules, word lists, the dictionary or the key format bumps
   `MERCHANT_VERSION`.
+
+## D-058 Merchant engine 1.1.0: anchored brands, display names, handles (2026-11-15)
+
+Changes to D-057, version `merchant-1.1.0`:
+
+- **Brand matching is anchored.** An alias matches only at the start of the
+  cleaned name (after a gateway prefix and a leading `www` word) or at the
+  start of the UPI local part. An alias later in the text is no match.
+  Longest alias and the tie rule are unchanged.
+- **Display name for every result except kind none**: the brand's name on a
+  dictionary match; the cleaned name in title case (gateway prefix removed)
+  for name text; the UPI ID in lower case when there is one. Normalising a
+  display name again gives the same key.
+- **UPI handle signals.** Handles `okaxis`, `okhdfcbank`, `okicici`, `oksbi`
+  are a person signal (`R5_consumer_vpa`); a handle starting `okbiz` is a
+  business signal (`R5_business_handle`), weighted like a merchant-style
+  local part. Confidence rules are unchanged: a consumer handle alone gives
+  person, low.
+- **Business keywords** extended to 186 common Indian shop and business
+  words, whole tokens only, none of one or two letters, none that is also a
+  common Indian given name or surname.
+- `merchant_key` rules may still change until merchant storage ships. After
+  that, any change to them needs a migration plan for stored keys and
+  corrections.
+- Step 3C decides which reason codes are enough to treat a credit as a
+  payback (D-055); the engine only reports them.
+- New owner-only command `merchant-review` shows real counterparty text, so
+  it runs only when stdout is a terminal; `merchant-stats` stays counts only.

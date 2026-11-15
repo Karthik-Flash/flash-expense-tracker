@@ -40,7 +40,9 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Phase 3A-1: PLAN aligned with Phase 3 (D-054), spend definition (D-055)
 - [ ] Phase 3A: one-page UI design spec and clickable mockup, approved by you
 - [x] Phase 3B-1: merchant engine `merchant-1.0.0` and `merchant-stats` (D-057)
-- [ ] Phase 3B: your `merchant-stats` run on the real data (counts only)
+- [x] Phase 3B-2: `merchant-1.1.0` (D-058), wider survey, `merchant-review`
+- [ ] Phase 3B: your `merchant-stats` run on the real data (counts only),
+      and your own look with `merchant-review` (never pasted)
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -384,6 +386,8 @@ cd backend
 .\.venv\Scripts\python.exe -m app.cli stats
 # 7. Merchant engine survey: read-only, counts only (kinds, reasons, key reuse, UPI handles)
 .\.venv\Scripts\python.exe -m app.cli merchant-stats
+# 8. PRIVATE, your screen only: merchants with real names. Never paste or redirect it
+.\.venv\Scripts\python.exe -m app.cli merchant-review --kind unsure --sample 30 --seed 1
 ```
 
 - After a parser version bump: `python -m app.cli reparse --dry-run`, then
@@ -391,6 +395,10 @@ cd backend
 - A crashed import is safe to re-run: committed messages are skipped as
   duplicates. The crashed batch stays `failed` (or `running` if killed).
 - `stats` shows months only (IST), never days, amounts or names.
+- `merchant-review` filters: `--kind business|person|unsure`,
+  `--confidence high|low`, `--reason R5_digits`, `--direction
+  debit|credit|refund`, `--sample N --seed S`. It shows real names, so it
+  only prints to a console window (no pipe, no `>`).
 
 ### Template survey (reads only the redacted sample)
 
@@ -449,6 +457,20 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-15: Phase 3B-2, merchant engine 1.1.0 and merchant-review
+
+- `merchant-1.1.0` (D-058): brand aliases match only at the start of the
+  name or UPI local part; every merchant except `none` gets a display
+  name that normalises back to its key; handles `okaxis`, `okhdfcbank`,
+  `okicici`, `oksbi` are a person signal, `okbiz...` a business signal;
+  keywords 69 -> 186.
+- `merchant-stats` adds kind by direction, distinct keys by kind and
+  confidence, and how many keys cover 50/80/95% of transactions.
+- `merchant-review` (owner only): one line per key with real text; refuses
+  to run unless stdout is a terminal.
+- Redacted sample: 21 person low (was 2), 1 unsure (was 20); 50% of keyed
+  transactions sit on 22 keys.
 
 ### 2026-11-15: Phase 3B-1, merchant normalisation engine
 
