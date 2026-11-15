@@ -52,6 +52,8 @@ body      --normalise-----> one line, single spaces
 | `parsers/base.py` | `Template`, `BankParser`, field building. |
 | `parsers/<bank>.py` | The bank's templates and `PARSER_VERSION`. |
 | `parsers/__init__.py` | Registry: bank code -> parser. |
+| `merchant.py` | Counterparty text -> merchant (below). |
+| `reconcile.py` | One role per transaction, totals (below). |
 
 ## Results
 
@@ -118,7 +120,7 @@ prove that.
 
 ## Merchant normalisation
 
-`app/engine/merchant.py` (`merchant-1.1.0`, D-057, D-058) turns a transaction's
+`app/engine/merchant.py` (`merchant-1.1.1`, D-057, D-058, D-068) turns a transaction's
 `counterparty_raw` into a stable merchant. Pure and stdlib only; the only I/O
 is loading `brands.json` once.
 
@@ -172,14 +174,18 @@ a common Indian given name or surname. The handle lists
 (casefolded, mask kept); else `name:<words>`: casefolded, apostrophes
 removed, every other non-letter/digit a space, leading honorifics removed,
 single spaces. Case, spacing and punctuation do not change the key; `S.K.`
-and `SK` do (`s k` vs `sk`). Corrections will be keyed on it, so a key
-change is a version bump; once merchant storage ships, a key change also
-needs a migration plan (D-058).
+and `SK` do (`s k` vs `sk`). A key change is a version bump. Owner data
+stores the owner's text, never a key, and each run works the key out again,
+so a key change needs no data migration; recompute checks that no
+transaction loses its owner match (D-065).
 
 **Display name**, for every kind except `none`: the brand's name on a
-dictionary match; else the UPI ID in lower case when there is one (it is
-the key); else the cleaned name in title case, gateway prefix removed.
-Normalising a display name again gives the same key (tested).
+dictionary match; else the cleaned name in title case, gateway prefix
+removed, when there is name text; else the UPI ID in lower case. A name
+beside a UPI ID is shown, and the UPI ID stays the key (`merchant-1.1.1`,
+D-068). Normalising a display name again gives the same key when the
+display name comes from the same text as the key, so not for a name shown
+beside a UPI ID (tested).
 
 **Dictionary** `app/engine/brands.json`: `id`, `name`, `aliases`. Only
 well-known national brands from public knowledge, nothing from the owner's
@@ -188,7 +194,8 @@ only in the database. Each display name is also an alias, and no alias may
 belong to two brands (checked at load and in tests). No categories yet.
 
 **Version.** `MERCHANT_VERSION` covers rules, word lists, dictionary and key
-format: bump it on any change that can alter a kind or a key.
+format: bump it on any change that can alter a kind, a key or a display
+name.
 
 **Commands** (from `backend\`, read-only, engine runs in memory over active
 transactions):
@@ -206,3 +213,96 @@ transactions):
   into any chat or file.` It refuses to run when stdout is not a terminal,
   so it cannot be piped, redirected or captured by a tool. Agents never run
   it on real data.
+
+## Reconcile: one role per transaction
+
+`app/engine/reconcile.py` (`reconcile-1.0.0`; design in
+[design/phase-3-backbone.md](design/phase-3-backbone.md), D-059 to D-067)
+gives every transaction exactly one role. Pure and stdlib only: no database,
+clock, network or randomness, and the same input in any order gives the same
+output. Built so far (step 3C-2): every rule that reads one transaction.
+Duplicates (3C-3) and pair links (3C-5) come later, so no rule gives the
+role `duplicate` yet.
+
+```python
+from app.engine.reconcile import OwnerData, Txn, derive, totals
+
+derived = derive(txns, owner)  # {transaction id: Derived}
+d = derived[txn.id]
+d.role, d.rule, d.basis, d.reasons  # "payback", "CR_person_signal", "engine", (...)
+t = totals(txns, derived, start, end)  # start <= txn_time_utc < end
+t.spent_paise, t.paid_back_paise, t.net_paise, t.income_paise
+```
+
+- **Input.** One `Txn` per active transaction (`id`, `bank`, `type`,
+  `direction`, `amount_paise`, `account_last4`, `channel`,
+  `counterparty_raw`, `txn_time_utc`, `hints`) and an `OwnerData`, which may
+  be empty: `accounts` (`OwnAccount`: `kind`, `bank`, `last4`, `texts`),
+  `parties` (`Party`: `kind`, `income`, `texts`) and `roles` (transaction id
+  -> the owner's role decision). The engine versions are
+  `reconcile.VERSIONS`.
+- **Output.** One `Derived` per transaction: `role`, `rule` (the code of the
+  rule that decided), `basis` (`engine`: the transaction's wording alone;
+  `owner`: the rule read owner data), `reasons` (every rule that matched,
+  the deciding one first).
+
+**Roles and totals** (D-060).
+
+| Role | Direction | Total |
+| ---- | --------- | ----- |
+| `spend`, `card_bill_counted` | debit | Spent (+) |
+| `refund` | credit | Spent (-) |
+| `payback` | credit | Paid back (+) |
+| `income` | credit | Income (+) |
+| `uncertain` | credit | none (shown as "uncertain credits") |
+| `self_transfer`, `card_bill_excluded`, `fd_move`, `duplicate`, `ignored` | either | none |
+
+Net = Spent - Paid back. `totals()` takes any two aware datetimes; a month
+is an IST month (D-002), so pass IST midnights. Amounts stay integer paise.
+
+**Rules, in order.** The first match decides.
+
+| Rule | Evidence | Role | Basis |
+| ---- | -------- | ---- | ----- |
+| `OWNER_role` | An owner role decision. Any role except `duplicate`; it must fit the direction | as decided | owner |
+| `FD_channel` | Channel `fd` | `fd_move` | engine |
+| `FD_own_text` | Text of an own FD | `fd_move` | owner |
+| `CB_hint` | Credit with hint `card_bill_payment` | `card_bill_excluded` | engine |
+| `CB_own_text` | Debit to a text of an own credit card | `card_bill_excluded` when the card is tracked, else `card_bill_counted` | owner |
+| `ST_own_text` | Text of an own bank account or wallet | `self_transfer` | owner |
+| `RF_type` | Type `refund` | `refund` | engine |
+| `ST_masked` | Credit from a masked UPI ID whose handle and visible end fit an own UPI ID | `uncertain` | owner |
+
+Only when none of those matched:
+
+| Rule | Evidence | Role | Basis |
+| ---- | -------- | ---- | ----- |
+| `CR_income_party` | Credit from a party marked as income | `income` | owner |
+| `CR_person_party` | Credit from a party of kind person | `payback` | owner |
+| `CR_person_signal` | Credit; the merchant engine says person with `R5_honorific`, `R5_mobile_vpa` or `R5_consumer_vpa` | `payback` | engine |
+| `CR_name_only` | Credit; person on the shape of the name alone | `uncertain` | engine |
+| `CR_business` | Credit from a business (the engine, or a party of kind business) | `uncertain` | engine or owner |
+| `CR_unsure`, `CR_no_text` | Credit; merchant unsure, or no text | `uncertain` | engine |
+| `CR_own_account` | Credit from a text of an own credit card or FD that no rule above explains | `uncertain` | owner |
+| `DB_no_counterparty` | Debit with no payee text that is not an ATM withdrawal | `spend` | engine |
+| `DB_spend` | Any other debit | `spend` | engine |
+
+- **Text of** an account or party: the transaction's merchant key equals the
+  key of a text the owner listed (case, spacing and punctuation do not
+  matter). One text listed in two places is an error.
+- **Tracked** (D-059): the input holds a debit with channel `credit_card`,
+  the card's bank and one of its last 4, from 60 days before the payment up
+  to the payment itself (both ends included).
+- A guess never lowers Net: an unexplained debit is `spend`, an unexplained
+  credit is `uncertain`.
+- Bad input raises `ValueError`. The message never holds a value from the
+  data.
+- **Version.** Bump `RECONCILE_VERSION` on any change that can alter a role,
+  a rule code or a basis.
+
+**Command** (from `backend\`): `python -m app.cli reconcile-stats`.
+Read-only, in memory, counts only, safe to paste: role by direction, role by
+rule, transactions matched by two or more rules, paybacks by basis,
+uncertain credits, messages not counted yet, owner data counts, and a
+warning line when the owner data lists no income party. The command passes
+empty owner data until the owner tables exist (step 3C-4).

@@ -1,4 +1,4 @@
-"""Merchant normalisation engine (merchant-1.1.0). Fake values only."""
+"""Merchant normalisation engine (merchant-1.1.1). Fake values only."""
 
 import json
 from datetime import datetime
@@ -23,6 +23,13 @@ from app.engine.merchant import (
 from app.engine.parsers.hdfc import TEMPLATES
 
 SAMPLE = Path(__file__).resolve().parents[2] / "data" / "sample" / "redacted_sample.json"
+
+
+def round_trips(m: Merchant) -> bool:
+    """The display name comes from the same text as the key (not a name beside a UPI ID)."""
+    shown_beside_vpa = m.merchant_key.startswith("vpa:") and "@" not in m.display_name
+    return not shown_beside_vpa
+
 
 # (text, channel, kind, confidence, key, last reason)
 CASES = [
@@ -70,7 +77,7 @@ def test_rules(text, channel, kind, confidence, key, last) -> None:
     assert m.version == MERCHANT_VERSION
     assert (m.brand_id is not None) == (last == "R3_brand")
     assert (m.display_name is None) == (kind == "none")
-    if m.display_name:
+    if m.display_name and round_trips(m):
         assert normalise_merchant(m.display_name, channel).merchant_key == key
 
 
@@ -121,7 +128,7 @@ def test_longest_alias_wins_and_tie_is_no_match() -> None:
         ("mr. test person", "upi", "Mr. Test Person"),
         ("M/S TEST TRADERS", "upi", "M/s Test Traders"),
         ("Test.User@OKAXIS", "upi", "test.user@okaxis"),  # UPI ID only, lower case
-        ("TEST PERSON test.user@ybl", "upi", "test.user@ybl"),  # UPI ID is the key
+        ("TEST PERSON test.user@ybl", "upi", "Test Person"),  # name shown; key is the UPI ID
         ("TEST ATM 0001", "atm", None),
         (None, "upi", None),
     ],
@@ -129,8 +136,20 @@ def test_longest_alias_wins_and_tie_is_no_match() -> None:
 def test_display_name_forms_and_round_trip(text, channel, display) -> None:
     m = normalise_merchant(text, channel)
     assert m.display_name == display
-    if display:
+    if display and round_trips(m):
         assert normalise_merchant(display, channel).merchant_key == m.merchant_key
+
+
+def test_name_beside_a_upi_id_is_shown_and_the_upi_id_stays_the_key() -> None:
+    m = normalise_merchant("TEST PERSON 9000000001@ybl", "upi")
+    assert (m.display_name, m.merchant_key) == ("Test Person", "vpa:9000000001@ybl")
+    assert not round_trips(m)  # the name alone gives a name key: no round trip here
+    gateway = normalise_merchant("RAZ*TEST SHOP test.shop@ybl", "upi")
+    assert (gateway.display_name, gateway.merchant_key) == ("Test Shop", "vpa:test.shop@ybl")
+    only_vpa = normalise_merchant("... Test.User@ybl", "upi")  # no name words
+    assert only_vpa.display_name == "test.user@ybl" and round_trips(only_vpa)
+    brand = normalise_merchant("TEST swiggy.test@ybl", "upi")  # a brand keeps its name
+    assert (brand.display_name, brand.merchant_key) == ("Swiggy", "brand:swiggy")
 
 
 @pytest.mark.parametrize(
@@ -251,5 +270,5 @@ def test_engine_runs_over_the_redacted_sample() -> None:
         if getattr(result, "is_money", False):
             channel = channel_for(result.channel, result.hints)
             m = normalise_merchant(result.counterparty_raw, channel)
-            if m.display_name:
+            if m.display_name and round_trips(m):
                 assert normalise_merchant(m.display_name, channel).merchant_key == m.merchant_key

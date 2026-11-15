@@ -5,6 +5,7 @@
   stats
   merchant-stats
   merchant-review [--kind] [--confidence] [--reason] [--direction] [--sample N]
+  reconcile-stats
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
@@ -26,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.engine.merchant import MERCHANT_VERSION, channel_for, normalise_merchant, parts
+from app.engine.reconcile import RECONCILE_VERSION, OwnerData, Txn, derive
 from app.importers.sms_backup import import_sms
 from app.models import (
     DuplicateCandidate,
@@ -272,6 +274,71 @@ def cmd_merchant_review(session: Session, args: argparse.Namespace) -> int:
     return 0
 
 
+def reconcile_txns(session: Session) -> list[Txn]:
+    """Active transactions as Reconcile input."""
+    t = Transaction
+    rows = session.execute(
+        select(
+            t.id,
+            t.bank,
+            t.type,
+            t.direction,
+            t.amount_paise,
+            t.account_last4,
+            t.channel,
+            t.counterparty_raw,
+            t.txn_time_utc,
+            t.hints,
+        ).where(t.status == "active")
+    )
+    return [Txn(*row[:9], tuple(row[9] or ())) for row in rows]
+
+
+NO_INCOME_PARTY = (
+    "warning: owner data lists no income party; "
+    "pocket money or a salary from a person counts as a payback"
+)
+
+
+def cmd_reconcile_stats(session: Session, args: argparse.Namespace) -> None:
+    """Run Reconcile in memory over active transactions. Read-only, counts only."""
+    txns = reconcile_txns(session)
+    owner = OwnerData()  # owner tables arrive in step 3C-4; until then every basis is engine
+    derived = derive(txns, owner)
+    by_direction, by_rule, paybacks = Counter(), Counter(), Counter(engine=0, owner=0)
+    for t in txns:
+        d = derived[t.id]
+        by_direction[f"{t.direction} {d.role}"] += 1
+        by_rule[d.rule] += 1
+        if d.role == "payback":
+            paybacks[d.basis] += 1
+    unknown = dict(
+        grouped(
+            session,
+            ParseResult.unknown_reason,
+            where=(ParseResult.is_current, ParseResult.status == "unknown"),
+        )
+    )
+
+    print(f"reconcile-stats ({RECONCILE_VERSION}, {MERCHANT_VERSION}, read-only)")
+    line("transactions (active)", len(txns))
+    print_counter("role by direction", by_direction)
+    print_counter("role by rule", by_rule)
+    line("matched by two or more rules", sum(len(d.reasons) > 1 for d in derived.values()))
+    print_counter("paybacks by basis", paybacks)
+    line("uncertain credits", sum(d.role == "uncertain" for d in derived.values()))
+    print("not counted yet")
+    line("foreign currency", unknown.get("foreign_currency_deferred", 0), 2)
+    line("no parser", unknown.get("no_parser_for_bank", 0), 2)
+    print("owner data")
+    line("accounts", len(owner.accounts), 2)
+    line("parties", len(owner.parties), 2)
+    line("income sources", sum(p.income for p in owner.parties), 2)
+    line("role decisions", len(owner.roles), 2)
+    if not any(p.income for p in owner.parties):
+        print(NO_INCOME_PARTY)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -289,6 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
     rev.add_argument("--direction", choices=("debit", "credit", "refund"))
     rev.add_argument("--sample", type=int, metavar="N", help="random N merchant keys")
     rev.add_argument("--seed", type=int, default=0, help="seed for --sample")
+    sub.add_parser("reconcile-stats", help="role counts over transactions (read-only)")
     return parser
 
 
@@ -298,6 +366,7 @@ COMMANDS = {
     "stats": cmd_stats,
     "merchant-stats": cmd_merchant_stats,
     "merchant-review": cmd_merchant_review,
+    "reconcile-stats": cmd_reconcile_stats,
 }
 
 

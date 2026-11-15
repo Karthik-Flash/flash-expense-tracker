@@ -210,6 +210,9 @@ Money moved between the user's own accounts or wallets is a transfer, not
 spending. Reconcile decides, using a user-maintained "my accounts and UPI IDs"
 list. The parser just reports the debit or credit.
 
+Wallets updated by D-063 (15 Nov 2026): a top-up is a transfer only when the
+owner lists the wallet as an own account.
+
 ## D-030 Card bill payments are transfers (2026-11-14)
 
 Paying a credit card bill is a transfer, so card spends are not counted
@@ -222,12 +225,17 @@ A reversal becomes a refund linked to the original spend: same card last 4,
 same amount, within a few days. With no match it stays a standalone refund.
 Reconcile.
 
+Window superseded by D-064 (15 Nov 2026): 30 days, same card or same account.
+
 ## D-032 AutoPay success plus card "Spent" (2026-11-14)
 
 Both messages are parsed. They are possible duplicates, merged in Phase 2.
 
 Updated by D-047: Phase 2 only records them as duplicate candidates; merging
 moves to Reconcile (Phase 3).
+
+"Merged" superseded by D-062 (15 Nov 2026): duplicates are linked, never
+merged.
 
 ## D-033 Pre-debit notices are upcoming_debit (2026-11-14)
 
@@ -355,6 +363,9 @@ without a shared reference, gives a `duplicate_candidates` row (status
 SMS plus the card "Spent" SMS for one charge; merging them, and every other
 cross-message judgement, moves to Reconcile (Phase 3).
 
+Superseded in part by D-062 (15 Nov 2026): nothing merges, and the `status`
+of a `duplicate_candidates` row is never written.
+
 ## D-048 Real data lives in Supabase; AI tools never connect to it (2026-11-14)
 
 Supabase Postgres holds the real imported data. It is protected by the Data
@@ -452,6 +463,10 @@ Supersedes the timing in D-028 ("Phase 2-3"): Reconcile is step 3C.
   unknown queue and spend is not reduced.
 - Income (non-payback credits) is shown separately and never reduces spend.
 
+Updated by D-061 (15 Nov 2026): the "unknown queue" in this entry means
+uncertain credits (role `uncertain`); unknown messages are unparsed messages.
+The "tracked" test is in D-059.
+
 ## D-056 Owner labels next to categories (2026-11-15)
 
 - Every transaction has exactly one category from a fixed list. The list is
@@ -497,6 +512,9 @@ Supersedes the timing in D-028 ("Phase 2-3"): Reconcile is step 3C.
 - Any change to rules, word lists, the dictionary or the key format bumps
   `MERCHANT_VERSION`.
 
+Key wording ("Corrections will be keyed on it") superseded by D-065
+(15 Nov 2026): owner data stores text, not merchant keys.
+
 ## D-058 Merchant engine 1.1.0: anchored brands, display names, handles (2026-11-15)
 
 Changes to D-057, version `merchant-1.1.0`:
@@ -524,3 +542,150 @@ Changes to D-057, version `merchant-1.1.0`:
   payback (D-055); the engine only reports them.
 - New owner-only command `merchant-review` shows real counterparty text, so
   it runs only when stdout is a terminal; `merchant-stats` stays counts only.
+
+Migration-plan wording superseded by D-065 (15 Nov 2026): owner data stores
+text, so a key change needs a recompute check, not a data migration.
+Display name beside a UPI ID superseded by D-068 (15 Nov 2026).
+
+## D-059 Derived-data backbone (2026-11-15)
+
+Design: `docs/design/phase-3-backbone.md`, approved 15 Nov 2026 with the
+answers recorded in D-060 to D-067.
+
+- Derived data (merchant, role, links, later category) is one pure function
+  of the active transactions, the owner data and the engine versions. One
+  command recomputes all of it and writes only what changed. It can be
+  dropped and rebuilt at any time.
+- Owner data lives in its own tables. The engine never writes them; they
+  survive reparse and recompute, and they always win.
+- Ambiguity never merges, links or nets anything. It becomes a candidate for
+  the owner and changes no role until the owner decides.
+- Nine new tables: six owner tables (migration `0004`) and three derived
+  tables (`0005`), all with row level security and no policies. Nothing is
+  added to the `keepalive` schema (D-053).
+- The card bill "tracked" test that D-055 left to 3C: a card's purchases are
+  tracked when the data holds at least one active `credit_card` debit on
+  that card in the 60 days up to the payment.
+- Built as steps 3C-2 to 3C-8 (`docs/PLAN.md`). Merchant storage is part of
+  step 3C-6.
+
+## D-060 One role for every transaction (2026-11-15)
+
+- Every active transaction gets exactly one role on every run, with the rule
+  code that decided it and its basis (`engine` or `owner`). Roles: `spend`,
+  `card_bill_counted`, `refund`, `payback`, `income`, `self_transfer`,
+  `card_bill_excluded`, `fd_move`, `duplicate`, `ignored`, `uncertain`.
+- Totals are sums over roles: Spent = spend + card_bill_counted - refund;
+  Paid back = payback; Net = Spent - Paid back; Income = income. Every other
+  role is in no total.
+- A refund and a payback count in the month they arrive. A link to a
+  purchase never moves an amount to another month.
+- A guess never lowers Net: an unexplained debit is `spend`; an unexplained
+  credit is `uncertain` and reduces nothing.
+- A transfer with no payee (HDFC H06, H16) and no identified partner is
+  `spend`, and is listed for the owner's review.
+- Investment debits (for example a mutual fund SIP) stay `spend` until
+  Phase 6 (D-026).
+- The role `ignored` stays. It means "not a real movement", and only the
+  owner can set it.
+
+## D-061 Paybacks, income and uncertain credits (2026-11-15)
+
+- A credit is a `payback` when its text belongs to an owner party of kind
+  person (basis `owner`), or when the merchant engine says person with
+  `R5_honorific`, `R5_mobile_vpa` or `R5_consumer_vpa` (basis `engine`). A
+  consumer handle alone is enough; a person-shaped name alone is not. Every
+  payback records its basis.
+- Income parties are checked first: a credit from a party the owner marked
+  as an income source is `income`, never a payback.
+- `reconcile-stats` counts engine-basis paybacks separately. Recompute and
+  `reconcile-stats` print a warning line when the owner data lists no income
+  party, because pocket money or a salary would then count as a payback.
+- A credit from a business that is not worded as a refund is uncertain, not
+  income.
+- Terms. **Unknown messages** are messages the parser could not read (the
+  unknown queue in `parse_results`). **Uncertain credits** are credits with
+  no role evidence; their role is `uncertain` (the design draft called it
+  `unknown`). D-055's "goes to the unknown queue" means an uncertain credit.
+
+## D-062 Duplicates are linked, never merged (2026-11-15)
+
+Supersedes the "merged" wording in D-032 and D-047, and D-047's plan to
+decide candidates in `duplicate_candidates.status`.
+
+- Nothing merges and nothing is deleted. Both transactions stay; one keeps
+  its role, the other gets role `duplicate` and points at the first.
+- A unique AutoPay success and card spend pair (same bank, card and amount)
+  inside 10 minutes is linked without asking. Every other same-amount pair
+  is a candidate for the owner.
+- `duplicate_candidates` is frozen: import keeps recording into it, its
+  `status` is never written, and Reconcile does not read it for decisions.
+  Reconcile finds its pairs from the transactions and must find every
+  existing candidate again, as a link or a candidate; a test and a
+  `reconcile-stats` line check that. Owner decisions live in their own
+  table.
+- The primary of a duplicate group is the earliest transaction, then the
+  lowest id, for now. Step 3C-3 reports whether that choice changes the
+  merchant shown for an AutoPay and card pair; the planner decides then.
+
+## D-063 Wallet top-ups (2026-11-15)
+
+Updates D-029. A wallet top-up is a self-transfer only when the owner lists
+that wallet as an own account. Otherwise it is spend at the wallet. Wallet
+spends do not appear in bank SMS, so listing a wallet takes that money out
+of the totals; the owner chooses.
+
+## D-064 Refund linking: 30 days, same card or account (2026-11-15)
+
+Supersedes "within a few days" in D-031.
+
+- A refund always has role `refund` and reduces Spent in the month it
+  arrives, linked or not. The link only says which purchase it belongs to.
+- A refund links to a purchase on the same card or, for a refund to a bank
+  account, on the same account (same bank and last 4), at most 30 days
+  earlier. The link is automatic only for a unique purchase of the same
+  amount from the same merchant; anything else is a candidate.
+- The refund that Phase 2 merged on its dedupe key (two messages, one
+  transaction) stays as it is for now. Reparse cannot split a transaction
+  that has two sources; that gets a pipeline fix only if the owner's
+  private check finds two real refunds.
+
+## D-065 Owner data holds text and transaction ids (2026-11-15)
+
+Supersedes the key wording in D-057 ("Corrections will be keyed on it") and
+D-058 ("a migration plan for stored keys and corrections").
+
+- Owner tables store the owner's own words (account and party texts, last 4
+  digits, labels) and transaction ids, never merchant keys. Every run works
+  out each text's key with the current engine.
+- So a change to the key rules needs no data migration. Recompute stops
+  without writing when a merchant version change would make a transaction
+  lose or change its owner match, unless the owner accepts it
+  (`--accept-key-changes`).
+- Owner data enters through one private JSON file kept in `D:\FlashPrivate`
+  (`owner-load`), and later through the app. `owner-export` writes it back
+  out, decisions included. Both are built in 3C: the free Supabase plan has
+  no backups, so the export is the backup.
+- Owner data never appears in git, fixtures or logs.
+
+## D-066 The owner runs recompute (2026-11-15)
+
+Recompute runs as the last step of `import-sms`, `reparse` and the owner
+commands, and by hand. It is never scheduled and never runs in Render's
+build. After a deploy that bumps an engine version, derived data is stale
+until the owner runs `recompute`; `stats` and the API show a stale flag.
+Revisit in Phase 5, when the server takes in SMS itself.
+
+## D-067 Closing mandates waits for Phase 6 (2026-11-15)
+
+Reconcile in 3C does not close mandates on cancellation (hint
+`mandate_cancelled`). Mandates are not transactions and touch no total; they
+belong with subscriptions in Phase 6. `docs/data-model.md` is corrected.
+
+## D-068 Display name prefers the name (2026-11-15)
+
+Changes D-058, version `merchant-1.1.1`. When a counterparty has both name
+text and a UPI ID, `display_name` is the cleaned name in title case, not the
+UPI ID. The key stays the UPI ID, and kinds and keys do not change. The
+round-trip rule (normalising a display name gives the same key) holds only
+when the display name comes from the same text as the key.
