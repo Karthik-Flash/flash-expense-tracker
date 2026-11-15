@@ -468,3 +468,31 @@ Supersedes the timing in D-028 ("Phase 2-3"): Reconcile is step 3C.
   output, and they survive reparse, like category corrections.
 - Not in Phase 3: owner-made categories, budgets per label, automatic
   labelling.
+
+## D-057 Merchant normalisation engine (2026-11-15)
+
+`app/engine/merchant.py`, version `merchant-1.0.0`, pure and stdlib only
+(details in `docs/engine.md`, "Merchant normalisation").
+
+- **Output**: one frozen `Merchant`: `kind` (business, person, unsure,
+  none), `confidence` (high, low), `merchant_key` (None for none),
+  `display_name` and `brand_id` (None unless the dictionary matched),
+  `reasons` (rule codes in order), `version`.
+- **Rules, in order**: R0 no text or ATM gives none; R1 clean (NFKC,
+  casefold, whitespace, outer punctuation) and split a UPI ID; R2 strip a
+  gateway prefix (`PAYTM*`, `RAZ*`, `PYU*`, `CCA*`), never a city; R3 brand
+  dictionary on whole tokens, longest alias wins, a tie between brands is no
+  match; R4 card or AutoPay channel gives business; R5 business and person
+  signals. **Ambiguity always gives unsure**: both kinds of signal or none,
+  and a dictionary tie never picks a brand.
+- **Merchant key**: `brand:<id>`, else `vpa:<casefolded upi id>`, else
+  `name:<casefolded words, leading honorifics and punctuation removed>`. The
+  same counterparty in another case, spacing or punctuation gets the same
+  key. Corrections will be keyed on it, so the key rules are part of the
+  version.
+- **Dictionary**: `app/engine/brands.json`, well-known national brands only,
+  from public knowledge, never from the owner's data. No category yet.
+- **Channel**: from the transaction's stored parser channel and hints
+  (`channel_for`); parser output and the parser version are unchanged.
+- Any change to rules, word lists, the dictionary or the key format bumps
+  `MERCHANT_VERSION`.

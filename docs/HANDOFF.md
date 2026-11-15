@@ -64,16 +64,16 @@ backend/            Render root
   app/config.py       settings from env / backend/.env (DATABASE_URL, PING_TOKEN, CORS_ORIGINS, OWNER_ID)
   app/db.py           engine, SessionLocal, Base
   app/models.py       ORM models; UtcDateTime column type
-  app/engine/         stdlib-only parser: senders, money, timeparse, filters (OTP), models, parsers/{base,hdfc}
+  app/engine/         stdlib-only parser: senders, money, timeparse, filters (OTP), models, parsers/{base,hdfc}, merchant (+ brands.json)
   app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py
   app/importers/      sms_backup.py (streaming XML importer)
-  app/cli.py          python -m app.cli import-sms | reparse | stats
+  app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats
   alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping()
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
 frontend/           Vercel root; src/App.tsx shows backend status, survives cold starts
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-056), engine.md, data-model.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-057), engine.md, data-model.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```

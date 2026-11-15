@@ -11,6 +11,12 @@ Phase 1 is parsing, Phase 2 is the database and import.
 - D-015 garbled line removed; PLAN.md Phases 1 and 2 renumbered to match the
   tags; owner labels next to categories (D-056). No code.
 
+## Phase 3B: merchant normalisation (15 Nov 2026, in progress, tag `phase-3b-done` when done)
+
+- Pure merchant engine `merchant-1.0.0`: business, person, unsure or none,
+  a stable merchant key, and a dictionary of 74 national brands (D-057).
+- `python -m app.cli merchant-stats`: counts only, read-only.
+
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 
 - Migration `0002`: `import_batches`, `raw_messages`, `parse_results`,

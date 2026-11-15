@@ -21,8 +21,8 @@ Quick reference and progress log. Updated after every task.
 HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
 Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
 `phase-1-done`, `phase-2-done`. Next: Phase 3, steps 3A-3F
-([docs/PLAN.md](docs/PLAN.md), D-054); now in 3A (docs done; UI spec and
-mockup next).
+([docs/PLAN.md](docs/PLAN.md), D-054); 3A docs done (UI spec and mockup
+due before 3E); 3B merchant engine built, waiting for your merchant-stats run.
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
@@ -39,6 +39,8 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [ ] Overnight check of the new keep-alive (first scheduled run 03:30 IST)
 - [x] Phase 3A-1: PLAN aligned with Phase 3 (D-054), spend definition (D-055)
 - [ ] Phase 3A: one-page UI design spec and clickable mockup, approved by you
+- [x] Phase 3B-1: merchant engine `merchant-1.0.0` and `merchant-stats` (D-057)
+- [ ] Phase 3B: your `merchant-stats` run on the real data (counts only)
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -380,6 +382,8 @@ cd backend
 .\.venv\Scripts\python.exe -m app.cli reparse --dry-run
 # 6. Stats: tables, types, unknown queue, candidates, month range, last batches
 .\.venv\Scripts\python.exe -m app.cli stats
+# 7. Merchant engine survey: read-only, counts only (kinds, reasons, key reuse, UPI handles)
+.\.venv\Scripts\python.exe -m app.cli merchant-stats
 ```
 
 - After a parser version bump: `python -m app.cli reparse --dry-run`, then
@@ -445,6 +449,20 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-15: Phase 3B-1, merchant normalisation engine
+
+- `backend/app/engine/merchant.py` (`merchant-1.0.0`, D-057): counterparty
+  -> business, person, unsure or none, with confidence, a stable merchant
+  key and rule codes. Rules R0-R5; ambiguity always gives unsure.
+- `backend/app/engine/brands.json`: 74 national brands, public knowledge
+  only. Channel comes from the stored parser channel (`channel_for`); parser
+  output and `hdfc-1.1.1` unchanged.
+- `python -m app.cli merchant-stats`: read-only, counts only. On the
+  redacted sample: 127 transactions, 93 business low (the sample's
+  pseudonyms contain digits, so they look like business names), 20 unsure
+  (UPI IDs only), 3 dictionary hits.
+- PLAN 3A: spec and mockup may be approved any time before 3E.
 
 ### 2026-11-15: Phase 3A-1c, stale phase-numbering notes
 

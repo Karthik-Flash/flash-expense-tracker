@@ -7,7 +7,7 @@ NOTES.md entry.
 **Status (15 Nov 2026):** Phases 0, 1 and 2 done. **Next: Phase 3:
 Normalise, reconcile, categorise and minimal dashboard.**
 
-Phase numbers in this file match the git tags and CHANGELOG.md.
+Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
 ## Phase 0: Scaffold and walking skeleton (done 13 Nov 2026)
 
@@ -81,7 +81,8 @@ data run by the owner, and a tag (`phase-3a-done` ... `phase-3f-done`).
 
 - 3A Groundwork: docs alignment; a one-page UI design spec and a clickable
   dashboard mockup with fake numbers, both approved by the owner before any
-  screen is built.
+  screen is built. The spec and mockup may be approved any time before 3E;
+  engine steps do not wait for them.
 - 3B Merchant normalisation: raw counterparty -> merchant, marked person,
   business or unsure. Pure engine. The built-in dictionary holds only
   well-known public brands. The owner's own merchants and people are learned
