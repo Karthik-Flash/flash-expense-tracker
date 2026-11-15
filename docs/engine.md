@@ -172,9 +172,10 @@ a common Indian given name or surname. The handle lists
 (casefolded, mask kept); else `name:<words>`: casefolded, apostrophes
 removed, every other non-letter/digit a space, leading honorifics removed,
 single spaces. Case, spacing and punctuation do not change the key; `S.K.`
-and `SK` do (`s k` vs `sk`). Corrections will be keyed on it, so a key
-change is a version bump; once merchant storage ships, a key change also
-needs a migration plan (D-058).
+and `SK` do (`s k` vs `sk`). A key change is a version bump. Owner data
+stores the owner's text, never a key, and each run works the key out again,
+so a key change needs no data migration; recompute checks that no
+transaction loses its owner match (D-065).
 
 **Display name**, for every kind except `none`: the brand's name on a
 dictionary match; else the UPI ID in lower case when there is one (it is

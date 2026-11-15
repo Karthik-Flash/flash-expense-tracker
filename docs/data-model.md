@@ -141,9 +141,13 @@ Tests run on SQLite locally and on a Postgres 17 service container in CI
 
 ## What Reconcile adds (Phase 3)
 
-Reconcile reads `transactions`, `duplicate_candidates` and non-money
-`parse_results`. It decides open candidates (confirm or dismiss), pairs
-self-transfers and card bill payments (hint `card_bill_payment`), links
-refunds to their purchases, merges AutoPay success SMS with card spends, and
-closes mandates on cancellation (hint `mandate_cancelled`). Phase 2 only
-records; it never merges on a guess.
+Design: [design/phase-3-backbone.md](design/phase-3-backbone.md) (D-059 to
+D-067). Reconcile reads the active `transactions` and the owner's data. It
+gives every transaction one role, finds duplicate pairs itself (an AutoPay
+success SMS plus the card spend among them), pairs self-transfers and card
+bill payments (hint `card_bill_payment`), and links refunds to their
+purchases. It links and flags; nothing is merged or deleted (D-062).
+`duplicate_candidates` is frozen: import still records into it, and its
+`status` is never written. Closing mandates on cancellation (hint
+`mandate_cancelled`) is deferred to Phase 6 (D-067). Phase 2 only records;
+it never merges on a guess.

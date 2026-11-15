@@ -73,7 +73,7 @@ backend/            Render root
 frontend/           Vercel root; src/App.tsx shows backend status, survives cold starts
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-058), engine.md, data-model.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-067), engine.md, data-model.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```

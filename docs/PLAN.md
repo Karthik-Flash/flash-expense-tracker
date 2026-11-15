@@ -86,12 +86,16 @@ data run by the owner, and a tag (`phase-3a-done` ... `phase-3f-done`).
 - 3B Merchant normalisation: raw counterparty -> merchant, marked person,
   business or unsure. Pure engine. The built-in dictionary holds only
   well-known public brands. The owner's own merchants and people are learned
-  from corrections and live only in the database.
-- 3C Reconcile: a "my accounts / my UPI IDs" list; self-transfers (D-029);
-  card bill payments (D-030); refund linking (D-031); AutoPay + card spend
-  (D-032, D-047); the open duplicate candidates. It links and flags, never
-  deletes, and is safe to re-run. Unclear duplicates are reviewed by the
-  owner in the terminal.
+  from corrections and live only in the database. Merchant storage is built
+  in 3C-6.
+- 3C Reconcile and the derived-data backbone (design:
+  docs/design/phase-3-backbone.md): owner data (own accounts and UPI IDs,
+  parties, income sources, duplicate decisions) loaded from a private file;
+  one role for every transaction; duplicates including AutoPay + card spend;
+  self-transfers; card bill payments; refund linking; FD moves; paybacks and
+  income; storage and one recompute command; terminal review; owner export.
+  Built as steps 3C-2 to 3C-8. It links and flags, never deletes, and is
+  safe to re-run.
 - 3D Categorise: rules -> merchant dictionary -> owner corrections.
   Corrections always win and survive reparse. Owner labels (D-056): create a
   label and attach it to a transaction; stored like corrections.
