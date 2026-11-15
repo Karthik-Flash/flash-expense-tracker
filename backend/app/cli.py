@@ -3,6 +3,7 @@
   import-sms --input <file|folder> [--dry-run]
   reparse [--dry-run]
   stats
+  merchant-stats
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
@@ -12,6 +13,7 @@ account digits.
 import argparse
 import sys
 import time
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from datetime import timedelta, timezone
 from pathlib import Path
@@ -20,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.engine.merchant import MERCHANT_VERSION, channel_for, normalise_merchant, parts
 from app.importers.sms_backup import import_sms
 from app.models import (
     DuplicateCandidate,
@@ -137,6 +140,69 @@ def cmd_stats(session: Session, args: argparse.Namespace) -> None:
         )
 
 
+def print_counter(title: str, counter: Counter) -> None:
+    print(title)
+    for key, n in sorted(counter.items()):
+        line(key, n, 2)
+
+
+def cmd_merchant_stats(session: Session, args: argparse.Namespace) -> None:
+    """Run the merchant engine in memory over active transactions. Read-only, counts only."""
+    rows = session.execute(
+        select(
+            Transaction.channel,
+            Transaction.hints,
+            Transaction.counterparty_raw,
+            Transaction.direction,
+        ).where(Transaction.status == "active")
+    )
+    examined = with_text = brand_hits = 0
+    channel_kind, kind_conf, reasons, unsure, handles = (Counter() for _ in range(5))
+    brands, key_counts, key_dirs = set(), Counter(), defaultdict(set)
+    for channel, hints, raw, direction in rows:
+        examined += 1
+        with_text += bool(raw and raw.strip())
+        merchant_channel = channel_for(channel, hints or ())
+        m = normalise_merchant(raw, merchant_channel)
+        channel_kind[f"{merchant_channel} {m.kind}"] += 1
+        kind_conf[f"{m.kind} {m.confidence}"] += 1
+        reasons.update(m.reasons)
+        if m.brand_id:
+            brand_hits += 1
+            brands.add(m.brand_id)
+        if m.merchant_key:
+            key_counts[m.merchant_key] += 1
+            key_dirs[m.merchant_key].add(direction)
+        p = parts(raw)
+        if p and p.vpa:
+            handles[p.vpa.partition("@")[2]] += 1
+        if m.kind == "unsure" and p:
+            unsure["vpa" if p.vpa else "name only"] += 1
+            unsure["gateway prefix"] += p.gateway
+            if not p.vpa:  # name shape; a UPI ID has no name tokens to count
+                n = len(p.tokens)
+                unsure[f"name tokens {n if n < 4 else '4+'}"] += 1
+                unsure["name has digits"] += any(ch.isdigit() for w in p.tokens for ch in w)
+
+    print(f"merchant-stats ({MERCHANT_VERSION}, read-only)")
+    line("transactions examined", examined)
+    line("with counterparty text", with_text, 2)
+    line("without counterparty text", examined - with_text, 2)
+    print_counter("channel by kind", channel_kind)
+    print_counter("kind by confidence", kind_conf)
+    print_counter("reason codes", reasons)
+    line("dictionary hits", brand_hits)
+    line("distinct brands hit", len(brands))
+    line("distinct merchant keys", len(key_counts))
+    line("seen once", sum(n == 1 for n in key_counts.values()), 2)
+    line("seen more than once", sum(n > 1 for n in key_counts.values()), 2)
+    line("keys with debit and credit", sum(len(d) == 2 for d in key_dirs.values()))
+    print_counter("unsure", unsure)
+    common = Counter({h: n for h, n in handles.items() if n >= 5})
+    common["other"] = sum(n for n in handles.values() if n < 5)
+    print_counter("UPI handles (5 or more; rest as other)", common)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -146,10 +212,16 @@ def build_parser() -> argparse.ArgumentParser:
     rep = sub.add_parser("reparse", help="re-parse messages behind their parser version")
     rep.add_argument("--dry-run", action="store_true")
     sub.add_parser("stats", help="counts per table, type, reason and batch")
+    sub.add_parser("merchant-stats", help="merchant engine counts over transactions (read-only)")
     return parser
 
 
-COMMANDS = {"import-sms": cmd_import, "reparse": cmd_reparse, "stats": cmd_stats}
+COMMANDS = {
+    "import-sms": cmd_import,
+    "reparse": cmd_reparse,
+    "stats": cmd_stats,
+    "merchant-stats": cmd_merchant_stats,
+}
 
 
 def main(argv: list[str] | None = None, session_factory=None) -> int:

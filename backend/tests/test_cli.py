@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app import cli
@@ -91,3 +91,21 @@ def test_missing_input_is_an_error(db_engine: Engine, tmp_path: Path, capsys) ->
     factory = sessionmaker(db_engine)
     assert cli.main(["import-sms", "--input", str(tmp_path / "nope.xml")], factory) == 2
     assert "input not found" in capsys.readouterr().err
+
+
+def test_merchant_stats_prints_counts_only_and_writes_nothing(run, backup: Path, db_engine) -> None:
+    run("import-sms", "--input", str(backup))
+
+    def snapshot() -> list:
+        with db_engine.connect() as conn:
+            return [list(conn.execute(select(model))) for model in cli.TABLES]
+
+    before = snapshot()
+    out = run("merchant-stats")
+    assert snapshot() == before
+    assert "merchant-stats (merchant-1.0.0, read-only)" in out
+    assert re.search(r"transactions examined\s+\d+", out)
+    assert "R4_card" in out and "dictionary hits" in out
+    assert_no_values(out)
+    keys = {"brand:", "vpa:", "name:"}
+    assert not any(k in out for k in keys)
