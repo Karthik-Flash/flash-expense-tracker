@@ -220,6 +220,10 @@ class Derived:
     basis: str  # engine or owner
     reasons: tuple[str, ...]  # every rule code that matched, deciding rule first
     duplicate_of: int | None = None  # the primary of its group, only for role duplicate
+    # The owner entry whose text this transaction matches, as a position in
+    # OwnerData.accounts or OwnerData.parties. Set whatever rule decided the role.
+    own_account: int | None = None
+    party: int | None = None
 
 
 @dataclass(frozen=True)
@@ -239,6 +243,7 @@ class Link:
 class Result:
     roles: dict[int, Derived]  # one per transaction, ordered by id
     links: tuple[Link, ...]  # ordered by kind and ids
+    merchants: dict[int, Merchant] = field(default_factory=dict)  # the engine's merchant
 
 
 @dataclass(frozen=True)
@@ -299,10 +304,13 @@ def derive(
     same, different = _link_decisions(owner, by_id)
     run = _Run(by_id, {}, {}, same, different, frozenset(i for i in owner.roles if i in by_id))
     points_at: dict[int, int] = {}  # transaction -> the own account its text names
+    matched: dict[int, int] = {}  # transaction -> position in entries of its owner text
     for t in rows:
         merchant = normalise_merchant(t.counterparty_raw, channel_for(t.channel, t.hints))
         position = index.get(merchant.merchant_key or "")
         own = None if position is None else entries[position]
+        if position is not None:
+            matched[t.id] = position
         if isinstance(own, OwnAccount):
             points_at[t.id] = position
         run.merchants[t.id] = merchant
@@ -323,8 +331,18 @@ def derive(
         role, rule, basis = run.matches[t.id][0]
         reasons = tuple(dict.fromkeys(code for _, code, _ in run.matches[t.id]))
         primary = run.duplicate_of.get(t.id) if role == "duplicate" else None
-        roles[t.id] = Derived(t.id, role, rule, basis, reasons, primary)
-    return Result(roles, tuple(run.links[key] for key in sorted(run.links)))
+        entry, accounts = matched.get(t.id), len(owner.accounts)
+        roles[t.id] = Derived(
+            t.id,
+            role,
+            rule,
+            basis,
+            reasons,
+            primary,
+            own_account=entry if entry is not None and entry < accounts else None,
+            party=entry - accounts if entry is not None and entry >= accounts else None,
+        )
+    return Result(roles, tuple(run.links[key] for key in sorted(run.links)), run.merchants)
 
 
 def totals(

@@ -514,7 +514,8 @@ derive_runs    id, owner_id, started_at, finished_at, status, trigger, versions,
                counts JSON: counts only
 txn_derived    transaction_id -> transactions (primary key), owner_id,
                merchant_key, merchant_kind, merchant_confidence, display_name,
-               brand_id, party_id -> parties (null), merchant_reasons JSON,
+               brand_id, party_id -> parties (null), own_account_id -> own_accounts
+               (null), merchant_reasons JSON,
                role, role_rule, role_basis, role_reasons JSON,
                duplicate_of -> transactions (null)
                CHECK role in (the eleven roles)
@@ -532,6 +533,11 @@ txn_links      id, owner_id, kind, txn_a -> transactions, txn_b -> transactions,
 - **Versions are per run, not per row.** A run recomputes everything and
   commits together with its `derive_runs` row, so the derived tables always
   match the last `done` run and the versions written on it.
+- As built: `own_account_id` was added for the key-change check, which
+  compares the stored party and own account with the new ones. Only `done`
+  runs are written, and only when a run changed something or the versions
+  moved; a failed or stopped run leaves no row. A link's `id` changes when
+  the link changes.
 - Indexes: `txn_derived.role`, `txn_derived.merchant_key`,
   `txn_links (status, kind)`.
 
@@ -553,9 +559,11 @@ python -m app.cli recompute [--dry-run] [--accept-key-changes]
    tables, the current derived rows.
 2. **Derive** in memory with the pure function. Inputs are sorted by id; no
    clock, no randomness, so the same input gives the same output.
-3. **Compare** with the stored rows and write only the difference (insert,
-   update, delete), plus one `derive_runs` row, in one database transaction.
-   A crash leaves the previous state whole.
+3. **Compare** with the stored rows and write only the difference, plus one
+   `derive_runs` row, in one database transaction. A changed row is
+   replaced (delete, insert) and rows go 1000 to a statement, so a run is
+   eleven reads and about five writes. A crash leaves the previous state
+   whole. A run with nothing to change writes nothing at all.
 4. **Print** counts only: versions, rows changed per table, roles, links,
    and a warning line when the owner data lists no income party (D-061).
 
@@ -709,6 +717,11 @@ existing candidates
 not counted yet
   foreign currency                     n
   no parser                            n
+stored run
+  last run                             #n | none
+  merchant version                     <version> | -
+  reconcile version                    <version> | -
+  stored rows that differ              n     (0 right after a recompute)
 owner data
   accounts                             n
   parties                              n
@@ -745,7 +758,7 @@ owner's counts-only run.
 | 3C-3 | **Built in memory (`reconcile-1.1.0`).** Duplicates: pair finding by amount bucket, D1 and D2, unique-pair rule, groups, primary, legacy coverage. Stats sections. Owner run: tells whether [A1] and [A2] hold. Report whether the choice of primary changes the merchant shown for an AutoPay + card pair (Q9) | The B1 table; I15, I17; legacy coverage on fixtures | yes |
 | 3C-4 | **Built.** Migration `0004`, owner models, `owner-load` with validation. The loaded owner data feeds the rules built in 3C-2 (S1, S3, `CB_own_text`, `FD_own_text`, parties, income); party display names in the merchant step. Owner run | File validation (every rejection, no values in errors); load twice changes nothing; I13; RLS on the new tables; party overrides | |
 | 3C-5 | **Built in memory (`reconcile-1.1.0`), except `CB_pair`** (B3: waits for credit card SMS). Pair linking: one matcher (window, unique pair) used by S2, `FD_pair` and refund links | Zero, one, many for every rule; window edges; I19; refund guard | yes |
-| 3C-6 | Migration `0005`, `recompute` (compare and write), triggers in `import-sms`, `reparse` and `owner-load`, stale flag in `stats`, the key-change check | I10, I11, I12, I20, I21; key-change stop and `--accept-key-changes`; SQLite and Postgres | yes |
+| 3C-6 | **Built.** Migration `0005`, `recompute` (compare and write), triggers in `import-sms`, `reparse` and `owner-load`, stale flag in `stats`, the key-change check | I10, I11, I12, I20, I21; key-change stop and `--accept-key-changes`; SQLite and Postgres | yes |
 | 3C-7 | `reconcile-review` and the two decision tables in use; decisions in `owner-load` | I14; refusal without a terminal; contradicting decision refused; inactive decisions | |
 | 3C-8 | `owner-export`. Docs (`data-model.md`, `engine.md`), DECISIONS, owner's full review, tag `phase-3c-done` | Export then load into an empty database restores every owner row | |
 

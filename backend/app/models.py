@@ -89,6 +89,13 @@ OWNER_ROLES = (
     "ignored",
     "uncertain",
 )  # every role except duplicate, which is decided as a link
+# Derived data (Phase 3C)
+RUN_STATUSES = ("running", "done", "failed")
+RUN_TRIGGERS = ("import", "reparse", "owner", "manual")
+MERCHANT_KINDS = ("business", "person", "unsure", "none")
+ROLES = (*OWNER_ROLES, "duplicate")
+DECIDERS = ("engine", "owner")
+LINK_STATUSES = ("linked", "candidate")
 
 
 class Heartbeat(Base):
@@ -359,3 +366,88 @@ class OwnerRole(Base):
     role: Mapped[str] = mapped_column(String(20))
     decided_at: Mapped[datetime] = mapped_column(UtcDateTime)
     source: Mapped[str] = mapped_column(String(10))
+
+
+# --- Derived data -------------------------------------------------------------
+# Written only by recompute (app/pipeline/recompute.py): one pure function of the
+# active transactions, the owner tables and the engine versions. Deleting every row
+# and running recompute gives the same rows back.
+
+
+class DeriveRun(Base):
+    """One recompute that wrote something. The derived tables match the last done run."""
+
+    __tablename__ = "derive_runs"
+    __table_args__ = (
+        CheckConstraint(_in("status", RUN_STATUSES), name="ck_run_status"),
+        CheckConstraint(_in("trigger", RUN_TRIGGERS), name="ck_run_trigger"),
+    )
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    started_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    status: Mapped[str] = mapped_column(String(10))
+    trigger: Mapped[str] = mapped_column(String(10))
+    versions: Mapped[dict] = mapped_column(JSON)  # {"merchant": ..., "reconcile": ...}
+    counts: Mapped[dict] = mapped_column(JSON)  # counts only
+
+
+class TxnDerived(Base):
+    """Merchant and role of one active transaction."""
+
+    __tablename__ = "txn_derived"
+    __table_args__ = (
+        CheckConstraint(_in("merchant_kind", MERCHANT_KINDS), name="ck_derived_merchant_kind"),
+        CheckConstraint(_in("role", ROLES), name="ck_derived_role"),
+        CheckConstraint(_in("role_basis", DECIDERS), name="ck_derived_basis"),
+        CheckConstraint(
+            "(role = 'duplicate') = (duplicate_of IS NOT NULL)", name="ck_derived_duplicate"
+        ),
+    )
+
+    transaction_id: Mapped[int] = mapped_column(
+        BigId, ForeignKey("transactions.id"), primary_key=True, autoincrement=False
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    # Merchant: the engine's result; an owner party wins for kind and display name.
+    merchant_key: Mapped[str | None] = mapped_column(Text, index=True)
+    merchant_kind: Mapped[str] = mapped_column(String(10))
+    merchant_confidence: Mapped[str] = mapped_column(String(4))
+    display_name: Mapped[str | None] = mapped_column(Text)
+    brand_id: Mapped[str | None] = mapped_column(String(40))
+    merchant_reasons: Mapped[list] = mapped_column(JSON)
+    # The owner entry whose text the transaction matches (also the key-change check).
+    party_id: Mapped[int | None] = mapped_column(ForeignKey("parties.id", ondelete="SET NULL"))
+    own_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("own_accounts.id", ondelete="SET NULL")
+    )
+    role: Mapped[str] = mapped_column(String(20), index=True)
+    role_rule: Mapped[str] = mapped_column(String(32))
+    role_basis: Mapped[str] = mapped_column(String(6))
+    role_reasons: Mapped[list] = mapped_column(JSON)
+    duplicate_of: Mapped[int | None] = mapped_column(ForeignKey("transactions.id"))
+
+
+class TxnLink(Base):
+    """Two transactions that are (linked) or may be (candidate) one event."""
+
+    __tablename__ = "txn_links"
+    __table_args__ = (
+        UniqueConstraint("kind", "txn_a", "txn_b", name="uq_link_pair"),
+        CheckConstraint("txn_a < txn_b", name="ck_link_order"),
+        CheckConstraint(_in("kind", OWNER_LINK_KINDS), name="ck_link_kind"),
+        CheckConstraint(_in("status", LINK_STATUSES), name="ck_link_status"),
+        CheckConstraint(_in("decided_by", DECIDERS), name="ck_link_decided_by"),
+        Index("ix_link_status_kind", "status", "kind"),
+    )
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    kind: Mapped[str] = mapped_column(String(20))
+    txn_a: Mapped[int] = mapped_column(ForeignKey("transactions.id"))
+    txn_b: Mapped[int] = mapped_column(ForeignKey("transactions.id"))
+    status: Mapped[str] = mapped_column(String(10))
+    rule: Mapped[str] = mapped_column(String(32))
+    reason: Mapped[str] = mapped_column(String(32))
+    decided_by: Mapped[str] = mapped_column(String(6))

@@ -643,7 +643,7 @@ def check(txns: list[Txn], result: Result) -> None:
 
 
 @pytest.mark.parametrize("seed", [11, 12, 13])
-def test_links_are_sound_and_do_not_depend_on_input_order(seed: int) -> None:
+def test_i15_i19_links_are_sound_and_do_not_depend_on_input_order(seed: int) -> None:
     txns = clustered_txns(seed)
     rng = random.Random(seed)
     legacy = [tuple(rng.sample(range(1, len(txns) + 1), 2)) for _ in range(20)]

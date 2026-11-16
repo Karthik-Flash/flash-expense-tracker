@@ -7,12 +7,14 @@
   merchant-review [--kind] [--confidence] [--reason] [--direction] [--sample N]
   reconcile-stats
   owner-load <file> [--dry-run]
+  recompute [--dry-run] [--accept-key-changes]
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
 account digits. One exception: merchant-review shows counterparty text for the
 owner's own screen; it refuses to run unless stdout is a terminal. owner-load
 reads the owner's private file and reports problems by field path, never by value.
+import-sms, reparse and owner-load end with a recompute of the derived tables.
 """
 
 import argparse
@@ -33,13 +35,13 @@ from app.engine.reconcile import (
     DUP_LINK_WINDOW,
     LINK_KINDS,
     RECONCILE_VERSION,
-    OwnerData,
+    VERSIONS,
     Result,
     Txn,
-    derive,
 )
 from app.importers.sms_backup import import_sms
 from app.models import (
+    DeriveRun,
     DuplicateCandidate,
     ImportBatch,
     OwnAccount,
@@ -52,8 +54,18 @@ from app.models import (
     RawMessage,
     Transaction,
     TransactionSource,
+    TxnDerived,
+    TxnLink,
 )
 from app.pipeline.owner_load import OwnerFileError, parse_owner_file, sync
+from app.pipeline.recompute import (
+    OwnerDataError,
+    Plan,
+    active_txns,
+    plan,
+    recompute,
+    run_counts,
+)
 from app.pipeline.reparse import reparse
 from app.pipeline.store import Counts, parser_versions
 
@@ -71,6 +83,9 @@ TABLES = (
     PartyText,
     OwnerLinkDecision,
     OwnerRole,
+    DeriveRun,
+    TxnDerived,
+    TxnLink,
 )
 
 
@@ -96,7 +111,7 @@ def progress(started: float) -> Callable[[int], None]:
     return report
 
 
-def cmd_import(session: Session, args: argparse.Namespace) -> None:
+def cmd_import(session: Session, args: argparse.Namespace) -> int:
     started = time.monotonic()
     batch_id, counts = import_sms(
         session, args.input, settings.owner_id, dry_run=args.dry_run, progress=progress(started)
@@ -108,9 +123,10 @@ def cmd_import(session: Session, args: argparse.Namespace) -> None:
     print("parser versions: " + ", ".join(f"{b} {v}" for b, v in parser_versions().items()))
     print_counts(counts)
     print(f"time: {time.monotonic() - started:.1f}s")
+    return 0 if args.dry_run else run_recompute(session, "import")
 
 
-def cmd_reparse(session: Session, args: argparse.Namespace) -> None:
+def cmd_reparse(session: Session, args: argparse.Namespace) -> int:
     started = time.monotonic()
     counts = reparse(session, settings.owner_id, dry_run=args.dry_run, progress=progress(started))
     print("reparse (dry run: nothing saved)" if args.dry_run else "reparse")
@@ -125,6 +141,7 @@ def cmd_reparse(session: Session, args: argparse.Namespace) -> None:
         else:
             line(key, value)
     print(f"time: {time.monotonic() - started:.1f}s")
+    return 0 if args.dry_run else run_recompute(session, "reparse")
 
 
 def grouped(session: Session, *columns, where=()) -> list[tuple]:
@@ -304,27 +321,6 @@ def cmd_merchant_review(session: Session, args: argparse.Namespace) -> int:
     return 0
 
 
-def reconcile_txns(session: Session) -> list[Txn]:
-    """Active transactions as Reconcile input."""
-    t = Transaction
-    rows = session.execute(
-        select(
-            t.id,
-            t.bank,
-            t.type,
-            t.direction,
-            t.amount_paise,
-            t.account_last4,
-            t.channel,
-            t.counterparty_raw,
-            t.txn_time_utc,
-            t.hints,
-            t.reference,
-        ).where(t.status == "active")
-    )
-    return [Txn(*row[:9], tuple(row[9] or ()), row[10]) for row in rows]
-
-
 def autopay_card_counts(txns: list[Txn], result: Result) -> tuple[Counter, Counter]:
     """AutoPay + card spend pairs (linked or candidate): by time gap, and merchant facts."""
     by_id = {t.id: t for t in txns}
@@ -370,7 +366,7 @@ def autopay_card_counts(txns: list[Txn], result: Result) -> tuple[Counter, Count
     return gaps, facts
 
 
-def legacy_counts(legacy: set[tuple[int, int]], txns: list[Txn], owner: OwnerData, result: Result):
+def legacy_counts(legacy: set[tuple[int, int]], txns: list[Txn], owner, result: Result):
     """What became of each pair recorded in duplicate_candidates. "lost" must be 0."""
     active = {t.id for t in txns}
     links = {(x.txn_a, x.txn_b): x.status for x in result.links if x.kind == "duplicate"}
@@ -395,13 +391,79 @@ NO_INCOME_PARTY = (
 )
 
 
-def cmd_reconcile_stats(session: Session, args: argparse.Namespace) -> None:
+def run_recompute(
+    session: Session, trigger: str, *, dry_run: bool = False, accept: bool = False
+) -> int:
+    """Recompute the derived tables and print counts only. A failure writes nothing derived."""
+    try:
+        outcome = recompute(
+            session, settings.owner_id, trigger, dry_run=dry_run, accept_key_changes=accept
+        )
+    except Exception as exc:
+        # Only the engine's own message is shown; any other could hold values from the data.
+        reason = str(exc) if isinstance(exc, OwnerDataError) else type(exc).__name__
+        print(f"recompute failed: {reason}. No derived data was written.", file=sys.stderr)
+        if trigger != "manual":
+            print(
+                f"The {trigger} step itself is saved. Fix the cause, then run: "
+                "python -m app.cli recompute",
+                file=sys.stderr,
+            )
+        return 1
+    p = outcome.plan
+    print(
+        {
+            "done": f"recompute run #{outcome.run_id} ({trigger})",
+            "unchanged": "recompute: nothing to change, nothing written",
+            "dry_run": "recompute (dry run: nothing saved)",
+            "stopped": "recompute stopped: nothing written",
+        }[outcome.status]
+    )
+    print("versions: " + ", ".join(VERSIONS.values()))
+    line("transactions (active)", len(p.txns))
+    counts = run_counts(p)
+    for table in ("txn_derived", "txn_links"):
+        print(table)
+        for what, n in counts[table].items():
+            line(what, n, 2)
+    print_counter("roles", Counter(counts["roles"]))
+    print_counter("links", Counter(counts["links"]))
+    if not any(party.income for party in p.owner.parties):
+        print(NO_INCOME_PARTY)
+    print(f"time: {outcome.seconds:.1f}s")
+    if outcome.status == "stopped":
+        print(
+            f"The merchant engine changed ({(p.last_versions or {}).get('merchant')} -> "
+            f"{MERCHANT_VERSION}) and {p.lost_matches} transaction(s) would lose or change "
+            "their owner match. Check the owner file, then run: "
+            "python -m app.cli recompute --accept-key-changes",
+            file=sys.stderr,
+        )
+        return 3
+    return 0
+
+
+def cmd_recompute(session: Session, args: argparse.Namespace) -> int:
+    return run_recompute(session, "manual", dry_run=args.dry_run, accept=args.accept_key_changes)
+
+
+def stored_run_lines(p: Plan) -> None:
+    """The last recompute and how far the stored rows are from a fresh derive."""
+    print("stored run")
+    line("last run", f"#{p.last_run_id}" if p.last_run_id else "none", 2)
+    for name in ("merchant", "reconcile"):
+        line(f"{name} version", (p.last_versions or {}).get(name, "-"), 2)
+    line("stored rows that differ", p.changes, 2)
+
+
+def cmd_reconcile_stats(session: Session, args: argparse.Namespace) -> int:
     """Run Reconcile in memory over active transactions. Read-only, counts only."""
-    txns = reconcile_txns(session)
-    owner = OwnerData()  # owner tables arrive in step 3C-4; until then every basis is engine
-    recorded = session.execute(select(DuplicateCandidate.txn_a, DuplicateCandidate.txn_b))
-    legacy = {(min(a, b), max(a, b)) for a, b in recorded}
-    result = derive(txns, owner, legacy)
+    try:
+        p = plan(session, settings.owner_id)
+    except OwnerDataError as exc:
+        print(f"reconcile-stats failed: {exc}", file=sys.stderr)
+        return 1
+    txns, owner, legacy, result = p.txns, p.owner, p.legacy, p.result
     derived = result.roles
     by_direction, by_rule = Counter({"debit duplicate": 0}), Counter()
     paybacks = Counter(engine=0, owner=0)
@@ -450,11 +512,13 @@ def cmd_reconcile_stats(session: Session, args: argparse.Namespace) -> None:
     print("owner data")
     line("accounts", len(owner.accounts), 2)
     line("parties", len(owner.parties), 2)
-    line("income sources", sum(p.income for p in owner.parties), 2)
+    line("income sources", sum(party.income for party in owner.parties), 2)
     line("role decisions", len(owner.roles), 2)
     line("link decisions", len(owner.links), 2)
-    if not any(p.income for p in owner.parties):
+    stored_run_lines(p)
+    if not any(party.income for party in owner.parties):
         print(NO_INCOME_PARTY)
+    return 0
 
 
 def cmd_owner_load(session: Session, args: argparse.Namespace) -> int:
@@ -471,7 +535,7 @@ def cmd_owner_load(session: Session, args: argparse.Namespace) -> int:
         return 2
     seen = {
         normalise_merchant(t.counterparty_raw, channel_for(t.channel, t.hints)).merchant_key
-        for t in reconcile_txns(session)
+        for t in active_txns(session, settings.owner_id)
     }
     unmatched = sorted(path for key, path in owner_file.text_paths.items() if key not in seen)
 
@@ -487,9 +551,9 @@ def cmd_owner_load(session: Session, args: argparse.Namespace) -> int:
         print(f"  {path}")
     if args.dry_run:
         session.rollback()
-    else:
-        session.commit()
-    return 0
+        return 0
+    session.commit()
+    return run_recompute(session, "owner")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -513,6 +577,13 @@ def build_parser() -> argparse.ArgumentParser:
     load = sub.add_parser("owner-load", help="load the owner's private file")
     load.add_argument("input", type=Path, help="the owner JSON file")
     load.add_argument("--dry-run", action="store_true", help="check and count, save nothing")
+    rec = sub.add_parser("recompute", help="bring the derived tables up to date")
+    rec.add_argument("--dry-run", action="store_true", help="count the changes, save nothing")
+    rec.add_argument(
+        "--accept-key-changes",
+        action="store_true",
+        help="go on although transactions lose their owner match after a merchant engine change",
+    )
     return parser
 
 
@@ -524,6 +595,7 @@ COMMANDS = {
     "merchant-review": cmd_merchant_review,
     "reconcile-stats": cmd_reconcile_stats,
     "owner-load": cmd_owner_load,
+    "recompute": cmd_recompute,
 }
 
 

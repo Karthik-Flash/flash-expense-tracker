@@ -51,6 +51,13 @@ Phase 1 is parsing, Phase 2 is the database and import.
   `python -m app.cli owner-load <file>` loads the owner's private JSON
   file: strict checks, errors by field path, only file rows replaced
   (D-070). Example: `docs/owner.example.json`.
+- 3C-6: migration `0005`, three derived tables (`txn_derived` with the
+  merchant and role of every transaction, `txn_links`, `derive_runs`), RLS
+  on. `python -m app.cli recompute` writes only what changed, in one
+  transaction; it runs after import, reparse and owner-load; it stops when
+  a merchant engine change would lose an owner match. `reconcile-stats`
+  reads the owner tables and shows the stored run. Invariants I10 to I21
+  tested.
 
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 

@@ -1,7 +1,6 @@
 """CLI commands and I9: output holds counts only. Synthetic data only."""
 
 import re
-import uuid
 from datetime import timedelta
 from pathlib import Path
 
@@ -10,6 +9,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app import cli
+from app.config import settings
 from app.engine.merchant import MERCHANT_VERSION
 from app.engine.parsers.hdfc import PARSER_VERSION
 from app.engine.reconcile import RECONCILE_VERSION, ROLES, RULES
@@ -144,7 +144,7 @@ def test_reconcile_stats_prints_counts_only_and_writes_nothing(run, backup, db_e
 
 
 def test_reconcile_stats_counts_links_and_existing_candidates(run, db_engine) -> None:
-    owner = uuid.uuid4()
+    owner = settings.owner_id
 
     def row(key: str, channel: str, minute: int, amount: int) -> Transaction:
         return Transaction(

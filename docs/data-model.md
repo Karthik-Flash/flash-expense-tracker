@@ -211,3 +211,68 @@ One JSON file that the owner keeps outside the repo, in
   number of income sources, and the field paths of texts that match no
   transaction (a likely typo). `--dry-run` checks and counts, saves nothing.
 - Decisions are not part of the file yet (D-070).
+
+## Derived tables (migration `0005`)
+
+What the engine works out. Written only by `recompute`; the owner tables are
+only read. Deleting every row and running `recompute` gives the same rows
+back. RLS is enabled with no policies.
+
+| Table | Key columns | Constraints |
+| ----- | ----------- | ----------- |
+| `txn_derived` | `transaction_id` (primary key); merchant: `merchant_key`, `merchant_kind`, `merchant_confidence`, `display_name`, `brand_id`, `merchant_reasons` (JSON); owner match: `party_id`, `own_account_id` (ON DELETE SET NULL); role: `role`, `role_rule`, `role_basis` (engine, owner), `role_reasons` (JSON), `duplicate_of` | CHECK (`role` = 'duplicate') = (`duplicate_of` IS NOT NULL) |
+| `txn_links` | `kind`, `txn_a`, `txn_b`, `status` (linked, candidate), `rule`, `reason`, `decided_by` (engine, owner) | UNIQUE (`kind`, `txn_a`, `txn_b`); CHECK `txn_a < txn_b` |
+| `derive_runs` | `started_at`, `finished_at`, `status`, `trigger` (import, reparse, owner, manual), `versions` (JSON), `counts` (JSON, counts only) | |
+
+- One `txn_derived` row per active transaction. The merchant is the engine's;
+  when the transaction's text belongs to an owner party, the party's kind and
+  label are stored as `merchant_kind` and `display_name`. The key stays the
+  engine's.
+- A link is identified by its kind and its two transactions. Its `id`
+  changes when the link changes.
+- `derive_runs` gets a row only when a run wrote something, so the derived
+  tables always match the last row and the engine versions on it.
+
+## Recompute (`python -m app.cli recompute [--dry-run] [--accept-key-changes]`)
+
+Reads the active transactions, the owner tables and the recorded
+`duplicate_candidates` pairs, calls the pure `derive()`, and writes only the
+rows that differ, in one database transaction (`app/pipeline/recompute.py`).
+
+- A run with nothing to change writes nothing. A changed row is replaced
+  (delete, then insert), rows go 1000 to a statement, so a run is eleven
+  reads and about five writes whatever the size.
+- It runs as the last step of `import-sms`, `reparse` and `owner-load` (not
+  on a dry run), and by hand. If it fails after an import, the import stays
+  saved, the derived tables stay as they were, the command exits with an
+  error, and `recompute` is run again once the cause is fixed.
+- **Key-change check.** When the stored rows were made by another merchant
+  engine version and a transaction would lose or change its party or own
+  account, it stops, writes nothing and exits with code 3. Check the owner
+  file, then run it with `--accept-key-changes`.
+- Owner data that cannot hold (one text in two places, a decision that does
+  not fit) stops it with the engine's message; nothing is written.
+- Output is counts only. Any other error prints only the error's type.
+- `reconcile-stats` shows the "stored run": the last run, its versions and
+  the number of stored rows that differ from a fresh derive (0 right after a
+  recompute).
+
+## Invariants I10 to I21
+
+| | Invariant | Test |
+| -- | --------- | ---- |
+| I10 | One `txn_derived` row and one role per active transaction; none for a superseded one | `test_storage.py::test_i10_*` |
+| I11 | Recompute twice: the second run writes nothing | `test_i11_*` |
+| I12 | Derived data is a pure function: emptied and recomputed, the rows are the same | `test_i12_*` |
+| I13 | Import, reparse and recompute never change an owner table | `test_i13_*` |
+| I14 | The owner always wins | `test_i14_*` |
+| I15 | A duplicate group counts once | `test_i15_*` (storage and engine) |
+| I16 | Totals from stored roles equal the sums over roles of a fresh derive | `test_i16_*` (storage and engine) |
+| I17 | A candidate changes no role and no total | `test_reconcile_links.py::test_i17_*` |
+| I18 | Roles respect direction | `test_reconcile.py::test_i18_*` |
+| I19 | Links are sound | `test_reconcile_links.py::test_i15_i19_*` |
+| I20 | Owner decisions survive reparse | `test_i20_*` |
+| I21 | Commands print counts, ids and versions only, also on errors | `test_i21_*`, `test_owner_load.py` |
+
+RLS on every app table and no policy anywhere: `tests/test_migration.py`
+(Postgres job). Migrations are tested up and down, empty and with data.

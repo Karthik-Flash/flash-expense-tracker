@@ -246,11 +246,14 @@ t.spent_paise, t.paid_back_paise, t.net_paise, t.income_paise
   id, higher id)` -> `"same"` or `"different"`). `legacy_pairs`: the id pairs
   recorded in `duplicate_candidates` at import, read-only. The engine
   versions are `reconcile.VERSIONS`.
-- **Output.** `Result(roles, links)`. `roles` holds one `Derived` per
+- **Output.** `Result(roles, links, merchants)`. `roles` holds one `Derived` per
   transaction: `role`, `rule` (the code of the rule that decided), `basis`
   (`engine`: the transaction's wording alone; `owner`: the rule read owner
-  data), `reasons` (every rule that matched, the deciding one first) and
-  `duplicate_of` (the primary, only for role `duplicate`). `links` holds
+  data), `reasons` (every rule that matched, the deciding one first),
+  `duplicate_of` (the primary, only for role `duplicate`), and `own_account`
+  and `party`: the position in `OwnerData` of the entry whose text the
+  transaction matches. `Result.merchants` holds the engine's `Merchant` per
+  transaction. `links` holds
   `Link`s: `kind`, `txn_a` < `txn_b`, `status` (`linked` or `candidate`),
   `rule`, `reason`, `decided_by` (`engine` or `owner`).
 
@@ -354,5 +357,6 @@ AutoPay + card pairs by time gap and by merchant facts (same key, brand
 hits, which message is earlier), what became of the existing
 `duplicate_candidates` pairs ("lost" must be 0), messages not counted yet,
 owner data counts, and a warning line when the owner data lists no income
-party. The command passes empty owner data until the owner tables exist
-(step 3C-4).
+party, and the "stored run" (last recompute, its versions, stored rows that
+differ from a fresh derive). It reads the owner tables. Storage and the
+`recompute` and `owner-load` commands: [data-model.md](data-model.md).

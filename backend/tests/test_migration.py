@@ -1,4 +1,4 @@
-"""Migrations on an empty database: tables, RLS and keepalive.ping() (Postgres), parity."""
+"""Migrations up and down, empty and with data: tables, RLS, keepalive.ping() (Postgres)."""
 
 import os
 from pathlib import Path
@@ -7,18 +7,24 @@ import pytest
 import sqlalchemy.exc
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, func, inspect, select, text
+from sqlalchemy.orm import sessionmaker
 
+from app import cli
 from app.config import settings
 from app.db import Base
+from app.importers.sms_backup import import_sms
+from app.models import RawMessage, Transaction, TransactionSource
 
-NEW_TABLES = {
+PIPELINE_TABLES = {
     "import_batches",
     "raw_messages",
     "parse_results",
     "transactions",
     "transaction_sources",
     "duplicate_candidates",
+}
+OWNER_TABLES = {
     "own_accounts",
     "own_identifiers",
     "parties",
@@ -26,6 +32,8 @@ NEW_TABLES = {
     "owner_link_decisions",
     "owner_roles",
 }
+DERIVED_TABLES = {"derive_runs", "txn_derived", "txn_links"}
+NEW_TABLES = PIPELINE_TABLES | OWNER_TABLES | DERIVED_TABLES  # every app table but heartbeat
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 BACKEND = Path(__file__).resolve().parent.parent
 
@@ -71,10 +79,55 @@ def test_upgrade_check_downgrade_upgrade(url: str) -> None:
     assert NEW_TABLES | {"heartbeat"} <= tables(url)
     command.check(cfg)  # models and migrations agree
 
+    command.downgrade(cfg, "0004")  # one step at a time: each downgrade works alone
+    assert not DERIVED_TABLES & tables(url) and tables(url) >= OWNER_TABLES | PIPELINE_TABLES
+    command.downgrade(cfg, "0003")
+    assert not (OWNER_TABLES | DERIVED_TABLES) & tables(url) and tables(url) >= PIPELINE_TABLES
     command.downgrade(cfg, "0001")
     assert not NEW_TABLES & tables(url) and "heartbeat" in tables(url)
     command.upgrade(cfg, "head")
     assert tables(url) >= NEW_TABLES
+
+
+def test_up_and_down_on_a_database_holding_data(url: str, backup: Path) -> None:
+    """0004 and 0005 are additive: Phase 2 data is untouched by upgrade and downgrade."""
+    cfg = alembic_config()
+    command.upgrade(cfg, "0003")
+    engine = create_engine(url)
+    factory = sessionmaker(engine, expire_on_commit=False)
+    with factory() as s:
+        import_sms(s, backup, settings.owner_id)
+
+    def old_data() -> list:
+        with factory() as s:
+            return [
+                sorted(tuple(r) for r in s.execute(select(model.__table__)))
+                for model in (RawMessage, Transaction, TransactionSource)
+            ]
+
+    def rows(table: str) -> int:
+        with engine.connect() as conn:
+            return conn.execute(select(func.count()).select_from(text(table))).scalar_one()
+
+    before = old_data()
+    assert all(before)
+    command.upgrade(cfg, "head")
+    assert old_data() == before and not any(rows(t) for t in OWNER_TABLES | DERIVED_TABLES)
+    example = BACKEND.parent / "docs" / "owner.example.json"
+    assert cli.main(["owner-load", str(example)], factory) == 0  # ends with a recompute
+    assert rows("parties") == 3 and rows("txn_derived") == len(before[1])
+    assert rows("derive_runs") == 1 and old_data() == before
+
+    command.downgrade(cfg, "0004")  # derived data goes; owner data and Phase 2 data stay
+    assert not DERIVED_TABLES & tables(url) and rows("parties") == 3 and old_data() == before
+    command.downgrade(cfg, "0003")
+    assert not (OWNER_TABLES | DERIVED_TABLES) & tables(url) and old_data() == before
+    command.upgrade(cfg, "head")
+    assert old_data() == before and not any(rows(t) for t in OWNER_TABLES | DERIVED_TABLES)
+    assert cli.main(["recompute"], factory) == 0  # derived data is rebuilt from nothing
+    assert rows("txn_derived") == len(before[1])
+    command.check(cfg)
+    engine.dispose()
 
 
 @pytest.mark.skipif(not TEST_DATABASE_URL, reason="Postgres only")
@@ -88,6 +141,21 @@ def test_row_level_security_enabled_on_new_tables(url: str) -> None:
         ).all()
     engine.dispose()
     assert dict(rows) == dict.fromkeys(NEW_TABLES, True)
+
+
+@pytest.mark.skipif(not TEST_DATABASE_URL, reason="Postgres only")
+def test_no_policy_opens_a_table_and_keepalive_holds_only_ping(url: str) -> None:
+    command.upgrade(alembic_config(), "head")
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        policies = conn.execute(text("SELECT count(*) FROM pg_policies")).scalar_one()
+        in_keepalive = conn.execute(
+            text("SELECT count(*) FROM pg_tables WHERE schemaname = 'keepalive'")
+        ).scalar_one()
+    engine.dispose()
+    assert policies == 0 and in_keepalive == 0
+    for table in sorted(OWNER_TABLES | DERIVED_TABLES):
+        assert blocked(url, f"SELECT * FROM public.{table}"), table
 
 
 def as_anon(url: str, sql: str) -> list:
