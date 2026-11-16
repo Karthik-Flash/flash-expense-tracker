@@ -1,1 +1,62 @@
 @import "tailwindcss";
+
+/* docs/ui-spec.md: neutral greys, one muted teal accent, muted green for money in.
+   Every text colour meets WCAG AA (4.5:1) on bg and surface, in both themes. */
+@theme {
+  --color-bg: #f6f6f4;
+  --color-surface: #ffffff;
+  --color-press: #efefec;
+  --color-ink: #1b1c1e;
+  --color-muted: #5c6066;
+  --color-faint: #b5b8bc;
+  --color-line: #e2e2de;
+  --color-track: #ececea;
+  --color-bar: #8d9298;
+  --color-accent: #0e6862;
+  --color-on-accent: #ffffff;
+  --color-positive: #2b6a48;
+  --color-danger: #b42318;
+  --color-banner: #efeee9;
+  --color-scrim: rgb(0 0 0 / 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #111214;
+    --color-surface: #18191b;
+    --color-press: #222326;
+    --color-ink: #e7e7e4;
+    --color-muted: #a3a6ab;
+    --color-faint: #4a4d52;
+    --color-line: #2a2c2f;
+    --color-track: #26282b;
+    --color-bar: #7b8086;
+    --color-accent: #6bb7af;
+    --color-on-accent: #111214;
+    --color-positive: #86c3a0;
+    --color-danger: #f2826f;
+    --color-banner: #1d1e20;
+    --color-scrim: rgb(0 0 0 / 0.55);
+  }
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
