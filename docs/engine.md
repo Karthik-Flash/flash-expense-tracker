@@ -216,7 +216,7 @@ transactions):
 
 ## Reconcile: roles and links
 
-`app/engine/reconcile.py` (`reconcile-1.2.0`; design in
+`app/engine/reconcile.py` (`reconcile-1.2.1`; design in
 [design/phase-3-backbone.md](design/phase-3-backbone.md), D-059 to D-067)
 gives every transaction exactly one role, and links transactions that are,
 or may be, one event. Pure and stdlib only: no database, clock, network or
@@ -335,8 +335,9 @@ include both ends.
   `legacy_pairs` too. A decision about a transaction that is not in the
   input is ignored. A role decision wins over a link.
 - **References never make a match**; a mandate ID is never a match key
-  (D-046). Two different references rule a same-amount pair out: they are
-  two payments (D-069). Such a pair is kept only when it was recorded at
+  (D-046). Two different references of the same kind rule a same-amount
+  pair out: they are two payments (D-069). A mandate ID and a payment
+  reference are different kinds and rule nothing out (D-072). Such a pair is kept only when it was recorded at
   import, as `DUP_legacy` with reason `different_references`.
 - A duplicate group is every transaction joined by linked duplicate links.
   A rule's group has two members; a larger one is the owner's.
@@ -360,3 +361,19 @@ owner data counts, and a warning line when the owner data lists no income
 party, and the "stored run" (last recompute, its versions, stored rows that
 differ from a fresh derive). It reads the owner tables. Storage and the
 `recompute` and `owner-load` commands: [data-model.md](data-model.md).
+
+**"matched by two or more rules"** in `reconcile-stats` counts transactions
+whose `reasons` hold two or more rule codes. Two causes, shown on two lines
+under it:
+
+- *one-message rules agree*: two rules that read one transaction both
+  matched (for example channel `fd` and the text of an own account); the
+  earlier row decided.
+- *a link or decision overrides*: the deciding rule is `DUP_autopay_card`,
+  `ST_pair`, `OWNER_link` or `OWNER_role`, placed in front of the rule that
+  read the message. Every non-primary member of a linked duplicate group is
+  here, so on data with 4 linked duplicates and nothing else the line is 4.
+
+**Helpers.** `reconcile.ist_month("2026-01")` gives the start and end (UTC)
+of that IST calendar month, for `totals()`. `money.format_inr(paise)` gives
+`Rs 1,23,456.78` (Indian grouping, `-Rs` for a negative amount).

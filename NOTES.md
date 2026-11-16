@@ -62,8 +62,9 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
       (`0005`); not pushed, the planner reviews first
 - [ ] After the push: your owner file, `owner-load`, `recompute`,
       `reconcile-stats` on the real data (to-do list)
-- [ ] Phase 3C-7, 3C-8: terminal review, `owner-export`; the card bill pair
-      rule when credit card SMS appear
+- [x] Phase 3C-7, 3C-8: `reconcile-review`, `owner-export`, `totals`;
+      `reconcile-1.2.1` (D-072), duplicate primary (D-071)
+- [ ] The card bill pair rule, when credit card SMS appear
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -472,6 +473,23 @@ cd backend
 .\.venv\Scripts\python.exe -m app.cli recompute --accept-key-changes
 ```
 
+```powershell
+# 5. PRIVATE, your screen only: decide candidates, uncertain credits, debits with no payee
+.\.venv\Scripts\python.exe -m app.cli reconcile-review --list
+.\.venv\Scripts\python.exe -m app.cli reconcile-review
+# 6. PRIVATE, your screen only: one IST month from the stored roles
+.\.venv\Scripts\python.exe -m app.cli totals --month 2026-01
+# 7. Backup of every owner row and decision (the free Supabase plan has none)
+.\.venv\Scripts\python.exe -m app.cli owner-export D:\FlashPrivate\private\owner-export.json
+# Restore after a rebuild: import the SMS first, then load the export into empty owner tables
+.\.venv\Scripts\python.exe -m app.cli owner-load D:\FlashPrivate\private\owner-export.json
+```
+
+- Review answers: pairs `same`, `different`, `skip`; uncertain credits
+  `payback`, `income`, `ignored`, `leave`; debits with no payee
+  `self_transfer`, `ignored`, `leave`; `quit` keeps earlier answers.
+  Empty answer = skip or leave.
+- `totals` refuses when stored rows are stale: run `recompute` first.
 - "texts matching no transaction" lists field paths: a likely typo, or a
   text that has not appeared yet.
 - In `reconcile-stats`, "stored rows that differ" must be 0 after a
@@ -536,6 +554,16 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-16: Phase 3C-7 and 3C-8, review, export, totals
+
+- `reconcile-1.2.1` (D-072): a mandate ID next to a payment reference no
+  longer counts as two payments. Q9 recorded (D-071). Keep-alive item
+  ticked in PLAN.md. "matched by two or more rules" split in two lines.
+- `reconcile-review [--list]`, `owner-export <file>`, `totals --month`;
+  `owner-load` restores an export by dedupe key.
+- Tests: 598 backend, 3 skipped (Postgres only), 89 scripts; ruff clean.
+- Not pushed.
 
 ### 2026-11-16: Phase 3C-4 and 3C-6, owner tables, storage, recompute
 

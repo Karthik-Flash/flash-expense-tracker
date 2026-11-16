@@ -34,8 +34,8 @@ Deploy (13 Nov 2026), all done and verified:
 
 Last open Phase 0 items:
 
-- [ ] Overnight check of the D-053 keep-alive: first scheduled run 16 Nov 2026
-      03:30 IST; confirm job history 200 and `last_seen` moved
+- [x] Overnight check of the D-053 keep-alive: first scheduled run 16 Nov 2026
+      03:30 IST returned 200
 - [x] Redaction run on the real backup; sample reviewed (14 Nov 2026)
 
 ## Phase 1: SMS parsing engine (done 14 Nov 2026)

@@ -276,3 +276,20 @@ rows that differ, in one database transaction (`app/pipeline/recompute.py`).
 
 RLS on every app table and no policy anywhere: `tests/test_migration.py`
 (Postgres job). Migrations are tested up and down, empty and with data.
+
+## Review, export, totals (owner only)
+
+- `reconcile-review [--list]`: terminal only. Decisions are written with
+  source `terminal` (the owner tables have no `review` source; the review is
+  the terminal). A link decision replaces an earlier one on the same pair.
+- `owner-export <file>`: one JSON file, format `flash-owner-export-1`, every
+  owner row. Decisions carry `a`, `b` (ids) and `a_key`, `b_key` (dedupe
+  keys); a role decision carries `transaction` and `dedupe_key`. Ids and
+  creation times of accounts and parties are not kept; labels are.
+- `owner-load <export>`: restores only into empty owner tables, every row
+  with its source. Each decision is attached by dedupe key; "mapped to another
+  id" counts those whose id changed. A key that is not in the database stops
+  the restore: import the messages first.
+- `totals --month YYYY-MM`: terminal only, reads `txn_derived` joined to
+  `transactions`, refuses when no recompute has run, the versions differ, or
+  stored rows differ from a fresh derive.

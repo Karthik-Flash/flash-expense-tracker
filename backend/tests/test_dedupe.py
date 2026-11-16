@@ -79,6 +79,7 @@ def txn(**change) -> SimpleNamespace:
         "amount_paise": 3300,
         "reference": None,
         "txn_time_utc": T,
+        "hints": [],
     }
     return SimpleNamespace(**(base | change))
 
@@ -104,6 +105,9 @@ def test_two_references_are_not_a_candidate() -> None:
     assert not is_candidate(txn(reference="r1"), txn(reference="r1"))  # shared
     assert not is_candidate(txn(reference="r1"), txn(reference="r2"))  # two payments
     assert is_candidate(txn(reference="r1"), txn())  # one side has none
+    mandate = txn(reference="m1", hints=["mandate_reference"])
+    assert is_candidate(mandate, txn(reference="r2"))  # two kinds of reference (D-072)
+    assert not is_candidate(mandate, txn(reference="m2", hints=["mandate_reference"]))
 
 
 def test_mandate_reference_never_merges_monthly_charges() -> None:

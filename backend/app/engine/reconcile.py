@@ -47,14 +47,15 @@ get role duplicate. A guess never lowers Net: an unexplained debit is spend, an
 unexplained credit is uncertain. Error messages never hold a value from the data.
 """
 
+import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 from app.engine.merchant import MERCHANT_VERSION, Merchant, channel_for, normalise_merchant, parts
 
-RECONCILE_VERSION = "reconcile-1.2.0"
+RECONCILE_VERSION = "reconcile-1.2.1"
 VERSIONS = {"merchant": MERCHANT_VERSION, "reconcile": RECONCILE_VERSION}
 
 ROLES = (
@@ -345,6 +346,21 @@ def derive(
     return Result(roles, tuple(run.links[key] for key in sorted(run.links)), run.merchants)
 
 
+IST = timezone(timedelta(hours=5, minutes=30))  # fixed offset, no zoneinfo (D-002)
+_MONTH = re.compile(r"(\d{4})-(\d{2})")
+
+
+def ist_month(month: str) -> tuple[datetime, datetime]:
+    """ "YYYY-MM" -> (start, end) in UTC of that IST calendar month, for totals()."""
+    m = _MONTH.fullmatch(month)
+    if not m or not 1 <= int(m.group(2)) <= 12:
+        raise ValueError("month must look like 2026-01")
+    year, number = int(m.group(1)), int(m.group(2))
+    start = datetime(year, number, 1, tzinfo=IST)
+    end = datetime(year + number // 12, number % 12 + 1, 1, tzinfo=IST)
+    return start.astimezone(UTC), end.astimezone(UTC)
+
+
 def totals(
     txns: Iterable[Txn], roles: Mapping[int, Derived], start: datetime, end: datetime
 ) -> Totals:
@@ -549,9 +565,21 @@ def _owner_only(run: _Run, kind: str) -> None:
             run.links[kind, a, b] = Link(kind, a, b, "linked", "OWNER_link", "owner_same", "owner")
 
 
+def reference_kind(reference: str | None, hints: Iterable[str]) -> str | None:
+    """mandate (repeats every month, D-046), payment, or None for no reference."""
+    if not reference:
+        return None
+    return "mandate" if "mandate_reference" in hints else "payment"
+
+
 def _two_payments(a: Txn, b: Txn) -> bool:
-    """Both carry a reference and the references differ: two payments (D-069)."""
-    return bool(a.reference and b.reference and a.reference != b.reference)
+    """Two references of the same kind that differ: two payments (D-069, D-072).
+
+    A mandate ID and a payment reference are different kinds and say nothing.
+    """
+    kind = reference_kind(a.reference, a.hints)
+    same_kind = kind is not None and kind == reference_kind(b.reference, b.hints)
+    return same_kind and a.reference != b.reference
 
 
 def _duplicates(run: _Run, rows: list[Txn], legacy_pairs: Iterable[Pair]) -> None:
