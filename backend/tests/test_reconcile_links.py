@@ -148,7 +148,7 @@ def test_one_to_two_gives_candidates_only_nothing_greedy() -> None:
         ("duplicate", 2, 3, "candidate", "DUP_same_amount", "same_amount", "engine"),
     ]
     assert set(roles(result).values()) == {"spend"} and spent(txns, result) == 30_000
-    two_to_one = derive([autopay(1), autopay(2, T0 + MIN, reference="TESTMANDATE02"), card(3)])
+    two_to_one = derive([autopay(1), autopay(2, T0 + MIN), card(3)])
     assert [x.status for x in two_to_one.links] == ["candidate"] * 3
     late_partner = derive([autopay(1), card(2, T0 + MIN), card(3, T0 + 5 * HOUR)])
     assert [(x.txn_b, x.status, x.reason) for x in late_partner.links] == [
@@ -171,28 +171,39 @@ def test_same_amount_pair_is_only_ever_a_candidate() -> None:
     def pair(gap=5 * MIN, **second) -> Result:
         return derive([txn(1, reference="000000000001"), txn(2, txn_time_utc=T0 + gap, **second)])
 
-    assert brief(pair(reference="000000000002")) == [
-        ("duplicate", 1, 2, "candidate", "DUP_same_amount", "different_references", "engine")
+    assert brief(pair()) == [  # one side has no reference
+        ("duplicate", 1, 2, "candidate", "DUP_same_amount", "same_amount", "engine")
     ]
-    assert pair().links[0].reason == "same_amount"  # one side has no reference
     assert pair(10 * MIN).links and not pair(10 * MIN + SEC).links
     for other in ({"bank": "SBI"}, {"account_last4": "0002"}, {"amount_paise": 1}):
         assert not pair(**other).links
     assert not pair(direction="credit", type="credit", party="TEST").links
-    result = pair(reference="000000000002")
-    assert roles(result) == {1: "spend", 2: "spend"}  # a candidate changes no role
+    assert roles(pair()) == {1: "spend", 2: "spend"}  # a candidate changes no role
     both_null = derive([txn(1, account_last4=None), txn(2, account_last4=None)])
     assert both_null.links[0].rule == "DUP_same_amount"  # as recorded at import (D-047)
+
+
+def test_two_different_references_are_two_payments() -> None:
+    txns = [txn(1, reference="000000000001"), txn(2, reference="000000000002")]
+    assert derive(txns).links == ()  # D-069: Reconcile does not propose the pair
+    recorded = derive(txns, None, [(1, 2)])  # but a pair recorded at import is kept
+    assert brief(recorded) == [
+        ("duplicate", 1, 2, "candidate", "DUP_legacy", "different_references", "engine")
+    ]
+    assert roles(recorded) == {1: "spend", 2: "spend"}
+    decided = derive(txns, links({("duplicate", 1, 2): "different"}), [(1, 2)])
+    assert decided.links == ()
 
 
 def test_a_mandate_id_is_never_a_match_key() -> None:
     month_apart = [autopay(1), autopay(2, T0 + 30 * DAY)]  # the same mandate ID every month
     assert not derive(month_apart).links and spent(month_apart, derive(month_apart)) == 20_000
-    for second in ("TESTMANDATE01", "TESTMANDATE02"):  # a mandate ID is no per-payment reference
-        close = derive([autopay(1), autopay(2, T0 + MIN, reference=second)])
-        assert brief(close) == [
-            ("duplicate", 1, 2, "candidate", "DUP_same_amount", "same_amount", "engine")
-        ]
+    close = derive([autopay(1), autopay(2, T0 + MIN)])  # one mandate, two messages
+    assert brief(close) == [
+        ("duplicate", 1, 2, "candidate", "DUP_same_amount", "same_amount", "engine")
+    ]
+    other_mandate = [autopay(1), autopay(2, T0 + MIN, reference="TESTMANDATE02")]
+    assert not derive(other_mandate).links  # two mandates are two payments
     shared = [autopay(1), card(2, T0 + MIN, amount_paise=20_000, reference="TESTMANDATE01")]
     assert not derive(shared).links  # an equal reference links nothing by itself
 
@@ -632,7 +643,7 @@ def check(txns: list[Txn], result: Result) -> None:
 
 
 @pytest.mark.parametrize("seed", [11, 12, 13])
-def test_links_are_sound_and_do_not_depend_on_input_order(seed: int) -> None:
+def test_i15_i19_links_are_sound_and_do_not_depend_on_input_order(seed: int) -> None:
     txns = clustered_txns(seed)
     rng = random.Random(seed)
     legacy = [tuple(rng.sample(range(1, len(txns) + 1), 2)) for _ in range(20)]

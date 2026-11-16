@@ -57,8 +57,12 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
       card time gaps, and which message carries the brand
 - [ ] Private look at the merged refund's two source messages (cheat sheet,
       "Merged refund"); tell the planner "one event" or "two events" only
-- [ ] Phase 3C-4, 3C-6, 3C-7, 3C-8: owner tables and `owner-load`, storage
-      and `recompute`, terminal review, `owner-export`; the card bill pair
+- [x] Phase 3C-4 and 3C-6: `reconcile-1.2.0` (D-069), owner tables and
+      `owner-load` (migration `0004`, D-070), derived tables and `recompute`
+      (`0005`); not pushed, the planner reviews first
+- [ ] After the push: your owner file, `owner-load`, `recompute`,
+      `reconcile-stats` on the real data (to-do list)
+- [ ] Phase 3C-7, 3C-8: terminal review, `owner-export`; the card bill pair
       rule when credit card SMS appear
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
@@ -87,7 +91,11 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
    and `heartbeat.last_seen` moved (D-053).
 2. If `data\sample\redacted_full.json` exists from an earlier run, delete it.
    The full file now lives in `D:\FlashPrivate\private\` (D-051).
-3. Optional: refresh the sample with the newer redaction rules (STANDARD
+3. After the planner's go and the push (cheat sheet, "Owner data and
+   recompute"): write `D:\FlashPrivate\private\owner.json` from
+   `docs\owner.example.json`, check that `alembic current` says `0005`,
+   run `owner-load`, then paste the `reconcile-stats` output.
+4. Optional: refresh the sample with the newer redaction rules (STANDARD
    sample command under "SMS redaction"; must end with `Leaks: 0`).
 
 ## Architecture
@@ -389,7 +397,7 @@ recursively). Every command prints counts only.
 
 ```powershell
 cd backend
-# 1. Migrate (Render also runs this on deploy; repeating is safe). Expect 0003 (head)
+# 1. Migrate (Render also runs this on deploy; repeating is safe). Expect 0005 (head)
 .\.venv\Scripts\python.exe -m alembic upgrade head; .\.venv\Scripts\python.exe -m alembic current
 # 2. Dry run: full pipeline inside one transaction, rolled back. Saves nothing
 .\.venv\Scripts\python.exe -m app.cli import-sms --input D:\FlashPrivate\raw --dry-run
@@ -414,6 +422,9 @@ cd backend
 - A crashed import is safe to re-run: committed messages are skipped as
   duplicates. The crashed batch stays `failed` (or `running` if killed).
 - `stats` shows months only (IST), never days, amounts or names.
+- `import-sms` and `reparse` now end with a recompute block. If that block
+  says "recompute failed", the import itself is saved: fix the cause and
+  run `recompute`.
 - `merchant-review` filters: `--kind business|person|unsure`,
   `--confidence high|low`, `--reason R5_digits`, `--direction
   debit|credit|refund`, `--sample N --seed S`. It shows real names, so it
@@ -442,6 +453,29 @@ order by t.id, r.received_at;
 Same wording and the same date inside both messages: the bank sent one
 refund twice (one event, nothing to fix). Different dates or wording, or
 two credits on the bank statement: two events.
+
+### Owner data and recompute (you run these; counts and field paths only)
+
+Your owner file lives at `D:\FlashPrivate\private\owner.json`. Copy the
+shape of `docs\owner.example.json`; the keys are explained in
+[docs/data-model.md](docs/data-model.md), "Owner file". Never paste the file.
+
+```powershell
+cd backend
+# 1. Check the file, save nothing. Problems are named by field path
+.\.venv\Scripts\python.exe -m app.cli owner-load D:\FlashPrivate\private\owner.json --dry-run
+# 2. Load it. Ends with a recompute. Loading the same file again changes nothing
+.\.venv\Scripts\python.exe -m app.cli owner-load D:\FlashPrivate\private\owner.json
+# 3. Recompute by hand (after a deploy that changed an engine version). --dry-run counts only
+.\.venv\Scripts\python.exe -m app.cli recompute
+# 4. Only when recompute stops with exit code 3 and you checked the owner file
+.\.venv\Scripts\python.exe -m app.cli recompute --accept-key-changes
+```
+
+- "texts matching no transaction" lists field paths: a likely typo, or a
+  text that has not appeared yet.
+- In `reconcile-stats`, "stored rows that differ" must be 0 after a
+  recompute.
 
 ### Template survey (reads only the redacted sample)
 
@@ -481,12 +515,10 @@ gh repo view --web                                # open the repo in the browser
 
 1. Keep-alive: switch-over verified 15 Nov; first scheduled 03:30 run still
    to check (D-053, to-do list).
-2. Reconcile (3C): roles and links exist in memory only (3C-2, 3C-3, 3C-5).
-   Still open: your `reconcile-stats` run to see how the 18 duplicate
-   candidates come out; 1 refund that was merged into another transaction
-   on its dedupe key (your private check, D-064); the planner's decisions
-   on the duplicate primary (Q9) and on narrowing same-amount candidates.
-   No owner data, decisions or stored roles until 3C-4 to 3C-7.
+2. Reconcile (3C): built up to storage, not pushed. Still open: the push
+   after the planner's review; your owner file and `reconcile-stats` run;
+   the merged refund check (D-064); the duplicate primary (Q9); the review
+   and export (3C-7, 3C-8); the Postgres CI run of the new tests.
 3. 44 foreign-currency messages deferred (D-035).
 4. 153 messages from banks without a parser (SBI, ICICI, India Post, Kotak,
    PhonePe): a parser plus `reparse`, no re-import needed.
@@ -504,6 +536,20 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-16: Phase 3C-4 and 3C-6, owner tables, storage, recompute
+
+- `reconcile-1.2.0` (D-069): a same-amount pair with two different
+  references is two payments; Reconcile and import no longer propose it.
+- Migration `0004`: six owner tables, every row with its source. `owner-load`
+  checks the private JSON file strictly and replaces only file rows (D-070).
+- Migration `0005`: `txn_derived`, `txn_links`, `derive_runs`. `recompute`
+  writes only what changed, runs after import, reparse and owner-load, and
+  stops when a merchant engine change would lose an owner match.
+- `reconcile-stats` reads the owner tables and shows the stored run.
+- Tests: 569 backend, 3 skipped (Postgres only), 89 scripts; ruff clean.
+  Postgres was not run locally (no Docker); the CI job runs it on push.
+- Not pushed: the planner reviews before the migrations reach Supabase.
 
 ### 2026-11-16: Phase 3C-3 and 3C-5, duplicates and pair linking in memory
 

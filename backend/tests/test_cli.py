@@ -1,7 +1,6 @@
 """CLI commands and I9: output holds counts only. Synthetic data only."""
 
 import re
-import uuid
 from datetime import timedelta
 from pathlib import Path
 
@@ -10,29 +9,13 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app import cli
+from app.config import settings
 from app.engine.merchant import MERCHANT_VERSION
 from app.engine.parsers.hdfc import PARSER_VERSION
 from app.engine.reconcile import RECONCILE_VERSION, ROLES, RULES
 from app.importers import sms_backup
 from app.models import DuplicateCandidate, Transaction
-from tests.smsdata import FIXTURES, NEVER_STORED, SBI_ROW, WHEN, full_rows, write_backup
-
-
-@pytest.fixture
-def run(db_engine: Engine, capsys: pytest.CaptureFixture):
-    factory = sessionmaker(db_engine, expire_on_commit=False)
-
-    def run(*argv: str) -> str:
-        assert cli.main(list(argv), session_factory=factory) == 0
-        captured = capsys.readouterr()
-        return captured.out + captured.err
-
-    return run
-
-
-@pytest.fixture
-def backup(tmp_path: Path) -> Path:
-    return write_backup(tmp_path / "backup.xml", full_rows(), mms=2)
+from tests.smsdata import FIXTURES, NEVER_STORED, SBI_ROW, WHEN, write_backup
 
 
 def secrets() -> set[str]:
@@ -161,7 +144,7 @@ def test_reconcile_stats_prints_counts_only_and_writes_nothing(run, backup, db_e
 
 
 def test_reconcile_stats_counts_links_and_existing_candidates(run, db_engine) -> None:
-    owner = uuid.uuid4()
+    owner = settings.owner_id
 
     def row(key: str, channel: str, minute: int, amount: int) -> Transaction:
         return Transaction(

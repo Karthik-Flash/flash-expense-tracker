@@ -61,7 +61,10 @@ class TxnLike(Protocol):
 
 
 def is_candidate(a: TxnLike, b: TxnLike) -> bool:
-    """Same owner, bank, account, direction and amount within 10 minutes, no shared reference.
+    """Same owner, bank, account, direction and amount within 10 minutes.
+
+    Two references rule a pair out: equal ones are one mandate (or one transaction
+    already), different ones are two payments (D-069).
 
     Different directions never match: a self-transfer is a debit and a credit
     for Reconcile to pair.
@@ -73,5 +76,5 @@ def is_candidate(a: TxnLike, b: TxnLike) -> bool:
         and a.direction == b.direction
         and a.amount_paise == b.amount_paise
         and abs(a.txn_time_utc - b.txn_time_utc) <= CANDIDATE_WINDOW
-        and not (a.reference and a.reference == b.reference)
+        and not (a.reference and b.reference)
     )

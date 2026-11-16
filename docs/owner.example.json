@@ -1,0 +1,48 @@
+{
+  "accounts": [
+    {
+      "label": "HDFC savings",
+      "kind": "bank_account",
+      "bank": "HDFC",
+      "last4": ["0001", "0002"],
+      "texts": ["test.user@okhdfcbank"]
+    },
+    {
+      "label": "SBI savings",
+      "kind": "bank_account",
+      "bank": "SBI",
+      "last4": ["0003"],
+      "texts": ["TEST OWNER", "test.user@oksbi"]
+    },
+    {
+      "label": "Test credit card",
+      "kind": "credit_card",
+      "bank": "SBI",
+      "last4": ["0004"],
+      "texts": ["TEST CARD BILLER"]
+    },
+    {
+      "label": "Test wallet",
+      "kind": "wallet",
+      "texts": ["TEST WALLET"]
+    }
+  ],
+  "parties": [
+    {
+      "label": "Test Parent",
+      "kind": "person",
+      "income": "Pocket money",
+      "texts": ["test.parent@okaxis", "TEST PARENT"]
+    },
+    {
+      "label": "Test Friend",
+      "kind": "person",
+      "texts": ["PERSON_901", "9000000001@ybl"]
+    },
+    {
+      "label": "Test Mess",
+      "kind": "business",
+      "texts": ["TEST FOODS 12"]
+    }
+  ]
+}
