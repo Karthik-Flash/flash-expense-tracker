@@ -247,6 +247,9 @@ def test_export_then_load_into_empty_tables_restores_every_row(
         "texts": "3",
         "role decisions": "1",
         "link decisions": "1",
+        "category decisions": "0",
+        "labels": "0",
+        "labelled transactions": "0",
     }
     assert_no_values(out)
     assert not sorted(v for v in private_values(OWNER_FILE) if v in out)

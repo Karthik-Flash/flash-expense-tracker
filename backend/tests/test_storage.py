@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from app.config import settings
 from app.engine.merchant import MERCHANT_VERSION
 from app.engine.parsers import PARSERS
-from app.engine.reconcile import RECONCILE_VERSION, ROLES, VERSIONS, totals
+from app.engine.reconcile import RECONCILE_VERSION, ROLES, totals
 from app.models import (
     DeriveRun,
     OwnerLinkDecision,
@@ -30,7 +30,7 @@ from app.models import (
     TxnLink,
 )
 from app.pipeline import recompute as recompute_module
-from app.pipeline.recompute import plan
+from app.pipeline.recompute import VERSIONS, plan
 from tests.smsdata import WHEN, full_rows, write_backup
 from tests.test_cli import assert_no_values
 from tests.test_owner_load import count, owner_rows, private_values, write
@@ -438,7 +438,11 @@ def test_recompute_records_a_run_with_versions_and_counts(loaded: str, db_engine
     assert (
         run_row.versions
         == VERSIONS
-        == {"merchant": MERCHANT_VERSION, "reconcile": RECONCILE_VERSION}
+        == {
+            "merchant": MERCHANT_VERSION,
+            "reconcile": RECONCILE_VERSION,
+            "categorise": "categorise-1.0.0",
+        }
     )
     assert run_row.started_at <= run_row.finished_at
     counts = run_row.counts
@@ -586,7 +590,7 @@ def test_recompute_uses_a_fixed_number_of_statements(loaded: str, run, db_engine
         return list(statements)
 
     quiet = run_counted()  # nothing to change: reads only
-    assert not {"INSERT", "UPDATE", "DELETE"} & set(quiet) and len(quiet) <= 12
+    assert not {"INSERT", "UPDATE", "DELETE"} & set(quiet) and len(quiet) <= 13
     with sessionmaker(db_engine)() as s:  # every kind of change at once
         ids = list(s.scalars(select(TxnDerived.transaction_id).order_by(TxnDerived.transaction_id)))
         s.execute(delete(TxnDerived).where(TxnDerived.transaction_id.in_(ids[:10])))
@@ -600,6 +604,6 @@ def test_recompute_uses_a_fixed_number_of_statements(loaded: str, run, db_engine
         s.commit()
     busy = run_counted()
     writes = [s for s in busy if s in ("INSERT", "UPDATE", "DELETE")]
-    assert len(busy) == 16 and sorted(writes) == ["DELETE", "DELETE"] + ["INSERT"] * 3, " ".join(
+    assert len(busy) == 17 and sorted(writes) == ["DELETE", "DELETE"] + ["INSERT"] * 3, " ".join(
         busy
     )

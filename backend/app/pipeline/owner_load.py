@@ -27,6 +27,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.engine.categorise import CATEGORIES
 from app.engine.merchant import normalise_merchant
 from app.engine.senders import SENDER_BANKS
 from app.models import (
@@ -36,23 +37,29 @@ from app.models import (
     OWNER_SOURCES,
     PARTY_KINDS,
     VERDICTS,
+    Label,
     OwnAccount,
+    OwnerCategory,
     OwnerLinkDecision,
     OwnerRole,
     OwnIdentifier,
     Party,
     PartyText,
     Transaction,
+    TxnLabel,
 )
 
 BANKS = tuple(sorted(set(SENDER_BANKS.values())))
 TOP_KEYS = ("accounts", "parties")
 EXPORT_FORMAT = "flash-owner-export-1"
-EXPORT_KEYS = ("format", *TOP_KEYS, "roles", "links")
+EXPORT_KEYS = ("format", *TOP_KEYS, "roles", "links", "categories", "labels")
+CATEGORY_KEYS = ("transaction", "dedupe_key", "category", "decided_at", "source")
+LABEL_KEYS = ("name", "source", "transactions")
+LABELLED_KEYS = ("transaction", "dedupe_key", "source")
 ROLE_KEYS = ("transaction", "dedupe_key", "role", "decided_at", "source")
 LINK_KEYS = ("kind", "a", "a_key", "b", "b_key", "verdict", "decided_at", "source")
 ACCOUNT_KEYS = ("label", "kind", "bank", "last4", "texts")
-PARTY_KEYS = ("label", "kind", "income", "texts")
+PARTY_KEYS = ("label", "kind", "income", "category", "texts")
 MAX_LABEL, MAX_TEXT = 80, 200  # column sizes
 LAST4 = re.compile(r"\d{4}")
 
@@ -77,6 +84,8 @@ class OwnerFile:
     export: bool = False  # an owner-export file: sources and decisions included
     roles: list[dict] = field(default_factory=list)  # export only, with "path"
     links: list[dict] = field(default_factory=list)
+    categories: list[dict] = field(default_factory=list)
+    labels: list[dict] = field(default_factory=list)  # name, source, transactions
 
 
 def text_key(text: str) -> str | None:
@@ -144,6 +153,12 @@ def parse_owner_file(raw: str) -> OwnerFile:
                 if not texts:
                     errors.append(f"{path}.texts: needs at least one text")
                 columns = {"kind": item.get("kind"), "income_label": income}
+                # A category the file does not state is left as it is in the database,
+                # so a correction made in the review is not undone by the next load.
+                if item.get("category") is not None or out.export:
+                    columns["category"] = item.get("category")
+                    if item.get("category") is not None:
+                        _choice(item["category"], f"{path}.category", tuple(CATEGORIES), errors)
             if out.export:
                 columns["source"] = _choice(
                     item.get("source"), f"{path}.source", OWNER_SOURCES, errors
@@ -152,6 +167,14 @@ def parse_owner_file(raw: str) -> OwnerFile:
     if out.export:
         out.roles = _decisions(data, "roles", ROLE_KEYS, errors)
         out.links = _decisions(data, "links", LINK_KEYS, errors)
+        out.categories = _decisions(data, "categories", CATEGORY_KEYS, errors)
+        out.labels = _decisions(data, "labels", LABEL_KEYS, errors)
+        for label in out.labels:
+            inner = {"labelled": label.get("transactions")}
+            label["transactions"] = [
+                d | {"path": f"{label['path']}.transactions[{n}]"}
+                for n, d in enumerate(_decisions(inner, "labelled", LABELLED_KEYS, errors))
+            ]
     if errors:
         raise OwnerFileError(errors)
     return out
@@ -183,6 +206,12 @@ def _decisions(data: dict, name: str, keys: tuple[str, ...], errors: list[str]) 
                     errors.append(f"{path}.{key}: must be a transaction id")
             elif key.endswith("key"):
                 _string(value, f"{path}.{key}", 64, errors)
+            elif key == "name":
+                _string(value, f"{path}.name", MAX_LABEL, errors)
+            elif key == "transactions":
+                if not isinstance(value, list):
+                    errors.append(f"{path}.transactions: must be a list")
+                    item = item | {"transactions": []}
             elif key == "decided_at":
                 try:
                     if datetime.fromisoformat(value).tzinfo is None:
@@ -192,6 +221,7 @@ def _decisions(data: dict, name: str, keys: tuple[str, ...], errors: list[str]) 
             else:
                 allowed = {
                     "role": OWNER_ROLES,
+                    "category": tuple(CATEGORIES),
                     "kind": OWNER_LINK_KINDS,
                     "verdict": VERDICTS,
                     "source": OWNER_SOURCES,
@@ -389,7 +419,17 @@ def _sync(
 
 # --- export and restore -----------------------------------------------------------
 
-OWNER_MODELS = (OwnIdentifier, PartyText, OwnerLinkDecision, OwnerRole, OwnAccount, Party)
+OWNER_MODELS = (
+    OwnIdentifier,
+    PartyText,
+    OwnerLinkDecision,
+    OwnerRole,
+    OwnerCategory,
+    TxnLabel,
+    Label,
+    OwnAccount,
+    Party,
+)
 
 
 def export_owner(session: Session, owner_id: uuid.UUID) -> tuple[dict, Counter]:
@@ -430,6 +470,8 @@ def export_owner(session: Session, owner_id: uuid.UUID) -> tuple[dict, Counter]:
             else:
                 if row.income_label:
                     entry["income"] = row.income_label
+                if row.category:
+                    entry["category"] = row.category
                 entry["texts"] = [c.text for c in mine]
                 counts["texts"] += len(mine)
             entry["source"] = row.source
@@ -465,14 +507,49 @@ def export_owner(session: Session, owner_id: uuid.UUID) -> tuple[dict, Counter]:
             .order_by(OwnerLinkDecision.id)
         )
     ]
+    categories = [
+        {
+            "transaction": c.transaction_id,
+            "dedupe_key": keys[c.transaction_id],
+            "category": c.category,
+            "decided_at": c.decided_at.isoformat(),
+            "source": c.source,
+        }
+        for c in session.scalars(
+            select(OwnerCategory)
+            .where(OwnerCategory.owner_id == owner_id)
+            .order_by(OwnerCategory.transaction_id)
+        )
+    ]
+    labelled = defaultdict(list)
+    for row in session.scalars(
+        select(TxnLabel).where(TxnLabel.owner_id == owner_id).order_by(TxnLabel.transaction_id)
+    ):
+        labelled[row.label_id].append(
+            {
+                "transaction": row.transaction_id,
+                "dedupe_key": keys[row.transaction_id],
+                "source": row.source,
+            }
+        )
+    labels = [
+        {"name": row.name, "source": row.source, "transactions": labelled[row.id]}
+        for row in session.scalars(
+            select(Label).where(Label.owner_id == owner_id).order_by(Label.id)
+        )
+    ]
     counts.update(
+        category_decisions=len(categories),
+        labels=len(labels),
+        labelled_transactions=sum(len(v) for v in labelled.values()),
         accounts=len(accounts),
         parties=len(parties),
         role_decisions=len(roles),
         link_decisions=len(links),
     )
     document = {"format": EXPORT_FORMAT, "accounts": accounts, "parties": parties}
-    return document | {"roles": roles, "links": links}, counts
+    decisions = {"roles": roles, "links": links, "categories": categories, "labels": labels}
+    return document | decisions, counts
 
 
 def restore(session: Session, owner_id: uuid.UUID, owner_file: OwnerFile) -> Counter:
@@ -489,7 +566,9 @@ def restore(session: Session, owner_id: uuid.UUID, owner_file: OwnerFile) -> Cou
         raise OwnerFileError(
             ["owner tables: not empty; an export is restored only into empty owner tables"]
         )
-    wanted = {d["dedupe_key"] for d in owner_file.roles}
+    labelled = [d for label in owner_file.labels for d in label["transactions"]]
+    keyed = [*owner_file.roles, *owner_file.categories, *labelled]
+    wanted = {d["dedupe_key"] for d in keyed}
     wanted |= {d[k] for d in owner_file.links for k in ("a_key", "b_key")}
     ids = dict(
         session.execute(
@@ -500,7 +579,7 @@ def restore(session: Session, owner_id: uuid.UUID, owner_file: OwnerFile) -> Cou
     )
     errors = [
         f"{d['path']}.{k}: no transaction with this dedupe key; import the messages first"
-        for d, k in [(d, "dedupe_key") for d in owner_file.roles]
+        for d, k in [(d, "dedupe_key") for d in keyed]
         + [(d, k) for d in owner_file.links for k in ("a_key", "b_key")]
         if d[k] not in ids
     ]
@@ -553,6 +632,36 @@ def restore(session: Session, owner_id: uuid.UUID, owner_file: OwnerFile) -> Cou
                 source=d["source"],
             )
         )
-    counts.update(role_decisions=len(owner_file.roles), link_decisions=len(owner_file.links))
+    for d in owner_file.categories:
+        txn = ids[d["dedupe_key"]]
+        counts["mapped to another id"] += txn != d["transaction"]
+        session.add(
+            OwnerCategory(
+                transaction_id=txn,
+                owner_id=owner_id,
+                category=d["category"],
+                decided_at=datetime.fromisoformat(d["decided_at"]),
+                source=d["source"],
+            )
+        )
+    for entry in owner_file.labels:
+        label = Label(owner_id=owner_id, name=entry["name"].strip(), source=entry["source"])
+        session.add(label)
+        session.flush()
+        for d in entry["transactions"]:
+            txn = ids[d["dedupe_key"]]
+            counts["mapped to another id"] += txn != d["transaction"]
+            session.add(
+                TxnLabel(
+                    transaction_id=txn, owner_id=owner_id, label_id=label.id, source=d["source"]
+                )
+            )
+    counts.update(
+        role_decisions=len(owner_file.roles),
+        link_decisions=len(owner_file.links),
+        category_decisions=len(owner_file.categories),
+        labels=len(owner_file.labels),
+        labelled_transactions=len(labelled),
+    )
     session.flush()
     return counts

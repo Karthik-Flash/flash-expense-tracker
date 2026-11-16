@@ -196,6 +196,7 @@ class Party:
     kind: str  # person or business
     income: bool = False  # an income source: pocket money, stipend, salary
     texts: tuple[str, ...] = ()
+    category: str | None = None  # the owner's default category for this party (a slug)
 
     def __post_init__(self) -> None:
         if self.kind not in PARTY_KINDS:
@@ -211,6 +212,7 @@ class OwnerData:
     roles: Mapping[int, str] = field(default_factory=dict)  # transaction id -> role decision
     # (kind, lower id, higher id) -> "same" or "different"
     links: Mapping[tuple[str, int, int], str] = field(default_factory=dict)
+    categories: Mapping[int, str] = field(default_factory=dict)  # transaction id -> slug
 
 
 @dataclass(frozen=True)

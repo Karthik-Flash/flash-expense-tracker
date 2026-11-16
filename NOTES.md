@@ -65,6 +65,10 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Phase 3C-7, 3C-8: `reconcile-review`, `owner-export`, `totals`;
       `reconcile-1.2.1` (D-072), duplicate primary (D-071)
 - [ ] The card bill pair rule, when credit card SMS appear
+- [x] Phase 3D: `categorise-1.0.0`, migration `0006`, `category-stats`,
+      `category-review`, labels (D-073, D-074); not pushed
+- [ ] Your `category-stats` run (safe to paste) and `category-review`
+      (private) on the real data, after the push
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -398,7 +402,7 @@ recursively). Every command prints counts only.
 
 ```powershell
 cd backend
-# 1. Migrate (Render also runs this on deploy; repeating is safe). Expect 0005 (head)
+# 1. Migrate (Render also runs this on deploy; repeating is safe). Expect 0006 (head)
 .\.venv\Scripts\python.exe -m alembic upgrade head; .\.venv\Scripts\python.exe -m alembic current
 # 2. Dry run: full pipeline inside one transaction, rolled back. Saves nothing
 .\.venv\Scripts\python.exe -m app.cli import-sms --input D:\FlashPrivate\raw --dry-run
@@ -485,6 +489,18 @@ cd backend
 .\.venv\Scripts\python.exe -m app.cli owner-load D:\FlashPrivate\private\owner-export.json
 ```
 
+```powershell
+# 8. Categories: counts and percentages only, safe to paste
+.\.venv\Scripts\python.exe -m app.cli category-stats
+# 9. PRIVATE, your screen only: give merchants a category (most transactions first)
+.\.venv\Scripts\python.exe -m app.cli category-review --uncategorised --list
+.\.venv\Scripts\python.exe -m app.cli category-review --uncategorised
+```
+
+- `category-review`: answer a number or slug from the list it prints; enter
+  skips, `none` clears a default, `quit` keeps earlier answers. A category
+  on a merchant covers its past and future payments. In the owner file a
+  party may also state `"category": "food_drinks"`.
 - Review answers: pairs `same`, `different`, `skip`; uncertain credits
   `payback`, `income`, `ignored`, `leave`; debits with no payee
   `self_transfer`, `ignored`, `leave`; `quit` keeps earlier answers.
@@ -554,6 +570,18 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-16: Phase 3D, categories and labels
+
+- `categorise-1.0.0`: every transaction has one category of the fixed list;
+  owner decision, party default, role and channel, brand, keyword, person,
+  else Uncategorised (D-073, D-074). Breakdown adds up to Spent.
+- Migration `0006`; `owner-load` takes a party category; export and restore
+  cover category decisions and labels.
+- `category-stats`, `category-review`, `totals` with the breakdown.
+- Redacted sample: 93 of 104 spend transactions Uncategorised (names there
+  are pseudonyms); 16 merchants cover half of them.
+- Tests: 648 backend, 3 skipped (Postgres only), 89 scripts. Not pushed.
 
 ### 2026-11-16: Phase 3C-7 and 3C-8, review, export, totals
 

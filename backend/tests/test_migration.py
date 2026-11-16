@@ -33,7 +33,10 @@ OWNER_TABLES = {
     "owner_roles",
 }
 DERIVED_TABLES = {"derive_runs", "txn_derived", "txn_links"}
-NEW_TABLES = PIPELINE_TABLES | OWNER_TABLES | DERIVED_TABLES  # every app table but heartbeat
+CATEGORY_TABLES = {"owner_categories", "labels", "txn_labels"}  # owner tables of 0006
+NEW_TABLES = (
+    PIPELINE_TABLES | OWNER_TABLES | DERIVED_TABLES | CATEGORY_TABLES
+)  # every app table but heartbeat
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 BACKEND = Path(__file__).resolve().parent.parent
 
@@ -79,7 +82,9 @@ def test_upgrade_check_downgrade_upgrade(url: str) -> None:
     assert NEW_TABLES | {"heartbeat"} <= tables(url)
     command.check(cfg)  # models and migrations agree
 
-    command.downgrade(cfg, "0004")  # one step at a time: each downgrade works alone
+    command.downgrade(cfg, "0005")  # one step at a time: each downgrade works alone
+    assert not CATEGORY_TABLES & tables(url) and tables(url) >= DERIVED_TABLES
+    command.downgrade(cfg, "0004")
     assert not DERIVED_TABLES & tables(url) and tables(url) >= OWNER_TABLES | PIPELINE_TABLES
     command.downgrade(cfg, "0003")
     assert not (OWNER_TABLES | DERIVED_TABLES) & tables(url) and tables(url) >= PIPELINE_TABLES
@@ -118,6 +123,9 @@ def test_up_and_down_on_a_database_holding_data(url: str, backup: Path) -> None:
     assert rows("parties") == 3 and rows("txn_derived") == len(before[1])
     assert rows("derive_runs") == 1 and old_data() == before
 
+    command.downgrade(cfg, "0005")  # category columns and tables go; the rows stay
+    assert rows("txn_derived") == len(before[1]) and rows("parties") == 3
+    assert not CATEGORY_TABLES & tables(url) and old_data() == before
     command.downgrade(cfg, "0004")  # derived data goes; owner data and Phase 2 data stay
     assert not DERIVED_TABLES & tables(url) and rows("parties") == 3 and old_data() == before
     command.downgrade(cfg, "0003")
