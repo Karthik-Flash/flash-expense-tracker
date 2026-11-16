@@ -431,3 +431,22 @@ label_view(txns, result.roles, categories, labelled_ids)  # (Totals, {slug: pais
 merchants by transaction count with their category, the owner picks one,
 which is saved on a party (source `terminal`), then one recompute.
 `totals --month` also prints Spent by category.
+
+## Paybacks, senders and inferred accounts (`reconcile-1.3.0`)
+
+- **Only confirmed paybacks lower Net** (D-076). `totals()` puts a payback
+  into Paid back only when its basis is `owner`; one the engine guessed goes
+  to `Totals.to_confirm_paise`. Net = Spent - Paid back.
+- **Senders** (`app/engine/credits.py`): `credit_senders(rows, salt)` groups
+  `CreditRow`s of role payback, uncertain or income by merchant key (a credit
+  with no key is its own sender), largest total first. A `Sender` has an
+  opaque id (`s_` + a hash of the key and a per-owner salt), display name,
+  total, count, dominant role, basis (owner when every credit is
+  owner-decided) and status (`to_confirm` while any credit is uncertain or an
+  engine-guessed payback). Answers live in `app/pipeline/owner_actions.py`.
+- **Inferred own accounts** (D-077): `inferred_accounts(txns)` is every
+  (bank, last 4) of a message on a bank account channel. The self-transfer
+  pair rule uses them next to the owner's list; such a pair is a candidate
+  unless an owner text names the account.
+- `reconcile-stats` adds "inferred own accounts" and "self-transfers by
+  basis". `credit-review [--list]`: owner only, terminal only.

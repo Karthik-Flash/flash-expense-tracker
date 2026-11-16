@@ -132,7 +132,7 @@ def test_every_role_and_every_rule_is_reached() -> None:
     assert {role for _, _, role, _, _ in CASES} | {"duplicate"} == set(ROLES)
     assert {rule for _, _, _, rule, _ in CASES} | by_link == set(RULES)
     assert len(ROLES) == 11 and set(COUNTED) | DEBIT_ONLY | CREDIT_ONLY <= set(ROLES)
-    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.2.1"
+    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.3.0"
 
 
 def test_unexplained_debit_is_spend_and_unexplained_credit_is_uncertain() -> None:
@@ -329,11 +329,16 @@ def test_i18_roles_respect_direction() -> None:
 def naive_totals(txns: list[Txn], derived: dict[int, Derived], start, end) -> tuple[int, ...]:
     inside = [t for t in txns if start <= t.txn_time_utc < end]
 
-    def of(role: str) -> int:
-        return sum(t.amount_paise for t in inside if derived[t.id].role == role)
+    def of(role: str, basis: str | None = None) -> int:
+        return sum(
+            t.amount_paise
+            for t in inside
+            if derived[t.id].role == role and basis in (None, derived[t.id].basis)
+        )
 
     spent = of("spend") + of("card_bill_counted") - of("refund")
-    return spent, of("payback"), spent - of("payback"), of("income")
+    confirmed = of("payback", "owner")
+    return spent, confirmed, spent - confirmed, of("income"), of("payback", "engine")
 
 
 @pytest.mark.parametrize("seed", [4, 5, 6])
@@ -347,9 +352,8 @@ def test_i16_totals_equal_the_sums_over_roles(seed: int) -> None:
     for start, end in ranges:
         t = totals(txns, derived, start, end)
         assert isinstance(t.spent_paise, int)
-        assert (t.spent_paise, t.paid_back_paise, t.net_paise, t.income_paise) == naive_totals(
-            txns, derived, start, end
-        )
+        got = (t.spent_paise, t.paid_back_paise, t.net_paise, t.income_paise, t.to_confirm_paise)
+        assert got == naive_totals(txns, derived, start, end)
     assert totals(txns, derived, T0, T0) == Totals()
     whole = totals(txns, derived, T0 - DAY, T0 + 400 * DAY)
     assert whole.spent_paise and whole.paid_back_paise and whole.income_paise
@@ -369,10 +373,13 @@ def test_totals_range_is_start_inclusive_end_exclusive_and_ist_months_work() -> 
     t = totals(txns, derive(txns).roles, *november)
     assert (t.spent_paise, t.paid_back_paise, t.net_paise, t.income_paise) == (
         15_000,
-        3_000,
-        12_000,
+        0,
+        15_000,
         0,
     )
+    assert t.to_confirm_paise == 3_000  # a payback the engine guessed lowers nothing
+    confirmed = totals(txns, derive(txns, OwnerData(roles={4: "payback"})).roles, *november)
+    assert (confirmed.paid_back_paise, confirmed.net_paise) == (3_000, 12_000)
 
 
 @pytest.mark.skipif(not SAMPLE.exists(), reason="redacted sample not present (CI)")

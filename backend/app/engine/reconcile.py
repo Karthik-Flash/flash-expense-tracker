@@ -55,7 +55,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from app.engine.merchant import MERCHANT_VERSION, Merchant, channel_for, normalise_merchant, parts
 
-RECONCILE_VERSION = "reconcile-1.2.1"
+RECONCILE_VERSION = "reconcile-1.3.0"
 VERSIONS = {"merchant": MERCHANT_VERSION, "reconcile": RECONCILE_VERSION}
 
 ROLES = (
@@ -143,6 +143,8 @@ TRACKED_WINDOW = timedelta(days=60)
 DUP_LINK_WINDOW = timedelta(minutes=10)
 DUP_CANDIDATE_WINDOW = timedelta(hours=24)
 TRANSFER_WINDOW = timedelta(hours=24)
+# Channels whose last 4 is a bank account (not a card): money can arrive there.
+ACCOUNT_CHANNELS = frozenset({"upi", "netbanking", "neft", "imps", "nach", "emi", "cash"})
 FD_WINDOW = timedelta(days=3)
 REFUND_WINDOW = timedelta(days=30)
 
@@ -252,8 +254,9 @@ class Result:
 @dataclass(frozen=True)
 class Totals:
     spent_paise: int = 0
-    paid_back_paise: int = 0
+    paid_back_paise: int = 0  # owner-confirmed paybacks only (D-076)
     income_paise: int = 0
+    to_confirm_paise: int = 0  # paybacks the engine guessed: shown, never subtracted
 
     @property
     def net_paise(self) -> int:
@@ -366,14 +369,20 @@ def ist_month(month: str) -> tuple[datetime, datetime]:
 def totals(
     txns: Iterable[Txn], roles: Mapping[int, Derived], start: datetime, end: datetime
 ) -> Totals:
-    """Spent, Paid back, Net and Income as sums over roles, for start <= txn_time_utc < end."""
-    sums = {"spent": 0, "paid_back": 0, "income": 0}
+    """Spent, Paid back, Net and Income as sums over roles, for start <= txn_time_utc < end.
+
+    Only an owner-confirmed payback lowers Net; one the engine guessed is To confirm.
+    """
+    sums = {"spent": 0, "paid_back": 0, "income": 0, "to_confirm": 0}
     for t in txns:
-        counted = COUNTED.get(roles[t.id].role)
+        d = roles[t.id]
+        counted = COUNTED.get(d.role)
         if counted and start <= t.txn_time_utc < end:
             total, sign = counted
+            if total == "paid_back" and d.basis != "owner":
+                total = "to_confirm"
             sums[total] += sign * t.amount_paise
-    return Totals(sums["spent"], sums["paid_back"], sums["income"])
+    return Totals(sums["spent"], sums["paid_back"], sums["income"], sums["to_confirm"])
 
 
 # --- owner data ---------------------------------------------------------------
@@ -644,14 +653,26 @@ def _duplicates(run: _Run, rows: list[Txn], legacy_pairs: Iterable[Pair]) -> Non
 def _transfers(
     run: _Run, rows: list[Txn], accounts: tuple[OwnAccount, ...], points_at: dict[int, int]
 ) -> None:
-    """Design B2 S2: the second leg of a transfer between two own accounts."""
+    """Design B2 S2: the second leg of a transfer between two own accounts.
+
+    Own accounts are the owner's list plus the inferred ones (D-077): every bank account
+    the messages themselves are about. Only a leg that names the other leg's account (owner
+    text) links; any other unique pair is a candidate.
+    """
     account_of = _account_index(accounts)
-    on: dict[int, int] = {}  # transaction -> the own account it is on
+    inferred = inferred_accounts(rows)
+    on: dict[int, tuple] = {}  # transaction -> the own account it is on
     for t in rows:
         position = account_of.get((t.bank, t.account_last4 or ""))
+        if position is not None:
+            account = ("owner", position)
+        elif (t.bank, t.account_last4) in inferred:
+            account = ("inferred", t.bank, t.account_last4)
+        else:
+            continue
         open_role = run.unexplained(t.id) or run.matches[t.id][0][1] == "ST_own_text"
-        if position is not None and open_role and t.id not in run.duplicate_of:
-            on[t.id] = position
+        if open_role and t.id not in run.duplicate_of:
+            on[t.id] = account
     legs = [t for t in rows if t.id in on]
     compatible: dict[Pair, tuple[str, str]] = {}
     for d, c in _close_pairs(
@@ -661,7 +682,10 @@ def _transfers(
         TRANSFER_WINDOW,
     ):
         if on[d.id] != on[c.id]:
-            named = points_at.get(d.id) == on[c.id] or points_at.get(c.id) == on[d.id]
+            named = ("owner", points_at.get(d.id)) == on[c.id] or (
+                "owner",
+                points_at.get(c.id),
+            ) == on[d.id]
             compatible[_pair(d, c)] = (
                 ("linked", "names_partner_account") if named else ("candidate", "no_own_text")
             )
@@ -672,6 +696,17 @@ def _transfers(
         for i in (link.txn_a, link.txn_b):
             if run.role(i) != "self_transfer":
                 run.put(i, ("self_transfer", rule, "owner"))
+
+
+def inferred_accounts(txns: Iterable[Txn]) -> frozenset[tuple[str, str]]:
+    """(bank, last 4) of every bank account a message is about: the owner's own (D-077).
+
+    A bank SMS reports a movement on the owner's account, so its last 4 is the owner's.
+    Card channels are left out: a card cannot receive a transfer.
+    """
+    return frozenset(
+        (t.bank, t.account_last4) for t in txns if t.account_last4 and t.channel in ACCOUNT_CHANNELS
+    )
 
 
 def _fd_pairs(run: _Run, rows: list[Txn]) -> None:

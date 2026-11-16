@@ -366,8 +366,13 @@ def test_debit_leg_with_no_payee_takes_the_role_from_the_credit_leg() -> None:
 def test_one_leg_case_is_unchanged() -> None:
     result = derive([out_of_hdfc()], OWNER)
     assert result.links == () and result.roles[1].rule == "ST_own_text"
-    no_accounts = derive([out_of_hdfc(), into_sbi()])  # nothing listed: no pair rule can run
-    assert no_accounts.links == () and roles(no_accounts) == {1: "spend", 2: "payback"}
+    # Nothing listed: both accounts are inferred from the messages (D-077), so the pair is
+    # found, but no text names an account: a candidate, and the roles stay.
+    no_accounts = derive([out_of_hdfc(), into_sbi()])
+    assert [(x.kind, x.status, x.reason) for x in no_accounts.links] == [
+        ("self_transfer", "candidate", "no_own_text")
+    ]
+    assert roles(no_accounts) == {1: "spend", 2: "payback"}
 
 
 @pytest.mark.parametrize(
@@ -384,7 +389,8 @@ def test_one_leg_case_is_unchanged() -> None:
         (out_of_hdfc(), into_sbi(at=T0 + 24 * HOUR + SEC), None),
         (out_of_hdfc(), into_sbi(amount_paise=9_999), None),
         (out_of_hdfc(), into_sbi(bank="HDFC", account_last4="0002"), None),  # the same account
-        (out_of_hdfc(), into_sbi(account_last4="0009"), None),  # not a listed account
+        (out_of_hdfc(), into_sbi(account_last4="0009"), ("candidate", "no_own_text")),  # inferred
+        (out_of_hdfc(), into_sbi(account_last4="0009", channel="debit_card"), None),  # a card
         (out_of_hdfc(), into_sbi(party="test.parent@okaxis"), None),  # an owner party: explained
         (out_of_hdfc(), into_sbi(channel="fd"), None),  # an FD credit is explained
         (out_of_hdfc(), replace(into_sbi(), direction="debit", type="debit"), None),

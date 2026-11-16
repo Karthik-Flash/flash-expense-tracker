@@ -321,3 +321,11 @@ Additive. RLS on the three new tables.
 | I25 | Recompute twice changes nothing | `test_i25_*` |
 | I26 | Corrections survive reparse | `test_i26_*` |
 | I27 | A transaction imported after a merchant correction gets that category | `test_i27_*` |
+
+## Login and the API (D-078)
+
+No migration. Settings: `SUPABASE_URL`, `AUTH_USERS` (`"<sub>:<owner_id>"`,
+comma-separated). API writes are owner rows with source `app`
+(`app/pipeline/owner_actions.py`), committed in one transaction with their
+recompute. `recompute()` takes `owner_lock()`: a per-owner lock in the
+process, and `pg_advisory_xact_lock` on Postgres. Routes: `docs/api.md`.

@@ -364,8 +364,9 @@ def test_totals_for_an_ist_month(decided: dict, run, terminal, db_engine: Engine
         )
         for basis in ("owner", "engine")
     }
-    assert money(out, "owner-confirmed") == format_inr(paid["owner"])
-    assert money(out, "engine-guessed") == format_inr(paid["engine"])
+    assert money(out, "Paid back") == format_inr(paid["owner"])  # confirmed only
+    assert money(out, "To confirm") == format_inr(paid["engine"])
+    assert expected.to_confirm_paise == paid["engine"]
     by_role = dict(re.findall(r"^  (\w+)\s+(\d+)$", out.split("transactions by role")[1], re.M))
     assert sum(map(int, by_role.values())) == len(p.txns) and by_role["ignored"] == "1"
     empty = run("totals", "--month", "2026-02")

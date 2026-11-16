@@ -611,6 +611,9 @@ answers recorded in D-060 to D-067.
   no role evidence; their role is `uncertain` (the design draft called it
   `unknown`). D-055's "goes to the unknown queue" means an uncertain credit.
 
+The Q1 part (an engine-guessed payback lowers Net) is superseded by D-076
+(16 Nov 2026).
+
 ## D-062 Duplicates are linked, never merged (2026-11-15)
 
 Supersedes the "merged" wording in D-032 and D-047, and D-047's plan to
@@ -675,6 +678,8 @@ D-058 ("a migration plan for stored keys and corrections").
   out, decisions included. Both are built in 3C: the free Supabase plan has
   no backups, so the export is the backup.
 - Owner data never appears in git, fixtures or logs.
+
+The owner file is a developer tool, not a product path: D-075.
 
 ## D-066 The owner runs recompute (2026-11-15)
 
@@ -789,3 +794,53 @@ Builds on D-056. `app/engine/categorise.py`, version `categorise-1.0.0`.
 - **Owner file.** A party may state `category`. A category the file does not
   state is left as it is, so a correction made in `category-review` on a
   file party survives the next load (refines D-070).
+
+## D-075 No feature needs the owner file (2026-11-16)
+
+The product works with zero owner data. Every owner input has an app path
+through the API (`docs/api.md`): own accounts are inferred from the messages
+(D-077), unknown senders are "to confirm" (D-076), unknown merchants are
+Uncategorised (D-073). The owner JSON file stays as a developer import and
+backup tool (`owner-load`, `owner-export`).
+
+## D-076 Only confirmed paybacks lower Net (2026-11-16)
+
+Supersedes the Q1 part of D-061. A payback the engine guessed (basis
+engine) keeps role `payback` but counts in neither Paid back nor Net; it is
+shown as "To confirm" (amount and number of senders). Net = Spent - Paid
+back, where Paid back holds only owner-confirmed paybacks (a person party,
+or an owner decision). One shared function (`app/engine/credits.py`) lists
+the senders of paybacks, uncertain credits and income by merchant key, with
+a stable opaque id. Answers: friend (a person party), income with a label
+(an income party), ignore (role `ignored` on those credits), saved with the
+caller's source, then one recompute.
+
+## D-077 Own accounts inferred from the messages (2026-11-16)
+
+`reconcile-1.3.0`. Every (bank, last 4) that a parsed message on a bank
+account channel (UPI, NetBanking, NEFT, IMPS, NACH, EMI, cash) is about is an
+inferred own account: a bank SMS reports a movement on the owner's account.
+Card channels are left out: a card cannot receive a transfer. The
+self-transfer pair rule (B2 S2) uses inferred accounts next to the owner's
+list, under the unique-pair rule. The parser exposes no counterparty account
+number on any transfer (H06 and H16 name no payee at all; UPI, NetBanking and
+IMPS name a payee or UPI ID; NEFT and IMPS credits name none), so an
+inferred pair links only when an owner text names the account; otherwise it
+is a candidate (`no_own_text`). Nothing is guessed from amounts alone.
+
+## D-078 Login and the data API (2026-11-16)
+
+- Supabase Auth access tokens, ES256 only, verified with PyJWT against the
+  project's JWKS (cached; fetched again at most once a minute for an unknown
+  key id): signature, `exp`, issuer `<SUPABASE_URL>/auth/v1`, audience
+  `authenticated`. Missing or bad token: 401; a user not in `AUTH_USERS`:
+  403; `SUPABASE_URL` or `AUTH_USERS` unset: 503 on every data route.
+- `AUTH_USERS` maps auth user ids to owner ids (`"<sub>:<owner_id>"`,
+  comma-separated). Today one entry maps the owner's auth user to the
+  existing `OWNER_ID`; stored `owner_id` values do not change.
+- Every query and recompute is scoped to the token's owner. Recompute takes
+  a per-owner lock (a lock in the process, and a Postgres advisory lock).
+- Routes under `/api/v1` (`docs/api.md`). Writes use source `app`, are
+  idempotent, and commit together with their recompute.
+- CORS: the Vercel origin and localhost dev origins only.
+- New packages: `PyJWT[crypto]==2.15.1`, `cryptography==50.0.2` (PyCA).
