@@ -66,6 +66,16 @@ Phase 1 is parsing, Phase 2 is the database and import.
   (D-072): a mandate ID and a payment reference are different kinds.
   Duplicate primary confirmed (D-071).
 
+## Phase 3E: login and API (16 Nov 2026, in progress, tag `phase-3e-done` when done)
+
+- Login: Supabase Auth ES256 tokens checked against the project's JWKS;
+  `AUTH_USERS` maps users to owners (D-078). PyJWT 2.15.1, cryptography 50.0.2.
+- Data API under `/api/v1` (`docs/api.md`): summary, transactions, categories,
+  labels, senders; corrections with source `app`, each with one recompute.
+- `reconcile-1.3.0`: only owner-confirmed paybacks lower Net, the rest is To
+  confirm (D-076); own accounts inferred from the messages (D-077).
+- `credit-review` (owner only). No feature needs the owner file (D-075).
+
 ## Phase 3D: categorise (16 Nov 2026, in progress, tag `phase-3d-done` when done)
 
 - Pure engine `categorise-1.0.0` (D-073, D-074): one category per

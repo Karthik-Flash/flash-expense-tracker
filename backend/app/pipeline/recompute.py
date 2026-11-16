@@ -17,13 +17,16 @@ round trips.
 A link is identified by its kind and its two transactions; its id changes when it does.
 """
 
+import threading
 import time
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, select, text
 from sqlalchemy.orm import Session
 
 from app.engine import reconcile
@@ -48,6 +51,8 @@ from app.models import (
 # The engine versions a run is made with; a run records them (derive_runs.versions).
 VERSIONS = reconcile.VERSIONS | {"categorise": CATEGORISE_VERSION}
 CHUNK = 5000  # ids per DELETE ... IN (...)
+_LOCKS: defaultdict[uuid.UUID, threading.RLock] = defaultdict(threading.RLock)
+_GUARD = threading.Lock()
 ROWS = 1000  # rows per INSERT ... VALUES (...), (...): one statement, one round trip
 
 Changes = tuple[list[dict], list[dict], list[int]]  # rows to insert, rows to update, ids to delete
@@ -280,6 +285,41 @@ def plan(session: Session, owner_id: uuid.UUID) -> Plan:
     )
 
 
+@contextmanager
+def owner_lock(session: Session, owner_id: uuid.UUID) -> Iterator[None]:
+    """One writer per owner: a lock in this process, and on Postgres an advisory lock
+    held until the session's transaction ends, so two processes queue as well.
+    """
+    with _GUARD:
+        lock = _LOCKS[owner_id]
+    with lock:
+        if session.get_bind().dialect.name == "postgresql":
+            key = int.from_bytes(owner_id.bytes[:8], "big", signed=True)
+            session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
+        yield
+
+
+def last_run_time(session: Session, owner_id: uuid.UUID) -> datetime | None:
+    """When the last done recompute for this owner finished."""
+    return session.scalar(
+        select(DeriveRun.finished_at)
+        .where(DeriveRun.owner_id == owner_id, DeriveRun.status == "done")
+        .order_by(DeriveRun.id.desc())
+        .limit(1)
+    )
+
+
+def stale_reason(p: Plan) -> str | None:
+    """Why the stored rows do not match a fresh derive, or None."""
+    if p.last_run_id is None:
+        return "no recompute has run yet"
+    if p.last_versions != VERSIONS:
+        return "the stored rows were made by another engine version"
+    if p.changes:
+        return f"{p.changes} stored row(s) differ from the current data"
+    return None
+
+
 def recompute(
     session: Session,
     owner_id: uuid.UUID,
@@ -293,6 +333,13 @@ def recompute(
     Stops without writing when the merchant engine changed since the stored run and a
     transaction would lose or change its owner match, unless accept_key_changes.
     """
+    with owner_lock(session, owner_id):
+        return _recompute(session, owner_id, trigger, dry_run, accept_key_changes)
+
+
+def _recompute(
+    session: Session, owner_id: uuid.UUID, trigger: str, dry_run: bool, accept_key_changes: bool
+) -> Outcome:
     started, clock = datetime.now(UTC), time.monotonic()
     try:
         p = plan(session, owner_id)
@@ -305,7 +352,9 @@ def recompute(
         else:
             status = "done"
         if status != "done":
-            session.rollback()
+            # Nothing derived to write. An owner answer written in this session still
+            # commits (it may change nothing derived); a dry run or a stop writes nothing.
+            session.commit() if status == "unchanged" else session.rollback()
             return Outcome(status, p, None, time.monotonic() - clock)
 
         for model, key, (inserts, updates, deletes) in (

@@ -65,6 +65,9 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Phase 3C-7, 3C-8: `reconcile-review`, `owner-export`, `totals`;
       `reconcile-1.2.1` (D-072), duplicate primary (D-071)
 - [ ] The card bill pair rule, when credit card SMS appear
+- [x] Phase 3E: login, `/api/v1`, confirmed-only paybacks, inferred own
+      accounts (D-075 to D-078); not pushed
+- [ ] Render: add `SUPABASE_URL` and `AUTH_USERS`, then the smoke test
 - [x] Phase 3D: `categorise-1.0.0`, migration `0006`, `category-stats`,
       `category-review`, labels (D-073, D-074); not pushed
 - [ ] Your `category-stats` run (safe to paste) and `category-review`
@@ -461,6 +464,9 @@ two credits on the bank statement: two events.
 
 ### Owner data and recompute (you run these; counts and field paths only)
 
+The owner file is a **developer tool** (D-075): import and backup. Nothing
+in the product needs it; the app answers through the API.
+
 Your owner file lives at `D:\FlashPrivate\private\owner.json`. Copy the
 shape of `docs\owner.example.json`; the keys are explained in
 [docs/data-model.md](docs/data-model.md), "Owner file". Never paste the file.
@@ -497,6 +503,8 @@ cd backend
 .\.venv\Scripts\python.exe -m app.cli category-review --uncategorised
 ```
 
+- `credit-review` (PRIVATE): `friend`, `income <label>`, `ignore`, or enter
+  to skip, for each sender to confirm. Only confirmed paybacks lower Net.
 - `category-review`: answer a number or slug from the list it prints; enter
   skips, `none` clears a default, `quit` keeps earlier answers. A category
   on a merchant covers its past and future payments. In the owner file a
@@ -570,6 +578,15 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-16: Phase 3E, login and API
+
+- `reconcile-1.3.0`: confirmed-only paybacks (D-076), inferred own accounts
+  (D-077). `credit-review`. Owner file is a developer tool (D-075).
+- Login (Supabase ES256 JWT, `AUTH_USERS`) and `/api/v1` (D-078,
+  `docs/api.md`). PyJWT 2.15.1 and cryptography 50.0.2 pinned.
+- Tests: 679 backend locally (3 Postgres-only skipped), 682 on Postgres 17
+  in Docker, 89 scripts. Not pushed.
 
 ### 2026-11-16: Phase 3D, categories and labels
 

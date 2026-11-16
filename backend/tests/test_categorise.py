@@ -297,7 +297,8 @@ def test_label_view_across_all_dates() -> None:
     result = derive(txns)
     categories = categorise(txns, OwnerData(), result)
     trip, parts = label_view(txns, result.roles, categories, [1, 2, 3, 5, 99])
-    assert (trip.spent_paise, trip.paid_back_paise, trip.net_paise) == (220_000, 50_000, 170_000)
+    assert (trip.spent_paise, trip.paid_back_paise, trip.net_paise) == (220_000, 0, 220_000)
+    assert trip.to_confirm_paise == 50_000  # the engine guessed the payback (D-076)
     assert parts == {"food_drinks": 20_000, "travel": 200_000}  # sums to Spent; payback is apart
     assert sum(parts.values()) == trip.spent_paise
     assert categorise(txns, OwnerData(), result) == categories  # a label changes no category

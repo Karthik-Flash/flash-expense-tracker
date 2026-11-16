@@ -13,6 +13,7 @@
   totals --month YYYY-MM
   category-stats
   category-review [--uncategorised] [--list]
+  credit-review [--list]
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
@@ -48,6 +49,7 @@ from app.engine.reconcile import (
     ROLES,
     Result,
     Txn,
+    inferred_accounts,
     ist_month,
 )
 from app.importers.sms_backup import import_sms
@@ -71,6 +73,7 @@ from app.models import (
     TxnLabel,
     TxnLink,
 )
+from app.pipeline.owner_actions import ActionError, answer_sender, senders
 from app.pipeline.owner_load import (
     OwnerFileError,
     export_owner,
@@ -87,6 +90,7 @@ from app.pipeline.recompute import (
     plan,
     recompute,
     run_counts,
+    stale_reason,
 )
 from app.pipeline.reparse import reparse
 from app.pipeline.store import Counts, parser_versions
@@ -414,7 +418,7 @@ def legacy_counts(legacy: set[tuple[int, int]], txns: list[Txn], owner, result: 
 
 NO_INCOME_PARTY = (
     "warning: owner data lists no income party; "
-    "pocket money or a salary from a person counts as a payback"
+    "credits from people stay To confirm until you answer them (credit-review)"
 )
 
 
@@ -546,6 +550,11 @@ def cmd_reconcile_stats(session: Session, args: argparse.Namespace) -> int:
     line("income sources", sum(party.income for party in owner.parties), 2)
     line("role decisions", len(owner.roles), 2)
     line("link decisions", len(owner.links), 2)
+    line("inferred own accounts", len(inferred_accounts(txns)))
+    print("self-transfers by basis")
+    for basis in ("engine", "owner"):
+        n = sum(d.role == "self_transfer" and d.basis == basis for d in derived.values())
+        line(basis, n, 2)
     stored_run_lines(p)
     if not any(party.income for party in owner.parties):
         print(NO_INCOME_PARTY)
@@ -655,16 +664,6 @@ def refuse_without_terminal(command: str) -> int | None:
     return 2
 
 
-def stale_reason(p: Plan) -> str | None:
-    if p.last_run_id is None:
-        return "no recompute has run yet"
-    if p.last_versions != VERSIONS:
-        return "the stored rows were made by another engine version"
-    if p.changes:
-        return f"{p.changes} stored row(s) differ from the current data"
-    return None
-
-
 def txn_line(t: Txn) -> str:
     when = t.txn_time_utc.astimezone(IST).strftime("%Y-%m-%d %H:%M")
     return (
@@ -739,9 +738,10 @@ def cmd_reconcile_review(session: Session, args: argparse.Namespace) -> int:
     return code
 
 
-def _answer(prompt: str) -> str:
+def _answer(prompt: str, keep_case: bool = False) -> str:
     try:
-        return ask(prompt).strip().casefold() or "skip_or_leave"
+        answer = ask(prompt).strip()
+        return (answer if keep_case else answer.casefold()) or "skip_or_leave"
     except EOFError:
         return "quit"
 
@@ -817,8 +817,9 @@ def cmd_totals(session: Session, args: argparse.Namespace) -> int:
         if role in COUNTED:
             total, sign = COUNTED[role]
             sums[total] += sign * amount
-        if role == "payback":
-            sums[f"paid_back_{basis}"] += amount
+        if role == "payback" and basis != "owner":  # D-076: shown, never subtracted
+            sums["paid_back"] -= amount
+            sums["to_confirm"] += amount
     print(PRIVATE)
     print(
         f"totals {args.month} (IST), stored run #{p.last_run_id} ({', '.join(VERSIONS.values())})"
@@ -826,8 +827,7 @@ def cmd_totals(session: Session, args: argparse.Namespace) -> int:
     for label, value, indent in (
         ("Spent", sums["spent"], 0),
         ("Paid back", sums["paid_back"], 0),
-        ("owner-confirmed", sums["paid_back_owner"], 2),
-        ("engine-guessed", sums["paid_back_engine"], 2),
+        ("To confirm", sums["to_confirm"], 0),
         ("Net", sums["spent"] - sums["paid_back"], 0),
         ("Income", sums["income"], 0),
     ):
@@ -1011,6 +1011,61 @@ def _save_categories(session: Session, answers: list[tuple[dict, str | None]]) -
     return run_recompute(session, "owner")
 
 
+def cmd_credit_review(session: Session, args: argparse.Namespace) -> int:
+    """Owner only: confirm who sent credits. friend, income <label> or ignore; one recompute."""
+    if (refused := refuse_without_terminal("credit-review")) is not None:
+        return refused
+    if not args.list and not can_ask():
+        print("credit-review asks questions: run it in a console window.", file=sys.stderr)
+        return 2
+    open_senders = [s for s in senders(session, settings.owner_id) if s.status == "to_confirm"]
+    print(PRIVATE)
+    answers = []
+    for n, s in enumerate(open_senders, 1):
+        last = s.last_time_utc.astimezone(IST).strftime("%Y-%m-%d")
+        print(
+            f"[{n}/{len(open_senders)}] {s.count:>4} credits  {format_inr(s.total_paise):>16}  "
+            f"last {last}  {s.role} ({s.basis})  {s.display_name or '-'}"
+        )
+        if args.list:
+            continue
+        while True:
+            answer = _answer("friend, income <label>, ignore, or enter to skip (quit)? ", True)
+            word, _, label = answer.partition(" ")
+            word = word.casefold()
+            answer = word if word in ("quit", "friend", "ignore") else answer
+            if answer in ("quit", "skip_or_leave", "friend", "ignore") or (
+                word == "income" and label
+            ):
+                break
+            print("  answer friend, income <label>, ignore, or quit")
+        if answer == "quit":
+            break
+        if answer != "skip_or_leave":
+            answers.append((s.id, word, label.strip() or None))
+    print(
+        f"{len(open_senders)} sender(s) to confirm"
+        if args.list
+        else f"answered: {len(answers)} sender(s)"
+    )
+    code = 0
+    if answers:
+        try:
+            for sender, word, label in answers:
+                answer_sender(session, settings.owner_id, sender, word, label, "terminal")
+            plan(session, settings.owner_id)
+        except (ActionError, OwnerDataError) as exc:
+            session.rollback()
+            print(f"not saved: {exc}. Run the review again.", file=sys.stderr)
+            code = 1
+        else:
+            session.commit()
+            print(f"saved: {len(answers)} answer(s)")
+            code = run_recompute(session, "owner")
+    print(PRIVATE)
+    return code
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1049,6 +1104,8 @@ def build_parser() -> argparse.ArgumentParser:
     cat = sub.add_parser("category-review", help="owner only: a category per merchant")
     cat.add_argument("--uncategorised", action="store_true", help="only uncategorised merchants")
     cat.add_argument("--list", action="store_true", help="show the merchants, ask nothing")
+    cr = sub.add_parser("credit-review", help="owner only: confirm who sent credits")
+    cr.add_argument("--list", action="store_true", help="show the senders, ask nothing")
     return parser
 
 
@@ -1066,6 +1123,7 @@ COMMANDS = {
     "totals": cmd_totals,
     "category-stats": cmd_category_stats,
     "category-review": cmd_category_review,
+    "credit-review": cmd_credit_review,
 }
 
 

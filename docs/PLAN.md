@@ -102,9 +102,12 @@ data run by the owner, and a tag (`phase-3a-done` ... `phase-3f-done`).
   Built 16 Nov 2026 (`categorise-1.0.0`, migration `0006`, D-073, D-074):
   fixed list of 20, party defaults, per-transaction decisions, labels
   (tables and a pure label view), `category-stats`, `category-review`.
-- 3E Auth and read-only API: Supabase Auth, single user, sign-ups off; JWT
-  verified in FastAPI; no data endpoint without auth. The Data API stays
-  keepalive-only (D-053).
+- 3E Auth and API: Supabase Auth, single user, sign-ups off; JWT verified in
+  FastAPI; no data endpoint without auth. The Data API stays keepalive-only
+  (D-053). Also: no feature needs the owner file (D-075); own accounts
+  inferred from the messages (D-077); only confirmed paybacks lower Net and
+  senders are confirmed in the app (D-076); category and label corrections
+  through the API. Built 16 Nov 2026 (`docs/api.md`, D-078).
 - 3F Minimal dashboard: month net spend (with spent and paid back), category
   breakdown, transaction list with category correction, label view (D-056),
   and a count of unknown and not-yet-counted items.

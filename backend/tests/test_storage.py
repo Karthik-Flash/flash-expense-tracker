@@ -284,7 +284,7 @@ def test_i15_a_duplicate_group_counts_once(loaded: str, db_engine: Engine) -> No
 
 
 def rows_as_roles(rows: dict[int, TxnDerived]) -> dict[int, SimpleNamespace]:
-    return {i: SimpleNamespace(role=d.role) for i, d in rows.items()}
+    return {i: SimpleNamespace(role=d.role, basis=d.role_basis) for i, d in rows.items()}
 
 
 def test_i16_totals_from_stored_roles_equal_a_fresh_derive(
@@ -590,7 +590,7 @@ def test_recompute_uses_a_fixed_number_of_statements(loaded: str, run, db_engine
         return list(statements)
 
     quiet = run_counted()  # nothing to change: reads only
-    assert not {"INSERT", "UPDATE", "DELETE"} & set(quiet) and len(quiet) <= 13
+    assert not {"INSERT", "UPDATE", "DELETE"} & set(quiet) and len(quiet) <= 14
     with sessionmaker(db_engine)() as s:  # every kind of change at once
         ids = list(s.scalars(select(TxnDerived.transaction_id).order_by(TxnDerived.transaction_id)))
         s.execute(delete(TxnDerived).where(TxnDerived.transaction_id.in_(ids[:10])))
@@ -604,6 +604,7 @@ def test_recompute_uses_a_fixed_number_of_statements(loaded: str, run, db_engine
         s.commit()
     busy = run_counted()
     writes = [s for s in busy if s in ("INSERT", "UPDATE", "DELETE")]
-    assert len(busy) == 17 and sorted(writes) == ["DELETE", "DELETE"] + ["INSERT"] * 3, " ".join(
-        busy
+    lock = db_engine.dialect.name == "postgresql"  # the advisory lock is one more statement
+    assert len(busy) == 17 + lock and sorted(writes) == ["DELETE", "DELETE"] + ["INSERT"] * 3, (
+        " ".join(busy)
     )
