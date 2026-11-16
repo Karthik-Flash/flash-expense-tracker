@@ -1,115 +1,146 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
-const API_URL = import.meta.env.VITE_API_URL?.replace(/\/+$/, '')
-const RETRY_MS = 5_000
-// ~2 minutes of retries: enough for a Render free-tier cold start.
-const MAX_ATTEMPTS = 24
+import { api, demoApi } from './api/index.ts'
+import { DEMO_STATES, type DemoState } from './api/fake.ts'
+import { currentMonth } from './lib/dates.ts'
+import { AppContext, go, useApp, useLoad, useRoute, type AppState } from './state.tsx'
+import { CategoryDetail, Home } from './screens/Home.tsx'
+import { LabelDetail, Labels } from './screens/Labels.tsx'
+import { Login } from './screens/Login.tsx'
+import { TodoScreen } from './screens/Todo.tsx'
+import { loadTodo } from './screens/todo-data.ts'
+import { Transactions } from './screens/Transactions.tsx'
 
-type Status =
-  | { kind: 'checking'; attempt: number }
-  | { kind: 'online'; version: string }
-  | { kind: 'offline' }
+const SIGNED_IN = 'flash-demo-signed-in'
+const TABS = [
+  ['home', 'Home'],
+  ['transactions', 'Transactions'],
+  ['todo', 'To-do'],
+  ['labels', 'Labels'],
+] as const
+
+function signedIn(): boolean {
+  try {
+    return sessionStorage.getItem(SIGNED_IN) === '1'
+  } catch {
+    return false
+  }
+}
 
 export default function App() {
-  const [status, setStatus] = useState<Status>({ kind: 'checking', attempt: 1 })
-  const [run, setRun] = useState(0)
-
-  useEffect(() => {
-    if (!API_URL) return
-    let cancelled = false
-    let timer: number | undefined
-
-    const check = async (attempt: number) => {
-      try {
-        const res = await fetch(`${API_URL}/health`, { signal: AbortSignal.timeout(10_000) })
-        const body: unknown = res.ok ? await res.json() : null
-        if (!isHealth(body)) throw new Error('unexpected /health response')
-        if (!cancelled) setStatus({ kind: 'online', version: body.version })
-      } catch {
-        if (cancelled) return
-        if (attempt >= MAX_ATTEMPTS) {
-          setStatus({ kind: 'offline' })
-          return
-        }
-        timer = window.setTimeout(() => {
-          setStatus({ kind: 'checking', attempt: attempt + 1 })
-          void check(attempt + 1)
-        }, RETRY_MS)
-      }
-    }
-
-    void check(1)
-    return () => {
-      cancelled = true
-      window.clearTimeout(timer)
-    }
-  }, [run])
-
-  const retry = () => {
-    setStatus({ kind: 'checking', attempt: 1 })
-    setRun((n) => n + 1)
+  const [ready, setReady] = useState(signedIn)
+  const [month, setMonth] = useState(() => currentMonth())
+  const [version, setVersion] = useState(0)
+  const changed = useCallback(() => setVersion((v) => v + 1), [])
+  const state: AppState = useMemo(
+    () => ({ api, month, setMonth, version, changed, go }),
+    [month, version, changed],
+  )
+  if (!ready) {
+    return (
+      <>
+        {api.demo && <DemoBanner onState={changed} />}
+        <Login
+          demo={api.demo}
+          onDone={() => {
+            try {
+              sessionStorage.setItem(SIGNED_IN, '1')
+            } catch {
+              // Private mode: stay signed in for this page only.
+            }
+            setReady(true)
+          }}
+        />
+      </>
+    )
   }
-
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-slate-950 p-6 text-slate-100">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-lg">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          <span aria-hidden="true" className="text-yellow-400">
-            ⚡
-          </span>{' '}
-          Flash
-        </h1>
-        <p className="mt-1 text-sm text-slate-400">Personal expense tracker</p>
-
-        <div role="status" aria-live="polite" className="mt-6 text-sm">
-          {!API_URL ? (
-            <p className="text-amber-300">
-              VITE_API_URL is not set. Copy <code>frontend/.env.example</code> to{' '}
-              <code>frontend/.env</code>.
-            </p>
-          ) : status.kind === 'online' ? (
-            <p className="flex items-center gap-2">
-              <Dot className="bg-emerald-400" /> Backend online · v{status.version}
-            </p>
-          ) : status.kind === 'offline' ? (
-            <div className="flex items-center justify-between gap-4">
-              <p className="flex items-center gap-2">
-                <Dot className="bg-rose-500" /> Server unreachable
-              </p>
-              <button
-                type="button"
-                onClick={retry}
-                className="rounded-lg bg-slate-800 px-3 py-1.5 font-medium hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-yellow-400"
-              >
-                Retry
-              </button>
-            </div>
-          ) : status.attempt === 1 ? (
-            <p className="flex items-center gap-2">
-              <Dot className="animate-pulse bg-slate-400" /> Connecting to server…
-            </p>
-          ) : (
-            <p className="flex items-center gap-2">
-              <Dot className="animate-pulse bg-amber-400" />
-              Server is waking up, this can take a minute (attempt {status.attempt}/
-              {MAX_ATTEMPTS})
-            </p>
-          )}
-        </div>
-      </div>
-    </main>
+    <AppContext.Provider value={state}>
+      {api.demo && <DemoBanner onState={changed} />}
+      <Shell />
+    </AppContext.Provider>
   )
 }
 
-function Dot({ className }: { className: string }) {
-  return <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-full ${className}`} />
+function Shell() {
+  const route = useRoute()
+  const [tab = 'home', ...rest] = route
+  return (
+    <div className="mx-auto min-h-dvh max-w-[480px] pb-24">
+      <main>
+        <Screen tab={tab} rest={rest} />
+      </main>
+      <Nav tab={tab} />
+    </div>
+  )
 }
 
-function isHealth(body: unknown): body is { status: 'ok'; version: string } {
+function Screen({ tab, rest }: { tab: string; rest: string[] }) {
+  if (tab === 'home' && rest[0] === 'category' && rest[1]) return <CategoryDetail slug={rest[1]} name={rest[2]} />
+  if (tab === 'transactions') return <Transactions />
+  if (tab === 'todo') return <TodoScreen />
+  if (tab === 'labels' && rest[0]) return <LabelDetail id={Number(rest[0])} />
+  if (tab === 'labels') return <Labels />
+  return <Home />
+}
+
+function Nav({ tab }: { tab: string }) {
   return (
-    typeof body === 'object' &&
-    body !== null &&
-    (body as { status?: unknown }).status === 'ok' &&
-    typeof (body as { version?: unknown }).version === 'string'
+    <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]" aria-label="Main">
+      <ul className="mx-auto grid max-w-[480px] grid-cols-4">
+        {TABS.map(([key, name]) => (
+          <li key={key}>
+            <a
+              href={`#/${key}`}
+              aria-current={tab === key ? 'page' : undefined}
+              className={`flex min-h-14 items-center justify-center gap-1 text-sm ${tab === key ? 'font-semibold text-accent' : 'text-muted'}`}
+            >
+              {name}
+              {key === 'todo' && <TodoCount />}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+function TodoCount() {
+  const { api: client } = useApp()
+  const [load] = useLoad(() => loadTodo(client), ['todo'])
+  if (load.status !== 'ready') return null
+  const n = load.data.senders.length + load.data.merchants.length
+  if (!n) return null
+  return (
+    <span className="min-w-5 rounded-full border border-line px-1.5 text-xs font-medium tabular-nums text-ink" aria-label={`${n} to do`}>
+      {n}
+    </span>
+  )
+}
+
+/** "Demo data" on every screen, and the dev-only switch between demo states. */
+function DemoBanner({ onState }: { onState: () => void }) {
+  const [current, setCurrent] = useState<DemoState>(demoApi.state)
+  return (
+    <div className="sticky top-0 z-10 border-b border-line bg-banner">
+      <div className="mx-auto flex min-h-10 max-w-[480px] items-center justify-between gap-2 px-4 text-xs">
+        <span className="font-medium">Demo data. Not your real numbers.</span>
+        <label className="flex items-center gap-1 text-muted">
+          State
+          <select
+            value={current}
+            onChange={(e) => {
+              const next = e.target.value as DemoState
+              demoApi.setState(next)
+              setCurrent(next)
+              onState()
+            }}
+            className="min-h-9 rounded border border-line bg-surface px-1 text-xs text-ink"
+          >
+            {DEMO_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+      </div>
+    </div>
   )
 }

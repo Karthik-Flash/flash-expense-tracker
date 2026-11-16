@@ -68,6 +68,9 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Phase 3E: login, `/api/v1`, confirmed-only paybacks, inferred own
       accounts (D-075 to D-078); not pushed
 - [ ] Render: add `SUPABASE_URL` and `AUTH_USERS`, then the smoke test
+- [x] Phase 3F-1: every screen on demo data ([docs/ui-spec.md](docs/ui-spec.md)); not pushed
+- [ ] Your look at the demo on your phone (cheat sheet, "Frontend demo on your
+      phone"), then approve or list changes
 - [x] Phase 3D: `categorise-1.0.0`, migration `0006`, `category-stats`,
       `category-review`, labels (D-073, D-074); not pushed
 - [ ] Your `category-stats` run (safe to paste) and `category-review`
@@ -519,6 +522,18 @@ cd backend
 - In `reconcile-stats`, "stored rows that differ" must be 0 after a
   recompute.
 
+### Frontend demo on your phone (same Wi-Fi as the PC)
+
+```powershell
+cd D:\Projects\FinancesApp\frontend
+npm ci
+npm run dev -- --host
+# Vite prints a Network address such as http://192.168.1.23:5173/ : open it on the phone.
+```
+
+Allow Node through Windows Firewall on private networks when asked. Stop with
+Ctrl+C. Demo data only: nothing reaches the API.
+
 ### Template survey (reads only the redacted sample)
 
 ```powershell
@@ -578,6 +593,15 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-17: Phase 3F-1, screens on demo data
+
+- UI spec recorded (docs/ui-spec.md): calm statement look, one teal accent
+  (#0e6862 light, #6bb7af dark), system font, tabular figures.
+- Screens: login, Home, category detail, Transactions with detail sheet, To-do,
+  Labels; demo banner and state switch. Fake adapter behind the `Api` interface.
+- Frontend: lint clean, 12 tests (node --test), typecheck and build pass; CI
+  frontend job now also runs lint and tests. Not pushed.
 
 ### 2026-11-16: Phase 3E, login and API
 

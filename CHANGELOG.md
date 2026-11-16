@@ -66,6 +66,16 @@ Phase 1 is parsing, Phase 2 is the database and import.
   (D-072): a mandate ID and a payment reference are different kinds.
   Duplicate primary confirmed (D-071).
 
+## Phase 3F: screens (17 Nov 2026, in progress, tag `phase-3f-done` when done)
+
+- 3F-1: every screen on demo data ([docs/ui-spec.md](docs/ui-spec.md)): login, Home
+  (Net, Spent, Paid back, To confirm, Spent by category), category detail,
+  Transactions with a detail sheet and corrections, To-do (senders, uncategorised
+  merchants), Labels. A demo adapter behind one `Api` interface returns the shapes
+  of docs/api.md; a banner and a state switch (waking, empty, error, stale).
+- Money and IST date helpers tested with Node's built-in test runner (no new
+  package); the frontend CI job also runs lint and tests.
+
 ## Phase 3E: login and API (16 Nov 2026, in progress, tag `phase-3e-done` when done)
 
 - Login: Supabase Auth ES256 tokens checked against the project's JWKS;
