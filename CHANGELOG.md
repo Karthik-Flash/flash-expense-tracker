@@ -58,6 +58,13 @@ Phase 1 is parsing, Phase 2 is the database and import.
   a merchant engine change would lose an owner match. `reconcile-stats`
   reads the owner tables and shows the stored run. Invariants I10 to I21
   tested.
+- 3C-7 and 3C-8: `reconcile-review` (owner only: same, different or skip
+  for candidates; a role for uncertain credits and debits with no payee),
+  `owner-export` (every owner row, decisions by dedupe key; `owner-load`
+  restores it into empty tables), `totals --month` (owner only: Spent,
+  Paid back by basis, Net, Income for an IST month). `reconcile-1.2.1`
+  (D-072): a mandate ID and a payment reference are different kinds.
+  Duplicate primary confirmed (D-071).
 
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 

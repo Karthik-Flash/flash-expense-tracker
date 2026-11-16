@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.engine import parse_message
+from app.engine.money import format_inr
 from app.engine.reconcile import (
     COUNTED,
     CREDIT_ONLY,
@@ -30,6 +31,7 @@ from app.engine.reconcile import (
     Totals,
     Txn,
     derive,
+    ist_month,
     totals,
 )
 
@@ -130,7 +132,7 @@ def test_every_role_and_every_rule_is_reached() -> None:
     assert {role for _, _, role, _, _ in CASES} | {"duplicate"} == set(ROLES)
     assert {rule for _, _, _, rule, _ in CASES} | by_link == set(RULES)
     assert len(ROLES) == 11 and set(COUNTED) | DEBIT_ONLY | CREDIT_ONLY <= set(ROLES)
-    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.2.0"
+    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.2.1"
 
 
 def test_unexplained_debit_is_spend_and_unexplained_credit_is_uncertain() -> None:
@@ -406,3 +408,61 @@ def test_engine_runs_over_the_redacted_sample() -> None:
     times = [t.txn_time_utc for t in txns]
     whole = totals(txns, derived, min(times), max(times) + DAY)
     assert whole.net_paise == whole.spent_paise - whole.paid_back_paise and whole.income_paise == 0
+
+
+@pytest.mark.parametrize(
+    ("month", "first_in", "last_in"),
+    [
+        (
+            "2026-01",
+            datetime(2026, 1, 1, tzinfo=IST),
+            datetime(2026, 1, 31, 23, 59, 59, tzinfo=IST),
+        ),
+        (
+            "2026-02",
+            datetime(2026, 2, 1, tzinfo=IST),
+            datetime(2026, 2, 28, 23, 59, 59, tzinfo=IST),
+        ),
+        (
+            "2024-02",
+            datetime(2024, 2, 1, tzinfo=IST),
+            datetime(2024, 2, 29, 23, 59, 59, tzinfo=IST),
+        ),
+        (
+            "2026-12",
+            datetime(2026, 12, 1, tzinfo=IST),
+            datetime(2026, 12, 31, 23, 59, 59, tzinfo=IST),
+        ),
+    ],
+)
+def test_ist_month_edges(month: str, first_in: datetime, last_in: datetime) -> None:
+    start, end = ist_month(month)
+    assert start.utcoffset() == end.utcoffset() == timedelta(0)  # UTC, like stored times
+    second = timedelta(seconds=1)
+    assert start <= first_in < end and start <= last_in < end
+    assert not start <= first_in - second < end  # 23:59:59 IST on the last day before
+    assert not start <= last_in + second < end  # 00:00:00 IST on the first day after
+    assert first_in.astimezone(UTC) == start  # 00:00 IST is 18:30 UTC the day before
+    assert (start.hour, start.minute) == (18, 30)
+
+
+@pytest.mark.parametrize("bad", ["2026-1", "2026-13", "2026-00", "26-01", "2026/01", ""])
+def test_ist_month_refuses_a_bad_month(bad: str) -> None:
+    with pytest.raises(ValueError, match="2026-01"):
+        ist_month(bad)
+
+
+@pytest.mark.parametrize(
+    ("paise", "text"),
+    [
+        (0, "Rs 0.00"),
+        (5, "Rs 0.05"),
+        (99_900, "Rs 999.00"),
+        (100_000, "Rs 1,000.00"),
+        (12_345_678, "Rs 1,23,456.78"),
+        (1_234_567_890, "Rs 1,23,45,678.90"),
+        (-150_050, "-Rs 1,500.50"),
+    ],
+)
+def test_format_inr_uses_indian_grouping(paise: int, text: str) -> None:
+    assert format_inr(paise) == text

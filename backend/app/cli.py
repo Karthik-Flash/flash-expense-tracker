@@ -8,22 +8,27 @@
   reconcile-stats
   owner-load <file> [--dry-run]
   recompute [--dry-run] [--accept-key-changes]
+  reconcile-review [--list]
+  owner-export <file>
+  totals --month YYYY-MM
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
 account digits. One exception: merchant-review shows counterparty text for the
-owner's own screen; it refuses to run unless stdout is a terminal. owner-load
+owner's own screen; it refuses to run unless stdout is a terminal, and so do
+reconcile-review and totals. owner-load
 reads the owner's private file and reports problems by field path, never by value.
 import-sms, reparse and owner-load end with a recompute of the derived tables.
 """
 
 import argparse
+import json
 import random
 import sys
 import time
 from collections import Counter, defaultdict
 from collections.abc import Callable
-from datetime import timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -31,13 +36,17 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.engine.merchant import MERCHANT_VERSION, channel_for, normalise_merchant, parts
+from app.engine.money import format_inr
 from app.engine.reconcile import (
+    COUNTED,
     DUP_LINK_WINDOW,
     LINK_KINDS,
     RECONCILE_VERSION,
+    ROLES,
     VERSIONS,
     Result,
     Txn,
+    ist_month,
 )
 from app.importers.sms_backup import import_sms
 from app.models import (
@@ -57,7 +66,13 @@ from app.models import (
     TxnDerived,
     TxnLink,
 )
-from app.pipeline.owner_load import OwnerFileError, parse_owner_file, sync
+from app.pipeline.owner_load import (
+    OwnerFileError,
+    export_owner,
+    parse_owner_file,
+    restore,
+    sync,
+)
 from app.pipeline.recompute import (
     OwnerDataError,
     Plan,
@@ -280,6 +295,8 @@ def cmd_merchant_stats(session: Session, args: argparse.Namespace) -> None:
 
 
 PRIVATE = "PRIVATE: do not paste this into any chat or file."
+# Role rules that come from a link or an owner decision, not from one message.
+LINK_OR_OWNER_RULES = frozenset({"OWNER_role", "OWNER_link", "DUP_autopay_card", "ST_pair"})
 
 
 def is_terminal() -> bool:
@@ -491,7 +508,11 @@ def cmd_reconcile_stats(session: Session, args: argparse.Namespace) -> int:
     line("transactions (active)", len(txns))
     print_counter("role by direction", by_direction)
     print_counter("role by rule", by_rule)
-    line("matched by two or more rules", sum(len(d.reasons) > 1 for d in derived.values()))
+    several = [d for d in derived.values() if len(d.reasons) > 1]
+    over = sum(d.rule in LINK_OR_OWNER_RULES for d in several)
+    line("matched by two or more rules", len(several))
+    line("one-message rules agree", len(several) - over, 2)
+    line("a link or decision overrides", over, 2)
     print_counter("paybacks by basis", paybacks)
     line("uncertain credits", sum(d.role == "uncertain" for d in derived.values()))
     print_counter("links by kind and status", by_status)
@@ -525,7 +546,10 @@ def cmd_owner_load(session: Session, args: argparse.Namespace) -> int:
     """Load the owner's private file into the owner tables. Counts and field paths only."""
     try:
         owner_file = parse_owner_file(args.input.read_text(encoding="utf-8-sig"))
-        counts = sync(session, settings.owner_id, owner_file)
+        if owner_file.export:
+            restored = restore(session, settings.owner_id, owner_file)
+        else:
+            counts = sync(session, settings.owner_id, owner_file)
     except (OwnerFileError, UnicodeDecodeError) as exc:
         session.rollback()
         errors = exc.errors if isinstance(exc, OwnerFileError) else ["file: is not UTF-8 text"]
@@ -533,6 +557,19 @@ def cmd_owner_load(session: Session, args: argparse.Namespace) -> int:
             print(error, file=sys.stderr)
         print(f"owner-load: {len(errors)} problem(s); nothing loaded", file=sys.stderr)
         return 2
+    if owner_file.export:
+        print(
+            "owner-load: export restored (dry run: nothing saved)"
+            if args.dry_run
+            else "owner-load: export restored"
+        )
+        for name in EXPORT_COUNTS:
+            line(name.replace("_", " "), restored[name])
+        if args.dry_run:
+            session.rollback()
+            return 0
+        session.commit()
+        return run_recompute(session, "owner")
     seen = {
         normalise_merchant(t.counterparty_raw, channel_for(t.channel, t.hints)).merchant_key
         for t in active_txns(session, settings.owner_id)
@@ -554,6 +591,236 @@ def cmd_owner_load(session: Session, args: argparse.Namespace) -> int:
         return 0
     session.commit()
     return run_recompute(session, "owner")
+
+
+EXPORT_COUNTS = (
+    "accounts",
+    "identifiers",
+    "parties",
+    "texts",
+    "role_decisions",
+    "link_decisions",
+    "mapped to another id",
+)
+REPO = Path(__file__).resolve().parents[2]
+
+
+def cmd_owner_export(session: Session, args: argparse.Namespace) -> int:
+    """Every owner table to one private JSON file, decisions with dedupe keys. Counts only."""
+    target = args.output.resolve()
+    if target.is_relative_to(REPO):
+        print("owner-export: the file must be outside the repository", file=sys.stderr)
+        return 2
+    try:
+        document, counts = export_owner(session, settings.owner_id)
+    except OwnerFileError as exc:
+        print(f"owner-export: {exc.errors[0]}", file=sys.stderr)
+        return 2
+    target.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print("owner-export")
+    for name in EXPORT_COUNTS[:-1]:
+        line(name.replace("_", " "), counts[name])
+    return 0
+
+
+def can_ask() -> bool:
+    return sys.stdin.isatty()
+
+
+def ask(prompt: str) -> str:
+    return input(prompt)
+
+
+def refuse_without_terminal(command: str) -> int | None:
+    if is_terminal():
+        return None
+    print(
+        f"{command} shows real names and amounts and prints only to a terminal: "
+        "run it in a console window, without a pipe or redirect.",
+        file=sys.stderr,
+    )
+    return 2
+
+
+def stale_reason(p: Plan) -> str | None:
+    if p.last_run_id is None:
+        return "no recompute has run yet"
+    if p.last_versions != VERSIONS:
+        return "the stored rows were made by another engine version"
+    if p.changes:
+        return f"{p.changes} stored row(s) differ from the current data"
+    return None
+
+
+def txn_line(t: Txn) -> str:
+    when = t.txn_time_utc.astimezone(IST).strftime("%Y-%m-%d %H:%M")
+    return (
+        f"  #{t.id:<6} {when} IST  {t.direction:<6} {format_inr(t.amount_paise):>16}  "
+        f"{t.channel or '-':<11} {t.counterparty_raw or '-'}"
+    )
+
+
+# Review items: (title, transaction ids, answers -> what each answer saves)
+PAIR_ANSWERS = {"same": "same", "different": "different", "skip": None}
+CREDIT_ANSWERS = {"payback": "payback", "income": "income", "ignored": "ignored", "leave": None}
+NO_PAYEE_ANSWERS = {"self_transfer": "self_transfer", "ignored": "ignored", "leave": None}
+
+
+def review_items(p: Plan) -> list[tuple[str, tuple[int, ...], dict, str | None]]:
+    """Open candidates, uncertain credits, transfers with no payee. (title, ids, answers, kind)."""
+    items = [
+        (f"{x.kind} candidate: {x.rule}, {x.reason}", (x.txn_a, x.txn_b), PAIR_ANSWERS, x.kind)
+        for x in p.result.links
+        if x.status == "candidate"
+    ]
+    for i, d in p.result.roles.items():
+        if d.role == "uncertain":
+            items.append((f"uncertain credit: {d.rule}", (i,), CREDIT_ANSWERS, None))
+    for i, d in p.result.roles.items():
+        if d.rule == "DB_no_counterparty":
+            items.append((f"debit with no payee: {d.rule}", (i,), NO_PAYEE_ANSWERS, None))
+    return items
+
+
+def cmd_reconcile_review(session: Session, args: argparse.Namespace) -> int:
+    """Owner only: decide candidates and roles on screen. Saves owner decisions, then recomputes."""
+    if (refused := refuse_without_terminal("reconcile-review")) is not None:
+        return refused
+    if not args.list and not can_ask():
+        print("reconcile-review asks questions: run it in a console window.", file=sys.stderr)
+        return 2
+    try:
+        p = plan(session, settings.owner_id)
+    except OwnerDataError as exc:
+        print(f"reconcile-review failed: {exc}", file=sys.stderr)
+        return 1
+    by_id = {t.id: t for t in p.txns}
+    items = review_items(p)
+    links, roles = [], []
+    print(PRIVATE)
+    for n, (title, ids, answers, kind) in enumerate(items, 1):
+        print(f"[{n}/{len(items)}] {title}")
+        for i in ids:
+            print(txn_line(by_id[i]))
+        if args.list:
+            continue
+        choices = list(answers)
+        prompt = f"{', '.join(choices[:-1])} or {choices[-1]} (quit to stop)? "
+        while (answer := _answer(prompt)) not in (*answers, "quit"):
+            print(f"  answer one of: {', '.join(choices)}, quit")
+        if answer == "quit":
+            break
+        if answers[answer] and kind:
+            links.append((kind, *ids, answers[answer]))
+        elif answers[answer]:
+            roles.append((ids[0], answers[answer]))
+    print(
+        f"{len(items)} item(s)"
+        if args.list
+        else f"answered: {len(links)} pair(s), {len(roles)} role(s)"
+    )
+    code = 0
+    if links or roles:
+        code = _save_review(session, links, roles)
+    print(PRIVATE)
+    return code
+
+
+def _answer(prompt: str) -> str:
+    try:
+        return ask(prompt).strip().casefold() or "skip_or_leave"
+    except EOFError:
+        return "quit"
+
+
+def _save_review(session: Session, links: list[tuple], roles: list[tuple]) -> int:
+    """Owner decisions from the review (source "terminal"), checked, then one recompute."""
+    now, owner = datetime.now(UTC), settings.owner_id
+    for kind, a, b, verdict in links:
+        row = session.scalar(
+            select(OwnerLinkDecision).where(
+                OwnerLinkDecision.owner_id == owner,
+                OwnerLinkDecision.kind == kind,
+                OwnerLinkDecision.txn_a == a,
+                OwnerLinkDecision.txn_b == b,
+            )
+        )
+        if row is None:
+            row = OwnerLinkDecision(owner_id=owner, kind=kind, txn_a=a, txn_b=b)
+            session.add(row)
+        row.verdict, row.decided_at, row.source = verdict, now, "terminal"
+    for txn, role in roles:
+        row = session.get(OwnerRole, txn) or OwnerRole(transaction_id=txn, owner_id=owner)
+        row.role, row.decided_at, row.source = role, now, "terminal"
+        session.add(row)
+    session.flush()
+    try:
+        plan(session, owner)  # decisions that contradict each other are refused here
+    except OwnerDataError as exc:
+        session.rollback()
+        print(f"not saved: {exc}. Run the review again.", file=sys.stderr)
+        return 1
+    session.commit()
+    print(f"saved: {len(links)} link decision(s), {len(roles)} role decision(s)")
+    return run_recompute(session, "owner")
+
+
+def cmd_totals(session: Session, args: argparse.Namespace) -> int:
+    """Owner only: Spent, Paid back, Net and Income of one IST month, from stored roles."""
+    try:
+        start, end = ist_month(args.month)
+    except ValueError as exc:
+        print(f"totals: {exc}", file=sys.stderr)
+        return 2
+    if (refused := refuse_without_terminal("totals")) is not None:
+        return refused
+    try:
+        p = plan(session, settings.owner_id)
+    except OwnerDataError as exc:
+        print(f"totals failed: {exc}", file=sys.stderr)
+        return 1
+    if reason := stale_reason(p):
+        print(
+            f"totals: stored results are stale ({reason}). Run: python -m app.cli recompute",
+            file=sys.stderr,
+        )
+        return 1
+    rows = session.execute(
+        select(TxnDerived.role, TxnDerived.role_basis, Transaction.amount_paise)
+        .join(Transaction, Transaction.id == TxnDerived.transaction_id)
+        .where(
+            TxnDerived.owner_id == settings.owner_id,
+            Transaction.txn_time_utc >= start,
+            Transaction.txn_time_utc < end,
+        )
+    )
+    sums, roles = Counter(), Counter()
+    for role, basis, amount in rows:
+        roles[role] += 1
+        if role in COUNTED:
+            total, sign = COUNTED[role]
+            sums[total] += sign * amount
+        if role == "payback":
+            sums[f"paid_back_{basis}"] += amount
+    print(PRIVATE)
+    print(
+        f"totals {args.month} (IST), stored run #{p.last_run_id} ({', '.join(VERSIONS.values())})"
+    )
+    for label, value, indent in (
+        ("Spent", sums["spent"], 0),
+        ("Paid back", sums["paid_back"], 0),
+        ("owner-confirmed", sums["paid_back_owner"], 2),
+        ("engine-guessed", sums["paid_back_engine"], 2),
+        ("Net", sums["spent"] - sums["paid_back"], 0),
+        ("Income", sums["income"], 0),
+    ):
+        print(f"{' ' * indent}{label:<{24 - indent}}{format_inr(value):>20}")
+    print("transactions by role")
+    for role in ROLES:
+        line(role, roles[role], 2)
+    line("transactions", sum(roles.values()))
+    print(PRIVATE)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -584,6 +851,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="go on although transactions lose their owner match after a merchant engine change",
     )
+    rv = sub.add_parser("reconcile-review", help="owner only: decide candidates and roles")
+    rv.add_argument("--list", action="store_true", help="show the items, ask nothing")
+    ex = sub.add_parser("owner-export", help="owner tables to one private JSON file")
+    ex.add_argument("output", type=Path, help="where to write it, outside the repository")
+    tot = sub.add_parser("totals", help="owner only: Spent, Paid back, Net, Income of a month")
+    tot.add_argument("--month", required=True, help="YYYY-MM, an IST calendar month")
     return parser
 
 
@@ -596,6 +869,9 @@ COMMANDS = {
     "reconcile-stats": cmd_reconcile_stats,
     "owner-load": cmd_owner_load,
     "recompute": cmd_recompute,
+    "reconcile-review": cmd_reconcile_review,
+    "owner-export": cmd_owner_export,
+    "totals": cmd_totals,
 }
 
 

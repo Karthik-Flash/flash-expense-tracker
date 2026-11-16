@@ -5,7 +5,8 @@ first, then [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase
 in [PLAN.md](PLAN.md). State as of 15 Nov 2026: Phases 0-2 done (tags
 `phase-0-done`, `phase-1-done`, `phase-2-done`); Phase 3 is in progress
 (3B merchant engine; Reconcile engine, owner tables, derived storage and
-recompute, steps 3C-2 to 3C-6, are built; NOTES.md has the current step).
+recompute, review, export and private totals, steps 3C-2 to 3C-8, are built;
+NOTES.md has the current step).
 
 ## Goal and locked stack
 
@@ -69,13 +70,13 @@ backend/            Render root
   app/engine/         stdlib-only parser: senders, money, timeparse, filters (OTP), models, parsers/{base,hdfc}, merchant (+ brands.json), reconcile (roles and links, in memory)
   app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py, owner_load.py (owner file -> owner tables), recompute.py (derive -> derived tables)
   app/importers/      sms_backup.py (streaming XML importer)
-  app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute
+  app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals
   alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
 frontend/           Vercel root; src/App.tsx shows backend status, survives cold starts
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-070), engine.md, data-model.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-072), engine.md, data-model.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```
@@ -158,14 +159,12 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 - Keep-alive switched to the Data API RPC and verified 15 Nov (security
   check 8/8 blocked, cron test run 200, `last_seen` moved); the first
   scheduled 03:30 run is still to check (D-053).
-- Reconcile (3C) is built up to storage: roles, duplicates and pair links
-  (`reconcile-1.2.0`), owner tables and `owner-load` (migration `0004`),
-  derived tables and `recompute` (`0005`). Not built: the terminal review
-  (3C-7), `owner-export` (3C-8), the card bill pair rule. Migrations `0004`
-  and `0005` reach Supabase on the next deploy; then the owner loads the
-  private owner file and recomputes (NOTES.md). Decisions cannot be entered
-  until 3C-7, so the 18 duplicate candidates and the merged refund are
-  still to review.
+- Reconcile (3C) is built: roles and links (`reconcile-1.2.1`), owner tables
+  and `owner-load` (`0004`), derived tables and `recompute` (`0005`),
+  `reconcile-review`, `owner-export` and `totals` (owner only, terminal
+  only). Not built: the card bill pair rule. Not pushed since `c2c6600`:
+  the migrations reach Supabase on the next deploy (NOTES.md has the
+  owner's order of commands).
 - Foreign currency is deferred: 44 messages (D-035).
 - Only HDFC has a parser: 153 messages from SBI, ICICI, India Post, Kotak
   and PhonePe sit as `no_parser_for_bank`. Add a parser (docs/engine.md,

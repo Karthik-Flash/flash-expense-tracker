@@ -195,6 +195,16 @@ def test_two_different_references_are_two_payments() -> None:
     assert decided.links == ()
 
 
+def test_a_mandate_id_and_a_payment_reference_are_not_different_references() -> None:
+    upi = txn(2, txn_time_utc=T0 + MIN, account_last4="0002", reference="000000000001")
+    result = derive([autopay(1), upi])  # D-072: two kinds of reference say nothing
+    assert brief(result) == [
+        ("duplicate", 1, 2, "candidate", "DUP_same_amount", "same_amount", "engine")
+    ]
+    recorded = derive([autopay(1), replace(upi, txn_time_utc=T0 + HOUR)], None, [(1, 2)])
+    assert recorded.links[0].reason == "recorded_at_import"
+
+
 def test_a_mandate_id_is_never_a_match_key() -> None:
     month_apart = [autopay(1), autopay(2, T0 + 30 * DAY)]  # the same mandate ID every month
     assert not derive(month_apart).links and spent(month_apart, derive(month_apart)) == 20_000

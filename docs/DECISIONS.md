@@ -634,6 +634,8 @@ decide candidates in `duplicate_candidates.status`.
 Narrowed by D-069 (16 Nov 2026): a same-amount pair with two different
 references is no longer proposed; recorded ones are kept.
 
+Primary confirmed by D-071 (16 Nov 2026).
+
 ## D-063 Wallet top-ups (2026-11-15)
 
 Updates D-029. A wallet top-up is a self-transfer only when the owner lists
@@ -714,6 +716,8 @@ duplicate.
   redacted sample), so every pair of equal payments close in time would
   have become a review item.
 
+Refined by D-072 (16 Nov 2026): only two references of the same kind count.
+
 ## D-070 Owner rows carry their source; a file load touches only file rows (2026-11-16)
 
 Refines D-065 and the design (section C had `source` on the decision tables
@@ -731,3 +735,18 @@ only; section F let a file add decisions).
   transactions by dedupe key as well as id, so that a rebuilt database can
   take the file back; that format arrives with the review and the export
   (3C-7, 3C-8).
+
+## D-071 Duplicate primary: earliest, then lowest id (2026-11-16)
+
+Answers Q9 (D-062). The primary of a duplicate group stays the transaction
+with the earliest `txn_time_utc`, then the lowest id. On real data the card
+message was the earlier one in 4 of 4 AutoPay + card pairs, so the merchant
+shown is the card's.
+
+## D-072 A mandate ID and a payment reference are different kinds (2026-11-16)
+
+Refines D-069. A reference is a mandate ID (hint `mandate_reference`) or a
+payment reference. A pair is "two payments" only when both carry a
+reference of the same kind and the references differ. A mandate ID next to
+a payment reference says nothing, so the pair stays eligible as a duplicate
+candidate, in Reconcile (`reconcile-1.2.1`) and at import (`is_candidate`).

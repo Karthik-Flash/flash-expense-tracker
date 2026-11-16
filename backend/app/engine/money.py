@@ -20,6 +20,18 @@ class AmountError(ValueError):
     """Amount text is missing, malformed or ambiguous."""
 
 
+def format_inr(paise: int) -> str:
+    """12345678 -> "Rs 1,23,456.78": Indian digit grouping (lakh, crore)."""
+    rupees, rest = divmod(abs(paise), 100)
+    digits = str(rupees)
+    head, tail = digits[:-3], digits[-3:]
+    groups = []
+    while head:
+        head, groups = head[:-2], [head[-2:], *groups]
+    grouped = ",".join([*groups, tail])
+    return f"{'-' if paise < 0 else ''}Rs {grouped}.{rest:02d}"
+
+
 def to_paise(text: str) -> int:
     """'Rs.1,25,000.50' -> 12500050. Raises AmountError on anything ambiguous."""
     m = AMOUNT_RE.fullmatch(text.strip())

@@ -128,7 +128,7 @@ sum over a subset of that partition (invariant I16).
 
 ## B. Reconcile rules
 
-`RECONCILE_VERSION = "reconcile-1.2.0"`; bump on any change that can alter a
+`RECONCILE_VERSION = "reconcile-1.2.1"`; bump on any change that can alter a
 role or a link. All rules live in one pure module (`app/engine/reconcile.py`,
 stdlib only, no database).
 
@@ -510,7 +510,7 @@ every row and running recompute gives the same rows back.
 derive_runs    id, owner_id, started_at, finished_at, status, trigger, versions, counts
                status in (running, done, failed)
                trigger in (import, reparse, owner, manual)
-               versions JSON: {"merchant": "merchant-1.1.1", "reconcile": "reconcile-1.2.0"}
+               versions JSON: {"merchant": "merchant-1.1.1", "reconcile": "reconcile-1.2.1"}
                counts JSON: counts only
 txn_derived    transaction_id -> transactions (primary key), owner_id,
                merchant_key, merchant_kind, merchant_confidence, display_name,
@@ -664,8 +664,9 @@ standard library reads and writes it, so the same shape works for a backup
 | Command | What it does |
 | ------- | ------------ |
 | `owner-load <file> [--dry-run]` | Checks the file strictly, then makes the rows that came from a file (accounts, identifiers, parties, texts) equal to it, matched by label, so unchanged entries keep their ids. Rows written by the review or the app, and every decision, are never touched (D-070). Then runs recompute. Loading the same file twice changes nothing. Prints counts only, plus the field paths of texts that match no transaction. A problem is named by its field path (`parties[2].texts[0]: same text as accounts[1].texts[0]`), never by its value, and nothing is loaded |
-| `reconcile-review [--kind K] [--limit N]` | Owner only. Shows one candidate at a time with real details (date in IST, amount, counterparty, channel, rule) between two `PRIVATE: do not paste this into any chat or file.` lines, and asks: same, different, skip, quit. For an uncertain credit it asks for the role instead. Saves each answer as an owner decision and runs recompute at the end. **Refuses to run unless stdin and stdout are both a terminal**, with the same kind of message and exit code 2 as `merchant-review`. `K`: `duplicate`, `self_transfer`, `card_bill`, `refund`, `fd`, `uncertain_credit`, `no_payee`, `merged` (transactions with two or more source messages; display only) |
-| `owner-export --output <file>` | Owner only. Writes every owner table in the file shape above, with each decision's transaction ids and dedupe keys, so decisions can be restored into a rebuilt database. Refuses a path inside the repository. Built in step 3C-8 (Q7, D-065) |
+| `reconcile-review [--list]` | **Built (3C-7).** Owner only; refuses unless stdout is a terminal (and stdin, unless `--list`). Between two `PRIVATE` lines it shows the open candidates of every kind, the uncertain credits and the debits with no payee: for each transaction the IST date and time, direction, amount, channel and counterparty text, and the rule and reason. Pairs: same, different or skip. Uncertain credits: payback, income, ignored or leave. Debits with no payee: self_transfer, ignored or leave. quit (or end of input) stops and keeps earlier answers. Answers are saved with source `terminal`, checked together (a contradiction saves nothing), then one recompute runs. `--list` asks nothing |
+| `owner-export <file>` | **Built (3C-8).** Writes every owner table to one JSON file (format `flash-owner-export-1`): the owner-file shape plus a `source` per entry, and `roles` and `links` naming their transactions by id and dedupe key. Refuses a path inside the repository. Counts only. `owner-load` restores such a file into empty owner tables only, with each row's source, mapping ids by dedupe key; a decision whose transaction is missing stops the restore |
+| `totals --month YYYY-MM` | **Built.** Owner only, terminal only. From the stored roles: Spent, Paid back (owner-confirmed and engine-guessed), Net, Income and transactions per role for that IST month. Refuses when the stored rows are stale |
 
 Later the app writes the same owner tables through the API (3E, 3F); the
 file stays as the bulk route and the backup.
@@ -759,8 +760,8 @@ owner's counts-only run.
 | 3C-4 | **Built.** Migration `0004`, owner models, `owner-load` with validation. The loaded owner data feeds the rules built in 3C-2 (S1, S3, `CB_own_text`, `FD_own_text`, parties, income); party display names in the merchant step. Owner run | File validation (every rejection, no values in errors); load twice changes nothing; I13; RLS on the new tables; party overrides | |
 | 3C-5 | **Built in memory (`reconcile-1.1.0`), except `CB_pair`** (B3: waits for credit card SMS). Pair linking: one matcher (window, unique pair) used by S2, `FD_pair` and refund links | Zero, one, many for every rule; window edges; I19; refund guard | yes |
 | 3C-6 | **Built.** Migration `0005`, `recompute` (compare and write), triggers in `import-sms`, `reparse` and `owner-load`, stale flag in `stats`, the key-change check | I10, I11, I12, I20, I21; key-change stop and `--accept-key-changes`; SQLite and Postgres | yes |
-| 3C-7 | `reconcile-review` and the two decision tables in use; decisions in `owner-load` | I14; refusal without a terminal; contradicting decision refused; inactive decisions | |
-| 3C-8 | `owner-export`. Docs (`data-model.md`, `engine.md`), DECISIONS, owner's full review, tag `phase-3c-done` | Export then load into an empty database restores every owner row | |
+| 3C-7 | **Built.** `reconcile-review` and the two decision tables in use; decisions in `owner-load` | I14; refusal without a terminal; contradicting decision refused; inactive decisions | |
+| 3C-8 | **Built.** `owner-export`. Docs (`data-model.md`, `engine.md`), DECISIONS, owner's full review, tag `phase-3c-done` | Export then load into an empty database restores every owner row | |
 
 ## I. Questions and conflicts, with the planner's decisions
 
@@ -778,7 +779,7 @@ Decided on 15 Nov 2026 and recorded in `docs/DECISIONS.md`.
 | Q6 | After a deploy that bumps an engine version, who recomputes? | The owner; the API shows a stale flag. Revisit in Phase 5, when the server takes in SMS itself | D-066 |
 | Q7 | Owner file as JSON, and `owner-export` in 3C? | Yes to both | D-065 |
 | Q8 | A credit from a business that is not worded as a refund: uncertain, or income? | Uncertain | D-061 |
-| Q9 | Which duplicate is the primary? Proposed: earliest time, then lowest id | Keep for now. Step 3C-3 reports whether the choice changes the merchant shown for an AutoPay + card pair; the planner decides then | D-062 |
+| Q9 | Which duplicate is the primary? Proposed: earliest time, then lowest id | Keep: earliest, then lowest id. On real data the card message was earlier in 4 of 4 AutoPay + card pairs | D-071 |
 | Q10 | Should investment debits (a mutual fund SIP) have a role of their own? | No. They stay `spend` until Phase 6 (D-026) | D-060 |
 | Q11 | Is the `ignored` role wanted? | Keep. Only the owner can set it | D-060 |
 
