@@ -19,6 +19,12 @@ NEW_TABLES = {
     "transactions",
     "transaction_sources",
     "duplicate_candidates",
+    "own_accounts",
+    "own_identifiers",
+    "parties",
+    "party_texts",
+    "owner_link_decisions",
+    "owner_roles",
 }
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 BACKEND = Path(__file__).resolve().parent.parent

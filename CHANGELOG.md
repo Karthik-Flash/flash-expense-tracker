@@ -46,6 +46,11 @@ Phase 1 is parsing, Phase 2 is the database and import.
 - `reconcile-1.2.0` (D-069): a same-amount pair with two different
   references is two payments. Reconcile no longer proposes it and import
   no longer records it; pairs already recorded are kept.
+- 3C-4: migration `0004`, six owner tables (own accounts and their
+  identifiers, parties and their texts, link and role decisions), RLS on.
+  `python -m app.cli owner-load <file>` loads the owner's private JSON
+  file: strict checks, errors by field path, only file rows replaced
+  (D-070). Example: `docs/owner.example.json`.
 
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 

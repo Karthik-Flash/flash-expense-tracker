@@ -713,3 +713,21 @@ duplicate.
 - Why: nearly every UPI transaction carries a reference (116 of 127 in the
   redacted sample), so every pair of equal payments close in time would
   have become a review item.
+
+## D-070 Owner rows carry their source; a file load touches only file rows (2026-11-16)
+
+Refines D-065 and the design (section C had `source` on the decision tables
+only; section F let a file add decisions).
+
+- Every row in the six owner tables has a `source`: `file`, `terminal` or
+  `app`.
+- `owner-load` makes the file-sourced accounts, identifiers, parties and
+  texts equal to the file: it adds, updates and removes them. It never
+  changes or removes a row written by the review or the app, and never a
+  decision. The file may not claim a label or text that such a row holds.
+- The file is checked strictly. A problem is reported by its field path,
+  never by its value, and then nothing is loaded.
+- Decisions are not in the owner file yet. A decision must name its
+  transactions by dedupe key as well as id, so that a rebuilt database can
+  take the file back; that format arrives with the review and the export
+  (3C-7, 3C-8).

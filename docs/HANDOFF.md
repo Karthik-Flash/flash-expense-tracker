@@ -67,15 +67,15 @@ backend/            Render root
   app/db.py           engine, SessionLocal, Base
   app/models.py       ORM models; UtcDateTime column type
   app/engine/         stdlib-only parser: senders, money, timeparse, filters (OTP), models, parsers/{base,hdfc}, merchant (+ brands.json), reconcile (roles and links, in memory)
-  app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py
+  app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py, owner_load.py (owner file -> owner tables)
   app/importers/      sms_backup.py (streaming XML importer)
-  app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats
-  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping()
+  app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load
+  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
 frontend/           Vercel root; src/App.tsx shows backend status, survives cold starts
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-069), engine.md, data-model.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-070), engine.md, data-model.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```

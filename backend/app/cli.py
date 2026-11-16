@@ -6,11 +6,13 @@
   merchant-stats
   merchant-review [--kind] [--confidence] [--reason] [--direction] [--sample N]
   reconcile-stats
+  owner-load <file> [--dry-run]
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
 account digits. One exception: merchant-review shows counterparty text for the
-owner's own screen; it refuses to run unless stdout is a terminal.
+owner's own screen; it refuses to run unless stdout is a terminal. owner-load
+reads the owner's private file and reports problems by field path, never by value.
 """
 
 import argparse
@@ -40,16 +42,36 @@ from app.importers.sms_backup import import_sms
 from app.models import (
     DuplicateCandidate,
     ImportBatch,
+    OwnAccount,
+    OwnerLinkDecision,
+    OwnerRole,
+    OwnIdentifier,
     ParseResult,
+    Party,
+    PartyText,
     RawMessage,
     Transaction,
     TransactionSource,
 )
+from app.pipeline.owner_load import OwnerFileError, parse_owner_file, sync
 from app.pipeline.reparse import reparse
 from app.pipeline.store import Counts, parser_versions
 
 IST = timezone(timedelta(hours=5, minutes=30))
-TABLES = (ImportBatch, RawMessage, ParseResult, Transaction, TransactionSource, DuplicateCandidate)
+TABLES = (
+    ImportBatch,
+    RawMessage,
+    ParseResult,
+    Transaction,
+    TransactionSource,
+    DuplicateCandidate,
+    OwnAccount,
+    OwnIdentifier,
+    Party,
+    PartyText,
+    OwnerLinkDecision,
+    OwnerRole,
+)
 
 
 def line(label: str, value: object, indent: int = 0) -> None:
@@ -435,6 +457,41 @@ def cmd_reconcile_stats(session: Session, args: argparse.Namespace) -> None:
         print(NO_INCOME_PARTY)
 
 
+def cmd_owner_load(session: Session, args: argparse.Namespace) -> int:
+    """Load the owner's private file into the owner tables. Counts and field paths only."""
+    try:
+        owner_file = parse_owner_file(args.input.read_text(encoding="utf-8-sig"))
+        counts = sync(session, settings.owner_id, owner_file)
+    except (OwnerFileError, UnicodeDecodeError) as exc:
+        session.rollback()
+        errors = exc.errors if isinstance(exc, OwnerFileError) else ["file: is not UTF-8 text"]
+        for error in errors:
+            print(error, file=sys.stderr)
+        print(f"owner-load: {len(errors)} problem(s); nothing loaded", file=sys.stderr)
+        return 2
+    seen = {
+        normalise_merchant(t.counterparty_raw, channel_for(t.channel, t.hints)).merchant_key
+        for t in reconcile_txns(session)
+    }
+    unmatched = sorted(path for key, path in owner_file.text_paths.items() if key not in seen)
+
+    print("owner-load (dry run: nothing saved)" if args.dry_run else "owner-load")
+    for name, counter in counts.items():
+        print(name)
+        for what in ("added", "updated", "removed", "unchanged"):
+            if what != "updated" or name in ("accounts", "parties"):
+                line(what, counter[what], 2)
+    line("income sources", sum(bool(v["income_label"]) for _, v, _ in owner_file.parties))
+    line("texts matching no transaction", len(unmatched))
+    for path in unmatched:
+        print(f"  {path}")
+    if args.dry_run:
+        session.rollback()
+    else:
+        session.commit()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -453,6 +510,9 @@ def build_parser() -> argparse.ArgumentParser:
     rev.add_argument("--sample", type=int, metavar="N", help="random N merchant keys")
     rev.add_argument("--seed", type=int, default=0, help="seed for --sample")
     sub.add_parser("reconcile-stats", help="role counts over transactions (read-only)")
+    load = sub.add_parser("owner-load", help="load the owner's private file")
+    load.add_argument("input", type=Path, help="the owner JSON file")
+    load.add_argument("--dry-run", action="store_true", help="check and count, save nothing")
     return parser
 
 
@@ -463,12 +523,13 @@ COMMANDS = {
     "merchant-stats": cmd_merchant_stats,
     "merchant-review": cmd_merchant_review,
     "reconcile-stats": cmd_reconcile_stats,
+    "owner-load": cmd_owner_load,
 }
 
 
 def main(argv: list[str] | None = None, session_factory=None) -> int:
     args = build_parser().parse_args(argv)
-    if args.command == "import-sms" and not args.input.exists():
+    if getattr(args, "input", None) is not None and not args.input.exists():
         print("input not found", file=sys.stderr)
         return 2
     if session_factory is None:

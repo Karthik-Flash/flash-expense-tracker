@@ -467,18 +467,18 @@ all Phase 2 tables stay as they are.
 later by the app. Import, reparse and recompute never write them.
 
 ```
-own_accounts          id, owner_id, label, kind, bank
+own_accounts          id, owner_id, label, kind, bank, source
                       kind in (bank_account, credit_card, wallet, fd)
                       UNIQUE (owner_id, label)
-own_identifiers       id, owner_id, own_account_id -> own_accounts, kind, value
+own_identifiers       id, owner_id, own_account_id -> own_accounts, kind, value, source
                       kind in (last4, text)
                       UNIQUE (owner_id, kind, value, own_account_id)
                       (the loader also rejects one text under two accounts;
                       the same last 4 may exist at two banks)
-parties               id, owner_id, label, kind, income_label (null = not income)
+parties               id, owner_id, label, kind, income_label (null = not income), source
                       kind in (person, business)
                       UNIQUE (owner_id, label)
-party_texts           id, owner_id, party_id -> parties, text
+party_texts           id, owner_id, party_id -> parties, text, source
                       UNIQUE (owner_id, text)
 owner_link_decisions  id, owner_id, kind, txn_a -> transactions, txn_b -> transactions,
                       verdict, decided_at, source
@@ -498,6 +498,10 @@ owner_roles           transaction_id -> transactions (primary key), owner_id, ro
   category corrections and labels (D-056) as further owner tables keyed on a
   party or a transaction id; nothing here changes.
 - Decisions point at transaction ids, which stay stable across reparse.
+- **Every owner row carries its `source`** (`file`, `terminal`, `app`). A
+  file load replaces only rows that came from a file; it never removes or
+  changes a row or a decision made in the review or the app (D-070). The
+  draft had `source` on the two decision tables only.
 
 **Derived tables** (migration `0005`). Written only by recompute. Deleting
 every row and running recompute gives the same rows back.
@@ -630,10 +634,6 @@ standard library reads and writes it, so the same shape works for a backup
     {"label": "Test Friend", "kind": "person",
      "texts": ["PERSON_901", "9000000001@ybl"]},
     {"label": "Test Mess", "kind": "business", "texts": ["TEST FOODS 12"]}
-  ],
-  "decisions": [
-    {"kind": "duplicate", "a": 101, "b": 102, "verdict": "same"},
-    {"kind": "role", "transaction": 103, "role": "self_transfer"}
   ]
 }
 ```
@@ -643,14 +643,19 @@ standard library reads and writes it, so the same shape works for a backup
   the SMS shows it (a name or a UPI ID). Case, spacing and punctuation do
   not matter; the engine normalises them.
 - `income`: present only for an income source.
-- `decisions` is optional. The owner normally makes decisions in the
-  terminal review; this section exists so a backup can be loaded.
+- Decisions are not in the file yet (D-070). They arrive with the review
+  and the export (3C-7, 3C-8), where each one names its transactions by
+  dedupe key as well as id, so a rebuilt database can take the file back.
+  Until then `owner-load` rejects a `decisions` key like any unknown key.
+- The same file, with fake values, is in the repo as
+  `docs/owner.example.json`. The checks are listed in
+  `docs/data-model.md`, "Owner file".
 
 **Commands.**
 
 | Command | What it does |
 | ------- | ------------ |
-| `owner-load --input <file> [--dry-run]` | Checks the file, then makes the accounts and parties in the database equal to the file (matched by label, so unchanged entries keep their ids). Decisions in the file are added or updated, never removed. Then runs recompute. Loading the same file twice changes nothing. Prints counts only: accounts, identifiers, parties, texts, texts that match no transaction, decisions, derived rows changed. An error names the entry by position ("party 3: text listed twice"), never by value |
+| `owner-load <file> [--dry-run]` | Checks the file strictly, then makes the rows that came from a file (accounts, identifiers, parties, texts) equal to it, matched by label, so unchanged entries keep their ids. Rows written by the review or the app, and every decision, are never touched (D-070). Then runs recompute. Loading the same file twice changes nothing. Prints counts only, plus the field paths of texts that match no transaction. A problem is named by its field path (`parties[2].texts[0]: same text as accounts[1].texts[0]`), never by its value, and nothing is loaded |
 | `reconcile-review [--kind K] [--limit N]` | Owner only. Shows one candidate at a time with real details (date in IST, amount, counterparty, channel, rule) between two `PRIVATE: do not paste this into any chat or file.` lines, and asks: same, different, skip, quit. For an uncertain credit it asks for the role instead. Saves each answer as an owner decision and runs recompute at the end. **Refuses to run unless stdin and stdout are both a terminal**, with the same kind of message and exit code 2 as `merchant-review`. `K`: `duplicate`, `self_transfer`, `card_bill`, `refund`, `fd`, `uncertain_credit`, `no_payee`, `merged` (transactions with two or more source messages; display only) |
 | `owner-export --output <file>` | Owner only. Writes every owner table in the file shape above, with each decision's transaction ids and dedupe keys, so decisions can be restored into a rebuilt database. Refuses a path inside the repository. Built in step 3C-8 (Q7, D-065) |
 
@@ -738,7 +743,7 @@ owner's counts-only run.
 | ---- | ---- | ----- | ----- |
 | 3C-2 | `app/engine/reconcile.py`: input and output dataclasses (transactions, an in-memory owner-data structure, one role with rule and basis), every role rule that reads one transaction only (B7 step 3: wording, owner texts and parties, the tracked test), owner role decisions, `totals()`. First `reconcile-stats`: role by direction, role by rule, paybacks by basis, uncertain credits, not counted yet, the income warning. On real data the owner data stays empty until 3C-4. Owner run | One case per row of B6 and B7; I16 against a naive second implementation on seeded random data; I18; stats prints no values | |
 | 3C-3 | **Built in memory (`reconcile-1.1.0`).** Duplicates: pair finding by amount bucket, D1 and D2, unique-pair rule, groups, primary, legacy coverage. Stats sections. Owner run: tells whether [A1] and [A2] hold. Report whether the choice of primary changes the merchant shown for an AutoPay + card pair (Q9) | The B1 table; I15, I17; legacy coverage on fixtures | yes |
-| 3C-4 | Migration `0004`, owner models, `owner-load` with validation. The loaded owner data feeds the rules built in 3C-2 (S1, S3, `CB_own_text`, `FD_own_text`, parties, income); party display names in the merchant step. Owner run | File validation (every rejection, no values in errors); load twice changes nothing; I13; RLS on the new tables; party overrides | |
+| 3C-4 | **Built.** Migration `0004`, owner models, `owner-load` with validation. The loaded owner data feeds the rules built in 3C-2 (S1, S3, `CB_own_text`, `FD_own_text`, parties, income); party display names in the merchant step. Owner run | File validation (every rejection, no values in errors); load twice changes nothing; I13; RLS on the new tables; party overrides | |
 | 3C-5 | **Built in memory (`reconcile-1.1.0`), except `CB_pair`** (B3: waits for credit card SMS). Pair linking: one matcher (window, unique pair) used by S2, `FD_pair` and refund links | Zero, one, many for every rule; window edges; I19; refund guard | yes |
 | 3C-6 | Migration `0005`, `recompute` (compare and write), triggers in `import-sms`, `reparse` and `owner-load`, stale flag in `stats`, the key-change check | I10, I11, I12, I20, I21; key-change stop and `--accept-key-changes`; SQLite and Postgres | yes |
 | 3C-7 | `reconcile-review` and the two decision tables in use; decisions in `owner-load` | I14; refusal without a terminal; contradicting decision refused; inactive decisions | |
