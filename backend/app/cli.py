@@ -11,6 +11,8 @@
   reconcile-review [--list]
   owner-export <file>
   totals --month YYYY-MM
+  category-stats
+  category-review [--uncategorised] [--list]
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
@@ -35,6 +37,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.engine.categorise import CATEGORIES, CATEGORISE_VERSION, SPENDING_ROLES, UNCATEGORISED
 from app.engine.merchant import MERCHANT_VERSION, channel_for, normalise_merchant, parts
 from app.engine.money import format_inr
 from app.engine.reconcile import (
@@ -43,7 +46,6 @@ from app.engine.reconcile import (
     LINK_KINDS,
     RECONCILE_VERSION,
     ROLES,
-    VERSIONS,
     Result,
     Txn,
     ist_month,
@@ -53,7 +55,9 @@ from app.models import (
     DeriveRun,
     DuplicateCandidate,
     ImportBatch,
+    Label,
     OwnAccount,
+    OwnerCategory,
     OwnerLinkDecision,
     OwnerRole,
     OwnIdentifier,
@@ -64,6 +68,7 @@ from app.models import (
     Transaction,
     TransactionSource,
     TxnDerived,
+    TxnLabel,
     TxnLink,
 )
 from app.pipeline.owner_load import (
@@ -74,9 +79,11 @@ from app.pipeline.owner_load import (
     sync,
 )
 from app.pipeline.recompute import (
+    VERSIONS,
     OwnerDataError,
     Plan,
     active_txns,
+    load_owner,
     plan,
     recompute,
     run_counts,
@@ -98,6 +105,9 @@ TABLES = (
     PartyText,
     OwnerLinkDecision,
     OwnerRole,
+    OwnerCategory,
+    Label,
+    TxnLabel,
     DeriveRun,
     TxnDerived,
     TxnLink,
@@ -468,7 +478,7 @@ def stored_run_lines(p: Plan) -> None:
     """The last recompute and how far the stored rows are from a fresh derive."""
     print("stored run")
     line("last run", f"#{p.last_run_id}" if p.last_run_id else "none", 2)
-    for name in ("merchant", "reconcile"):
+    for name in VERSIONS:
         line(f"{name} version", (p.last_versions or {}).get(name, "-"), 2)
     line("stored rows that differ", p.changes, 2)
 
@@ -600,6 +610,9 @@ EXPORT_COUNTS = (
     "texts",
     "role_decisions",
     "link_decisions",
+    "category_decisions",
+    "labels",
+    "labelled_transactions",
     "mapped to another id",
 )
 REPO = Path(__file__).resolve().parents[2]
@@ -786,7 +799,9 @@ def cmd_totals(session: Session, args: argparse.Namespace) -> int:
         )
         return 1
     rows = session.execute(
-        select(TxnDerived.role, TxnDerived.role_basis, Transaction.amount_paise)
+        select(
+            TxnDerived.role, TxnDerived.role_basis, Transaction.amount_paise, TxnDerived.category
+        )
         .join(Transaction, Transaction.id == TxnDerived.transaction_id)
         .where(
             TxnDerived.owner_id == settings.owner_id,
@@ -794,8 +809,10 @@ def cmd_totals(session: Session, args: argparse.Namespace) -> int:
             Transaction.txn_time_utc < end,
         )
     )
-    sums, roles = Counter(), Counter()
-    for role, basis, amount in rows:
+    sums, roles, by_category = Counter(), Counter(), Counter()
+    for role, basis, amount, category in rows:
+        if role in SPENDING_ROLES:
+            by_category[category] += COUNTED[role][1] * amount
         roles[role] += 1
         if role in COUNTED:
             total, sign = COUNTED[role]
@@ -815,12 +832,183 @@ def cmd_totals(session: Session, args: argparse.Namespace) -> int:
         ("Income", sums["income"], 0),
     ):
         print(f"{' ' * indent}{label:<{24 - indent}}{format_inr(value):>20}")
+    print("Spent by category")
+    for slug, name in CATEGORIES.items():
+        if by_category[slug]:
+            print(f"  {name:<22}{format_inr(by_category[slug]):>20}")
+    print(f"  {'adds up to':<22}{format_inr(sum(by_category.values())):>20}")
     print("transactions by role")
     for role in ROLES:
         line(role, roles[role], 2)
     line("transactions", sum(roles.values()))
     print(PRIVATE)
     return 0
+
+
+def percent(part: int, whole: int) -> str:
+    return f"{100 * part / whole:.1f}%" if whole else "-"
+
+
+def cmd_category_stats(session: Session, args: argparse.Namespace) -> int:
+    """Categories over active transactions, in memory. Read-only, counts and percentages only."""
+    try:
+        p = plan(session, settings.owner_id)
+    except OwnerDataError as exc:
+        print(f"category-stats failed: {exc}", file=sys.stderr)
+        return 1
+    spend = Counter(dict.fromkeys(CATEGORIES, 0))
+    rules, basis, merchants = Counter(), Counter(engine=0, owner=0), Counter()
+    not_spending = gross = gross_open = no_text = 0
+    for t in p.txns:
+        role, c = p.result.roles[t.id].role, p.categories[t.id]
+        rules[c.rule] += 1
+        if role not in SPENDING_ROLES:
+            not_spending += 1
+            continue
+        spend[c.category] += 1
+        basis[c.basis] += 1
+        if t.direction == "debit":
+            gross += t.amount_paise
+        if c.category == UNCATEGORISED:
+            gross_open += t.amount_paise if t.direction == "debit" else 0
+            key = p.result.merchants[t.id].merchant_key
+            if key:
+                merchants[key] += 1
+            else:
+                no_text += 1
+    counted = sum(spend.values())
+    print(f"category-stats ({CATEGORISE_VERSION}, read-only)")
+    line("transactions (active)", len(p.txns))
+    line("not spending", not_spending, 2)
+    line("spend transactions", counted, 2)
+    print("spend transactions by category")
+    for slug in CATEGORIES:
+        line(slug, spend[slug], 2)
+    print_counter("by rule (all transactions)", rules)
+    print_counter("spend transactions by basis", basis)
+    print("uncategorised")
+    line("share of spend transactions", percent(spend[UNCATEGORISED], counted), 2)
+    line("share of spend amount", percent(gross_open, gross), 2)
+    line("merchants", len(merchants), 2)
+    line("without merchant text", no_text, 2)
+    for share in (0.5, 0.8, 0.95):
+        line(f"merchants covering {share:.0%}", keys_covering(merchants, share), 2)
+    stored_run_lines(p)
+    return 0
+
+
+def merchant_groups(p: Plan) -> list[dict]:
+    """Merchants of spend debits, most transactions first, with their usual category."""
+    groups: dict[str, dict] = {}
+    for t in sorted(p.txns, key=lambda t: t.id):
+        d, m = p.result.roles[t.id], p.result.merchants[t.id]
+        if (
+            d.role not in ("spend", "card_bill_counted")
+            or not m.merchant_key
+            or d.own_account is not None
+        ):
+            continue
+        party = None if d.party is None else p.owner.parties[d.party]
+        g = groups.setdefault(
+            m.merchant_key,
+            {
+                "key": m.merchant_key,
+                "name": m.display_name,
+                "text": t.counterparty_raw,
+                "kinds": set(),
+                "party": d.party,
+                "n": 0,
+                "categories": Counter(),
+            },
+        )
+        g["n"] += 1
+        g["kinds"].add(m.kind)
+        c = p.categories[t.id]
+        g["categories"][c.category, c.basis, c.rule] += 1
+        g["has_default"] = bool(party and party.category)
+    for g in groups.values():
+        g["category"], g["basis"], g["rule"] = g["categories"].most_common(1)[0][0]
+    return sorted(groups.values(), key=lambda g: (-g["n"], g["key"]))
+
+
+def cmd_category_review(session: Session, args: argparse.Namespace) -> int:
+    """Owner only: pick a category for a merchant. Saved on a party, then one recompute."""
+    if (refused := refuse_without_terminal("category-review")) is not None:
+        return refused
+    if not args.list and not can_ask():
+        print("category-review asks questions: run it in a console window.", file=sys.stderr)
+        return 2
+    try:
+        p = plan(session, settings.owner_id)
+    except OwnerDataError as exc:
+        print(f"category-review failed: {exc}", file=sys.stderr)
+        return 1
+    groups = merchant_groups(p)
+    if args.uncategorised:
+        groups = [g for g in groups if g["category"] == UNCATEGORISED]
+    slugs = list(CATEGORIES)
+    print(PRIVATE)
+    if not args.list:
+        for n, slug in enumerate(slugs, 1):
+            print(f"  {n:>2} {slug:<16} {CATEGORIES[slug]}")
+    answers = []
+    for n, g in enumerate(groups, 1):
+        current = f"{CATEGORIES[g['category']]} ({g['basis']}, {g['rule']})"
+        print(f"[{n}/{len(groups)}] {g['n']:>4} txns  {g['name']}  ->  {current}")
+        if args.list:
+            continue
+        choice = None
+        while choice is None:
+            answer = _answer("category number or slug (enter to skip, none to clear, quit)? ")
+            if answer in ("quit", "skip_or_leave", "none") or answer in CATEGORIES:
+                choice = answer
+            elif answer.isdigit() and 1 <= int(answer) <= len(slugs):
+                choice = slugs[int(answer) - 1]
+            else:
+                print("  answer a number from the list, a slug, none, or quit")
+        if choice == "quit":
+            break
+        if choice != "skip_or_leave":
+            answers.append((g, None if choice == "none" else choice))
+    print(f"{len(groups)} merchant(s)" if args.list else f"answered: {len(answers)} merchant(s)")
+    code = _save_categories(session, answers) if answers else 0
+    print(PRIVATE)
+    return code
+
+
+def _save_categories(session: Session, answers: list[tuple[dict, str | None]]) -> int:
+    """A default category per merchant: on its party, or on a new party (source terminal)."""
+    owner = settings.owner_id
+    _, _, parties = load_owner(session, owner)
+    labels = {label.casefold() for label in session.scalars(select(Party.label))}
+    for g, slug in answers:
+        if g["party"] is not None:
+            parties[g["party"]].category = slug
+        elif slug:
+            label, n = g["name"][:70], 1
+            while label.casefold() in labels:
+                n += 1
+                label = f"{g['name'][:70]} ({n})"
+            labels.add(label.casefold())
+            kind = "person" if g["kinds"] == {"person"} else "business"  # mixed: a shop
+            party = Party(owner_id=owner, label=label, kind=kind, category=slug, source="terminal")
+            session.add(party)
+            session.flush()
+            session.add(
+                PartyText(
+                    owner_id=owner, party_id=party.id, text=g["text"][:200], source="terminal"
+                )
+            )
+    session.flush()
+    try:
+        plan(session, owner)
+    except OwnerDataError as exc:
+        session.rollback()
+        print(f"not saved: {exc}. Run the review again.", file=sys.stderr)
+        return 1
+    session.commit()
+    print(f"saved: {len(answers)} merchant categor(ies)")
+    return run_recompute(session, "owner")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -857,6 +1045,10 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("output", type=Path, help="where to write it, outside the repository")
     tot = sub.add_parser("totals", help="owner only: Spent, Paid back, Net, Income of a month")
     tot.add_argument("--month", required=True, help="YYYY-MM, an IST calendar month")
+    sub.add_parser("category-stats", help="category counts over transactions (read-only)")
+    cat = sub.add_parser("category-review", help="owner only: a category per merchant")
+    cat.add_argument("--uncategorised", action="store_true", help="only uncategorised merchants")
+    cat.add_argument("--list", action="store_true", help="show the merchants, ask nothing")
     return parser
 
 
@@ -872,6 +1064,8 @@ COMMANDS = {
     "reconcile-review": cmd_reconcile_review,
     "owner-export": cmd_owner_export,
     "totals": cmd_totals,
+    "category-stats": cmd_category_stats,
+    "category-review": cmd_category_review,
 }
 
 

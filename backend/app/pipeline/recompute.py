@@ -2,6 +2,9 @@
 
     derived = f(active transactions, owner tables, recorded pairs, engine versions)
 
+Reconcile gives every transaction a role and the links; Categorise then gives it a
+category.
+
 txn_derived, txn_links and derive_runs are written only here. The owner tables are
 only read. Everything happens in one database transaction, so a failure leaves the
 previous state whole. A run that would change nothing writes nothing, not even a
@@ -24,12 +27,14 @@ from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
 from app.engine import reconcile
+from app.engine.categorise import CATEGORISE_VERSION, Categorised, categorise
 from app.engine.merchant import MERCHANT_VERSION
-from app.engine.reconcile import VERSIONS, OwnerData, Result, Txn, derive
+from app.engine.reconcile import OwnerData, Result, Txn, derive
 from app.models import (
     DeriveRun,
     DuplicateCandidate,
     OwnAccount,
+    OwnerCategory,
     OwnerLinkDecision,
     OwnerRole,
     OwnIdentifier,
@@ -40,6 +45,8 @@ from app.models import (
     TxnLink,
 )
 
+# The engine versions a run is made with; a run records them (derive_runs.versions).
+VERSIONS = reconcile.VERSIONS | {"categorise": CATEGORISE_VERSION}
 CHUNK = 5000  # ids per DELETE ... IN (...)
 ROWS = 1000  # rows per INSERT ... VALUES (...), (...): one statement, one round trip
 
@@ -58,6 +65,7 @@ class Plan:
     owner: OwnerData
     legacy: set[tuple[int, int]]
     result: Result
+    categories: dict[int, Categorised]
     last_run_id: int | None  # the last done run, if any
     last_versions: dict | None  # the engine versions that run was made with
     derived: Changes
@@ -155,11 +163,20 @@ def load_owner(
             for a in accounts
         ),
         parties=tuple(
-            reconcile.Party(p.kind, p.income_label is not None, tuple(party_texts.get(p.id, ())))
+            reconcile.Party(
+                p.kind, p.income_label is not None, tuple(party_texts.get(p.id, ())), p.category
+            )
             for p in parties
         ),
         roles=roles,
         links=links,
+        categories=dict(
+            session.execute(
+                select(OwnerCategory.transaction_id, OwnerCategory.category).where(
+                    OwnerCategory.owner_id == owner_id
+                )
+            ).all()
+        ),
     )
     return owner, accounts, parties
 
@@ -172,12 +189,13 @@ def plan(session: Session, owner_id: uuid.UUID) -> Plan:
     legacy = {(min(a, b), max(a, b)) for a, b in recorded}
     try:
         result = derive(txns, owner, legacy)
+        categories = categorise(txns, owner, result)
     except ValueError as exc:  # owner data that cannot hold: engine messages hold no values
         raise OwnerDataError(str(exc)) from None
 
     fresh = {}
     for t in txns:
-        d, m = result.roles[t.id], result.merchants[t.id]
+        d, m, c = result.roles[t.id], result.merchants[t.id], categories[t.id]
         party = None if d.party is None else parties[d.party]
         fresh[t.id] = {
             "transaction_id": t.id,
@@ -195,6 +213,9 @@ def plan(session: Session, owner_id: uuid.UUID) -> Plan:
             "role_basis": d.basis,
             "role_reasons": list(d.reasons),
             "duplicate_of": d.duplicate_of,
+            "category": c.category,
+            "category_rule": c.rule,
+            "category_basis": c.basis,
         }
     stored = {
         row.transaction_id: dict(row._mapping)
@@ -250,6 +271,7 @@ def plan(session: Session, owner_id: uuid.UUID) -> Plan:
         owner,
         legacy,
         result,
+        categories,
         last_run.id if last_run else None,
         dict(last_run.versions) if last_run else None,
         derived,
@@ -328,5 +350,6 @@ def run_counts(p: Plan) -> dict:
         "txn_derived": dict(zip(changed, map(len, p.derived), strict=True)),
         "txn_links": dict(zip(changed, map(len, p.links), strict=True)),
         "roles": dict(sorted(Counter(d.role for d in p.result.roles.values()).items())),
+        "categories": dict(sorted(Counter(c.category for c in p.categories.values()).items())),
         "links": dict(sorted(Counter(f"{x.kind} {x.status}" for x in p.result.links).items())),
     }

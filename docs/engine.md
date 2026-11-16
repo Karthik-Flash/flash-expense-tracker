@@ -377,3 +377,57 @@ under it:
 **Helpers.** `reconcile.ist_month("2026-01")` gives the start and end (UTC)
 of that IST calendar month, for `totals()`. `money.format_inr(paise)` gives
 `Rs 1,23,456.78` (Indian grouping, `-Rs` for a negative amount).
+
+## Categorise: one category per transaction
+
+`app/engine/categorise.py` (`categorise-1.0.0`, D-073, D-074) runs on the
+Reconcile result. Pure and stdlib only.
+
+```python
+from app.engine.categorise import CATEGORIES, breakdown, categorise, label_view
+
+categories = categorise(txns, owner, result)  # {transaction id: Categorised}
+c = categories[txn.id]
+c.category, c.rule, c.basis  # "food_drinks", "BRAND", "engine"
+breakdown(txns, result.roles, categories, start, end)  # {slug: paise}, sums to Spent
+label_view(txns, result.roles, categories, labelled_ids)  # (Totals, {slug: paise})
+```
+
+`CATEGORIES` maps the 20 slugs to their names, in list order. Owner input:
+`OwnerData.categories` (transaction id -> slug) and `Party.category`.
+
+| Rule | When | Category | Basis |
+| ---- | ---- | -------- | ----- |
+| `OWNER_txn` | The owner decided this transaction (any role) | as decided | owner |
+| `NS_<role>` | The role is not spending | payback: People; card_bill_excluded: Card bill; fd_move: Investments; income, self_transfer, duplicate, ignored, uncertain: Other | engine |
+| `RF_linked` | A refund linked to a purchase | the purchase's | the purchase's |
+| `OWNER_party` | The matched owner party has a default | the party's | owner |
+| `CH_atm` | Debit, channel `atm` | Cash | engine |
+| `ROLE_card_bill` | Role `card_bill_counted` | Card bill | engine |
+| `CH_emi` | Debit, channel `emi` | EMI & Loans | engine |
+| `HINT_fee` | Debit with hint `bank_charge` (no parser emits it yet) | Fees & Charges | engine |
+| `BRAND` | The merchant is in the brand dictionary | `BRAND_CATEGORIES[brand]` | engine |
+| `KEYWORD` | Every category keyword in the name agrees | that category | engine |
+| `KW_conflict` | Keywords of two categories | Uncategorised | engine |
+| `PERSON` | Debit to a person (engine kind, or a party of kind person) | People | engine |
+| `NONE` | Nothing matched | Uncategorised | engine |
+
+- Spending roles are `spend`, `card_bill_counted` and `refund` (minus). An
+  unlinked refund goes through `OWNER_party`, `BRAND`, `KEYWORD`, `NONE`.
+- Keywords are whole words of the name (`KEYWORD_CATEGORIES`): business
+  keywords of the merchant engine whose meaning is clear, plus mutual,
+  securities, broking, demat. Generic words (store, traders, services,
+  hotel) are not mapped. The UPI ID is not searched.
+- Every brand has one category (`BRAND_CATEGORIES`, checked by a test).
+  Wallets (Paytm, PhonePe, MobiKwik) are Uncategorised.
+- `breakdown()` sums a range by category and adds up exactly to Spent.
+  `label_view()` gives a label's Spent, Paid back, Net and breakdown across
+  all dates; a label never changes a category.
+- Bump `CATEGORISE_VERSION` on any change that can alter a category, rule or
+  basis. Recompute records it next to the other versions.
+
+**Commands.** `category-stats`: counts and percentages only, safe to paste.
+`category-review [--uncategorised] [--list]`: owner only, terminal only;
+merchants by transaction count with their category, the owner picks one,
+which is saved on a party (source `terminal`), then one recompute.
+`totals --month` also prints Spent by category.

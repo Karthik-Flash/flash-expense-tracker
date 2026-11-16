@@ -293,3 +293,31 @@ RLS on every app table and no policy anywhere: `tests/test_migration.py`
 - `totals --month YYYY-MM`: terminal only, reads `txn_derived` joined to
   `transactions`, refuses when no recompute has run, the versions differ, or
   stored rows differ from a fresh derive.
+
+## Categories and labels (migration `0006`)
+
+Additive. RLS on the three new tables.
+
+| Table or column | What | Constraints |
+| --------------- | ---- | ----------- |
+| `parties.category` | The owner's default category for the party (slug, null: none) | |
+| `owner_categories` | `transaction_id` (primary key), `category`, `decided_at`, `source`: the owner's decision on one transaction | |
+| `labels` | `name`, `source`: a label the owner made (D-056) | UNIQUE (`owner_id`, `name`) |
+| `txn_labels` | `transaction_id` (primary key), `label_id`, `source` | one label per transaction |
+| `txn_derived.category`, `.category_rule`, `.category_basis` | The engine's result, never blank (defaults `uncategorised`, `NONE`, `engine`) | index on `category` |
+
+- A category is a slug; no CHECK, so a new category needs no migration.
+- `owner-load`: a party may state `"category"`. One the file does not state
+  is left as it is. `owner-export` and the restore cover `categories` and
+  `labels`, by dedupe key.
+- `recompute` writes the three derived columns and records
+  `"categorise"` in `derive_runs.versions`.
+
+| | Invariant | Test |
+| -- | --------- | ---- |
+| I22 | Exactly one category per active transaction, always from the list | `test_category_storage.py::test_i22_*` |
+| I23 | The breakdown adds up to Spent for any range | `test_i23_*` (storage and engine) |
+| I24 | Transaction decision beats party default beats engine | `test_i24_*` |
+| I25 | Recompute twice changes nothing | `test_i25_*` |
+| I26 | Corrections survive reparse | `test_i26_*` |
+| I27 | A transaction imported after a merchant correction gets that category | `test_i27_*` |

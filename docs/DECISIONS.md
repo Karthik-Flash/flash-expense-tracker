@@ -750,3 +750,42 @@ payment reference. A pair is "two payments" only when both carry a
 reference of the same kind and the references differ. A mandate ID next to
 a payment reference says nothing, so the pair stays eligible as a duplicate
 candidate, in Reconcile (`reconcile-1.2.1`) and at import (`is_candidate`).
+
+## D-073 Categories: fixed list, slugs, precedence (2026-11-16)
+
+Builds on D-056. `app/engine/categorise.py`, version `categorise-1.0.0`.
+
+- Twenty categories. A stable slug is stored, the name is shown. The database
+  has no CHECK on a category, so a new one needs no migration.
+- Every active transaction has exactly one category. Precedence: the owner's
+  decision on the transaction; the default of the owner party it matches;
+  role and channel (ATM is Cash, a counted card bill is Card bill, an EMI is
+  EMI & Loans, a bank charge is Fees & Charges); the brand dictionary;
+  keyword rules on whole words of the merchant name; a debit to a person is
+  People; else Uncategorised. Every result has a rule code and a basis.
+- Uncategorised is the owner's to-do list, not a failure.
+- Fix once: a category on a party covers every past and future payment to
+  it. A decision on one transaction beats it and does not change the party.
+- No bank-charge message shape exists yet; the Fees & Charges rule waits for
+  a parser hint `bank_charge`.
+
+## D-074 Categories of non-spending roles, refunds and investments (2026-11-16)
+
+- **Not spending.** payback carries People; card_bill_excluded Card bill;
+  fd_move Investments; income, self_transfer, duplicate, ignored and
+  uncertain carry Other, each with rule `NS_<role>`. They are never part of
+  a breakdown, so the column is never blank and the breakdown still adds up
+  to Spent. They are never Uncategorised, so the to-do list holds only
+  spending.
+- **Refunds.** A linked refund takes the category and basis of its purchase.
+  An unlinked refund is categorised by its own merchant (owner party, brand,
+  keyword), else Uncategorised. A refund lowers its category in the range it
+  arrives in, so a category can be negative in one month; the breakdown of
+  any range still adds up exactly to Spent.
+- **Investments.** Text alone names an investment only through four words:
+  mutual, securities, broking, demat. No brand is an investment brand.
+  Investment senders stay excluded until Phase 6 (D-026), and an investment
+  debit still has role spend (D-060); the category only names it.
+- **Owner file.** A party may state `category`. A category the file does not
+  state is left as it is, so a correction made in `category-review` on a
+  file party survives the next load (refines D-070).

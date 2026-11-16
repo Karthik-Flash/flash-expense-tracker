@@ -67,16 +67,16 @@ backend/            Render root
   app/config.py       settings from env / backend/.env (DATABASE_URL, PING_TOKEN, CORS_ORIGINS, OWNER_ID)
   app/db.py           engine, SessionLocal, Base
   app/models.py       ORM models; UtcDateTime column type
-  app/engine/         stdlib-only parser: senders, money, timeparse, filters (OTP), models, parsers/{base,hdfc}, merchant (+ brands.json), reconcile (roles and links, in memory)
+  app/engine/         stdlib-only parser: senders, money, timeparse, filters (OTP), models, parsers/{base,hdfc}, merchant (+ brands.json), reconcile (roles and links), categorise
   app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py, owner_load.py (owner file -> owner tables), recompute.py (derive -> derived tables)
   app/importers/      sms_backup.py (streaming XML importer)
-  app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals
-  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables
+  app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals | category-stats | category-review
+  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
 frontend/           Vercel root; src/App.tsx shows backend status, survives cold starts
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-072), engine.md, data-model.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-074), engine.md, data-model.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```
@@ -165,6 +165,9 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
   only). Not built: the card bill pair rule. Not pushed since `c2c6600`:
   the migrations reach Supabase on the next deploy (NOTES.md has the
   owner's order of commands).
+- Categorise (3D) is built: `categorise-1.0.0`, migration `0006`, owner
+  category decisions and labels, `category-stats`, `category-review`. No
+  CLI creates labels yet (the app will). Not pushed.
 - Foreign currency is deferred: 44 messages (D-035).
 - Only HDFC has a parser: 153 messages from SBI, ICICI, India Post, Kotak
   and PhonePe sit as `no_parser_for_bank`. Add a parser (docs/engine.md,

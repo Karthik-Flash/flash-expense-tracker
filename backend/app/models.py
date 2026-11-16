@@ -308,6 +308,9 @@ class Party(Base):
     label: Mapped[str] = mapped_column(String(80))
     kind: Mapped[str] = mapped_column(String(10))
     income_label: Mapped[str | None] = mapped_column(String(80))
+    # The owner's default category for every payment to this party (a slug; no CHECK,
+    # so a new category needs no migration).
+    category: Mapped[str | None] = mapped_column(String(40))
     source: Mapped[str] = mapped_column(String(10))
     created_at: Mapped[datetime] = _created()
 
@@ -365,6 +368,53 @@ class OwnerRole(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
     role: Mapped[str] = mapped_column(String(20))
     decided_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    source: Mapped[str] = mapped_column(String(10))
+
+
+class OwnerCategory(Base):
+    """The owner fixes one transaction's category. It beats the party default."""
+
+    __tablename__ = "owner_categories"
+    __table_args__ = (
+        CheckConstraint(_in("source", OWNER_SOURCES), name="ck_owner_category_source"),
+    )
+
+    transaction_id: Mapped[int] = mapped_column(
+        BigId, ForeignKey("transactions.id"), primary_key=True, autoincrement=False
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    category: Mapped[str] = mapped_column(String(40))
+    decided_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    source: Mapped[str] = mapped_column(String(10))
+
+
+class Label(Base):
+    """A label the owner made, for example a trip (D-056). It never replaces a category."""
+
+    __tablename__ = "labels"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "name", name="uq_label_name"),
+        CheckConstraint(_in("source", OWNER_SOURCES), name="ck_label_source"),
+    )
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    name: Mapped[str] = mapped_column(String(80))
+    source: Mapped[str] = mapped_column(String(10))
+    created_at: Mapped[datetime] = _created()
+
+
+class TxnLabel(Base):
+    """The one label of a transaction: the primary key allows one row per transaction."""
+
+    __tablename__ = "txn_labels"
+    __table_args__ = (CheckConstraint(_in("source", OWNER_SOURCES), name="ck_txn_label_source"),)
+
+    transaction_id: Mapped[int] = mapped_column(
+        BigId, ForeignKey("transactions.id"), primary_key=True, autoincrement=False
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    label_id: Mapped[int] = mapped_column(ForeignKey("labels.id"), index=True)
     source: Mapped[str] = mapped_column(String(10))
 
 
@@ -427,6 +477,10 @@ class TxnDerived(Base):
     role_basis: Mapped[str] = mapped_column(String(6))
     role_reasons: Mapped[list] = mapped_column(JSON)
     duplicate_of: Mapped[int | None] = mapped_column(ForeignKey("transactions.id"))
+    # Category (3D): a slug of the fixed list, never blank.
+    category: Mapped[str] = mapped_column(String(40), server_default="uncategorised", index=True)
+    category_rule: Mapped[str] = mapped_column(String(32), server_default="NONE")
+    category_basis: Mapped[str] = mapped_column(String(6), server_default="engine")
 
 
 class TxnLink(Base):

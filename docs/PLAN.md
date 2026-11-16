@@ -99,6 +99,9 @@ data run by the owner, and a tag (`phase-3a-done` ... `phase-3f-done`).
 - 3D Categorise: rules -> merchant dictionary -> owner corrections.
   Corrections always win and survive reparse. Owner labels (D-056): create a
   label and attach it to a transaction; stored like corrections.
+  Built 16 Nov 2026 (`categorise-1.0.0`, migration `0006`, D-073, D-074):
+  fixed list of 20, party defaults, per-transaction decisions, labels
+  (tables and a pure label view), `category-stats`, `category-review`.
 - 3E Auth and read-only API: Supabase Auth, single user, sign-ups off; JWT
   verified in FastAPI; no data endpoint without auth. The Data API stays
   keepalive-only (D-053).

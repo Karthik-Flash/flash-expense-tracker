@@ -549,6 +549,11 @@ grows by nine. Nothing is added to the `keepalive` schema (D-053). Types are
 the ones `models.py` already uses on both databases (`BigId`, `String`,
 `JSON`, `UtcDateTime`, `Uuid`, check constraints); no partial indexes.
 
+**Step 3D, as built** (migration `0006`, D-073, D-074): `parties.category`,
+`owner_categories`, `labels`, `txn_labels`, and `category`, `category_rule`,
+`category_basis` on `txn_derived`. All additive, as section C planned. Details:
+`docs/engine.md`, "Categorise", and `docs/data-model.md`.
+
 ## D. Recompute
 
 ```

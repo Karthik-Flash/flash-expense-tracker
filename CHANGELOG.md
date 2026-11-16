@@ -66,6 +66,18 @@ Phase 1 is parsing, Phase 2 is the database and import.
   (D-072): a mandate ID and a payment reference are different kinds.
   Duplicate primary confirmed (D-071).
 
+## Phase 3D: categorise (16 Nov 2026, in progress, tag `phase-3d-done` when done)
+
+- Pure engine `categorise-1.0.0` (D-073, D-074): one category per
+  transaction from a fixed list of 20; owner decision, party default, role
+  and channel, brand, keyword, person, else Uncategorised. Linked refunds
+  take their purchase's category. The breakdown adds up exactly to Spent.
+- Migration `0006`: `parties.category`, `owner_categories`, `labels`,
+  `txn_labels`, category columns on `txn_derived`. Export and restore cover
+  them.
+- `category-stats` (counts only), `category-review` (owner only),
+  `totals --month` with the category breakdown. Invariants I22 to I27.
+
 ## Phase 2: database, SMS import, dedupe (14 Nov 2026, tag `phase-2-done`)
 
 - Migration `0002`: `import_batches`, `raw_messages`, `parse_results`,
