@@ -844,3 +844,25 @@ is a candidate (`no_own_text`). Nothing is guessed from amounts alone.
   idempotent, and commit together with their recompute.
 - CORS: the Vercel origin and localhost dev origins only.
 - New packages: `PyJWT[crypto]==2.15.1`, `cryptography==50.0.2` (PyCA).
+
+## D-079 The API gaps of 3F-2, closed (2026-11-17)
+
+- Transaction items carry `role_basis` and `person_id`. A person is the
+  owner party the text matches (`p_<id>`), else the sender id of the text.
+  The engine never joins a name and a UPI ID on its own, so one person is
+  one id only after the owner lists both texts on one party.
+- `/summary` carries `previous`: the month before under the Spent rules, cut
+  at the same IST day when the month on screen is the current one.
+- `/labels` carries every label's totals, so the list needs one request.
+- Senders: status `ignored` (every credit ignored); an ignored sender can be
+  answered again; `DELETE /senders/{id}` forgets the answer. A party made
+  only for the answer is removed; one that also holds a category default or
+  comes from the owner file keeps it and becomes a business. Party kind
+  carries both "a person" and "money from them is a payback" (D-076), so
+  there is no "unknown" kind to return to; adding one would need a
+  migration for this single case.
+- Label and income-label names: trimmed, spaces joined, 1 to 30 characters,
+  the same rules as the client. A label name the owner has in any case is a
+  409; the old "200 with the existing label" is gone, so a second create
+  never looks like success. No migration: the column stays 80 wide for
+  labels loaded from an owner file.
