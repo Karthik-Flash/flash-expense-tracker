@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react'
 
-import { api, demoApi } from './api/index.ts'
+import { api, DEMO, demoApi } from './api/index.ts'
 import { DEMO_STATES, type DemoState } from './api/fake.ts'
+import { signIn, signOut, useAuth } from './auth.ts'
 import { AppContext, navigate, newSession, useApp, useLoad, useScrollMemory, useView, type AppState } from './state.tsx'
 import { CategoryDetail, Home } from './screens/Home.tsx'
 import { LabelDetail, Labels } from './screens/Labels.tsx'
@@ -10,7 +11,7 @@ import { Logos } from './screens/Logos.tsx'
 import { TodoScreen } from './screens/Todo.tsx'
 import { loadTodo } from './screens/todo-data.ts'
 import { Transactions } from './screens/Transactions.tsx'
-import { Icon } from './ui.tsx'
+import { Button, Icon } from './ui.tsx'
 import { HOME, type Tab, type View } from './view.ts'
 
 const SIGNED_IN = 'flash-demo-signed-in'
@@ -21,7 +22,7 @@ const TABS: [Tab, string, string][] = [
   ['labels', 'Labels', 'tag'],
 ]
 
-function signedIn(): boolean {
+function demoSignedIn(): boolean {
   try {
     return sessionStorage.getItem(SIGNED_IN) === '1'
   } catch {
@@ -29,34 +30,63 @@ function signedIn(): boolean {
   }
 }
 
+function setDemoSignedIn(on: boolean): void {
+  try {
+    if (on) sessionStorage.setItem(SIGNED_IN, '1')
+    else sessionStorage.removeItem(SIGNED_IN)
+  } catch {
+    // Private mode: the demo login lasts for this page only.
+  }
+}
+
 export default function App() {
   const view = useView()
-  const [ready, setReady] = useState(signedIn)
+  const auth = useAuth()
+  const [demoIn, setDemoIn] = useState(demoSignedIn)
   const [version, setVersion] = useState(0)
   const changed = useCallback(() => setVersion((v) => v + 1), [])
-  const state: AppState = useMemo(() => ({ api, version, changed }), [version, changed])
-  if (view.tab === 'dev' && (import.meta.env.DEV || api.demo)) return <Logos />
+  const leave = useCallback(() => {
+    if (!DEMO) return void signOut()
+    setDemoSignedIn(false)
+    newSession()
+    setDemoIn(false)
+  }, [])
+  const state: AppState = useMemo(() => ({ api, version, changed, signOut: leave }), [version, changed, leave])
+  if (DEMO && view.tab === 'dev') return <Logos />
+  const status = DEMO ? (demoIn ? 'in' : 'out') : auth.status
+  if (status === 'starting') return null
   return (
     <AppContext.Provider value={state}>
       <div className="flex min-h-dvh flex-col">
-        {api.demo && <DemoBanner />}
-        {ready ? (
-          <Shell view={view} />
-        ) : (
+        {DEMO && <DemoBanner />}
+        {status === 'in' && <Shell view={view} />}
+        {status === 'no-access' && <NoAccess />}
+        {status === 'out' && (
           <Login
-            demo={api.demo}
-            onDone={() => {
-              try {
-                sessionStorage.setItem(SIGNED_IN, '1')
-              } catch {
-                // Private mode: stay signed in for this page only.
-              }
-              setReady(true)
+            note={auth.status === 'out' ? auth.note : ''}
+            submit={async (email, password) => {
+              if (!DEMO) return signIn(email, password)
+              setDemoSignedIn(true)
+              setDemoIn(true)
+              return ''
             }}
           />
         )}
       </div>
     </AppContext.Provider>
+  )
+}
+
+/** A valid login that the API does not know (403). */
+function NoAccess() {
+  return (
+    <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col justify-center px-6 py-8" role="alert">
+      <h1 className="text-xl font-semibold">This account has no access</h1>
+      <p className="mt-2 text-sm text-muted">You signed in, but this account is not set up for Flash. Sign out and use the owner's account.</p>
+      <div className="mt-6">
+        <Button kind="primary" onClick={() => void signOut()}>Sign out</Button>
+      </div>
+    </main>
   )
 }
 
@@ -130,10 +160,10 @@ function TodoCount() {
   )
 }
 
-/** "Demo data" on every screen, in the flow so it never covers content, and the demo state switch. */
+/** Local dev with VITE_DEMO=1 only: "Demo data" on every screen, and the demo state switch. */
 function DemoBanner() {
   const { changed } = useApp()
-  const [current, setCurrent] = useState<DemoState>(demoApi.state)
+  const [current, setCurrent] = useState<DemoState>(demoApi?.state ?? 'normal')
   return (
     <div className="border-b border-line bg-banner">
       <div className="mx-auto flex max-w-[480px] flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-1 text-xs">
@@ -144,7 +174,7 @@ function DemoBanner() {
             value={current}
             onChange={(e) => {
               const next = e.target.value as DemoState
-              demoApi.setState(next)
+              demoApi?.setState(next)
               setCurrent(next)
               newSession()
               changed()

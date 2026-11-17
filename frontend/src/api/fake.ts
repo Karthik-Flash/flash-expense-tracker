@@ -7,14 +7,16 @@ import type {
   Basis,
   Category,
   CategoryAmount,
+  LabelSummary,
   LabelView,
   Role,
   Sender,
+  SenderStatus,
   Summary,
   Txn,
   TxnQuery,
 } from './types.ts'
-import { istToIso, monthOf } from '../lib/dates.ts'
+import { currentMonth, dayKey, istToIso, monthOf, shiftMonth, today } from '../lib/dates.ts'
 
 export type DemoState = 'normal' | 'waking' | 'empty' | 'error' | 'stale'
 export const DEMO_STATES: DemoState[] = ['normal', 'waking', 'empty', 'error', 'stale']
@@ -163,6 +165,7 @@ export class FakeApi implements Api {
   private merchantDefault = new Map<string, string>()
   private oneOff = new Map<number, string>()
   private roleAnswer = new Map<number, Role>()
+  private incomeLabel = new Map<string, string>()
   private wokeAt = 0
 
   setState(state: DemoState): void {
@@ -177,7 +180,7 @@ export class FakeApi implements Api {
     } else {
       await new Promise((resolve) => setTimeout(resolve, 180))
     }
-    if (this.state === 'error') throw new ApiError(503, 'The server did not answer.')
+    if (this.state === 'error') throw new ApiError(503, 'The server is not ready yet. Try again in a minute.')
     return make()
   }
 
@@ -198,7 +201,7 @@ export class FakeApi implements Api {
   }
 
   private txn(row: Row): Txn {
-    const { role } = this.role(row)
+    const { role, basis: roleBasis } = this.role(row)
     const { category, basis } = this.category(row)
     return {
       id: row.id,
@@ -206,7 +209,9 @@ export class FakeApi implements Api {
       amount_paise: row.amount,
       direction: row.direction,
       display_name: row.name,
+      person_id: row.name ? senderId(row.name, row.id) : null,
       role,
+      role_basis: roleBasis,
       category,
       category_name: NAME[category],
       category_basis: basis,
@@ -244,23 +249,27 @@ export class FakeApi implements Api {
     const groups = new Map<string, Row[]>()
     for (const row of rows) {
       const { role } = this.role(row)
-      if (row.direction !== 'credit' || !['payback', 'uncertain', 'income'].includes(role)) continue
+      if (row.direction !== 'credit' || !['payback', 'uncertain', 'income', 'ignored'].includes(role)) continue
       const id = senderId(row.name, row.id)
       groups.set(id, [...(groups.get(id) ?? []), row])
     }
     return [...groups.entries()]
       .map(([id, mine]) => {
         const roles = mine.map((r) => this.role(r))
+        const kept = roles.filter((r) => r.role !== 'ignored')
         const open = roles.some((r) => r.role === 'uncertain' || (r.role === 'payback' && r.basis !== 'owner'))
+        const status: SenderStatus = open ? 'to_confirm' : kept.length ? 'confirmed' : 'ignored'
+        const role = (kept.at(-1)?.role ?? 'ignored') as Sender['role']
         return {
           id,
           display_name: mine[0].name,
           total_paise: mine.reduce((sum, r) => sum + r.amount, 0),
           count: mine.length,
-          role: roles[roles.length - 1].role as Sender['role'],
+          role,
           basis: roles.every((r) => r.basis === 'owner') ? ('owner' as const) : ('engine' as const),
-          status: open ? ('to_confirm' as const) : ('confirmed' as const),
+          status,
           last_time_utc: mine[mine.length - 1].time,
+          income_label: role === 'income' ? (this.incomeLabel.get(id) ?? null) : null,
         }
       })
       .sort((a, b) => b.total_paise - a.total_paise || a.id.localeCompare(b.id))
@@ -288,7 +297,26 @@ export class FakeApi implements Api {
         },
         stale: this.state === 'stale',
         last_recompute_utc: rows.length ? '2026-11-17T03:00:00Z' : null,
+        previous: this.previous(month),
       }
+    })
+  }
+
+  /** As the API: up to the same IST day when the month is the current one, else whole. */
+  private previous(month: string): Summary['previous'] {
+    const before = shiftMonth(month, -1)
+    const whole = month !== currentMonth()
+    const day = today().slice(8)
+    const rows = this.visible().filter((r) => monthOf(r.time) === before && (whole || dayKey(r.time).slice(8) <= day))
+    const t = this.totals(rows)
+    return { month: before, whole, spent_paise: t.spent, categories: t.categories }
+  }
+
+  transaction(id: number) {
+    return this.respond(() => {
+      const row = this.visible().find((r) => r.id === id)
+      if (!row) throw new ApiError(404, 'No such transaction.')
+      return this.txn(row)
     })
   }
 
@@ -324,10 +352,29 @@ export class FakeApi implements Api {
     return this.respond(() => CATEGORIES)
   }
 
+  private labelView(id: number, name: string): LabelView {
+    const rows = this.visible().filter((r) => r.label === id)
+    const t = this.totals(rows)
+    return {
+      id,
+      name,
+      transactions: rows.length,
+      spent_paise: t.spent,
+      paid_back_paise: t.paidBack,
+      to_confirm_paise: t.toConfirm,
+      net_paise: t.spent - t.paidBack,
+      categories: t.categories,
+    }
+  }
+
   labels() {
     return this.respond(() =>
       [...this.labelNames.entries()]
-        .map(([id, name]) => ({ id, name, transactions: this.visible().filter((r) => r.label === id).length }))
+        .map(([id, name]): LabelSummary => {
+          const { categories, ...totals } = this.labelView(id, name)
+          void categories
+          return totals
+        })
         .sort((a, b) => a.name.localeCompare(b.name)),
     )
   }
@@ -335,23 +382,12 @@ export class FakeApi implements Api {
   label(id: number): Promise<LabelView> {
     return this.respond(() => {
       const name = this.labelNames.get(id)
-      if (!name) throw new ApiError(404, 'no such label')
-      const rows = this.visible().filter((r) => r.label === id)
-      const t = this.totals(rows)
-      return {
-        id,
-        name,
-        transactions: rows.length,
-        spent_paise: t.spent,
-        paid_back_paise: t.paidBack,
-        to_confirm_paise: t.toConfirm,
-        net_paise: t.spent - t.paidBack,
-        categories: t.categories,
-      }
+      if (!name) throw new ApiError(404, 'No such label.')
+      return this.labelView(id, name)
     })
   }
 
-  senders(status: 'to_confirm' | 'confirmed' | 'all' = 'to_confirm') {
+  senders(status: SenderStatus | 'all' = 'to_confirm') {
     return this.respond(() =>
       this.sendersOf(this.visible()).filter((s) => status === 'all' || s.status === status),
     )
@@ -360,10 +396,21 @@ export class FakeApi implements Api {
   answerSender(id: string, answer: Parameters<Api['answerSender']>[1]) {
     return this.respond(() => {
       const sender = this.sendersOf(this.rows).find((s) => s.id === id)
-      if (!sender) throw new ApiError(404, 'no such sender')
+      if (!sender) throw new ApiError(404, 'No such sender.')
       const role: Role = answer.answer === 'friend' ? 'payback' : answer.answer === 'income' ? 'income' : 'ignored'
       const mine = this.rows.filter((r) => r.direction === 'credit' && senderId(r.name, r.id) === id)
       for (const row of mine) this.roleAnswer.set(row.id, role)
+      if (answer.answer === 'income') this.incomeLabel.set(id, answer.label.trim().replace(/\s+/g, ' '))
+      return { result: { id, credits: mine.length }, recompute: { status: 'done', run: 1 } }
+    })
+  }
+
+  resetSender(id: string) {
+    return this.respond(() => {
+      const mine = this.rows.filter((r) => r.direction === 'credit' && senderId(r.name, r.id) === id)
+      if (!mine.length) throw new ApiError(404, 'No such sender.')
+      for (const row of mine) this.roleAnswer.delete(row.id)
+      this.incomeLabel.delete(id)
       return { result: { id, credits: mine.length }, recompute: { status: 'done', run: 1 } }
     })
   }
@@ -371,10 +418,10 @@ export class FakeApi implements Api {
   setCategory(txnId: number, category: string, scope: 'merchant' | 'transaction') {
     return this.respond(() => {
       const row = this.rows.find((r) => r.id === txnId)
-      if (!row) throw new ApiError(404, 'no such transaction')
-      if (!NAME[category]) throw new ApiError(422, 'not a category of the list')
+      if (!row) throw new ApiError(404, 'No such transaction.')
+      if (!NAME[category]) throw new ApiError(422, 'Not a category of the list.')
       if (scope === 'merchant') {
-        if (!row.name) throw new ApiError(422, 'the transaction has no merchant text')
+        if (!row.name) throw new ApiError(422, 'The transaction has no merchant text.')
         this.merchantDefault.set(row.name, category)
         this.oneOff.delete(txnId)
       } else {
@@ -386,22 +433,22 @@ export class FakeApi implements Api {
 
   createLabel(name: string) {
     return this.respond(() => {
-      const clean = name.trim()
-      if (!clean || clean.length > 80) throw new ApiError(422, 'a label name has 1 to 80 characters')
-      for (const [id, existing] of this.labelNames) {
-        if (existing.toLowerCase() === clean.toLowerCase()) return { id, name: existing, created: false }
+      const clean = name.trim().replace(/\s+/g, ' ')
+      if (!clean || [...clean].length > 30) throw new ApiError(422, 'A label name has 1 to 30 characters.')
+      for (const existing of this.labelNames.values()) {
+        if (existing.toLowerCase() === clean.toLowerCase()) throw new ApiError(409, 'A label with this name already exists.')
       }
       const id = Math.max(0, ...this.labelNames.keys()) + 1
       this.labelNames.set(id, clean)
-      return { id, name: clean, created: true }
+      return { id, name: clean }
     })
   }
 
   setLabel(txnId: number, labelId: number) {
     return this.respond(() => {
       const row = this.rows.find((r) => r.id === txnId)
-      if (!row) throw new ApiError(404, 'no such transaction')
-      if (!this.labelNames.has(labelId)) throw new ApiError(404, 'no such label')
+      if (!row) throw new ApiError(404, 'No such transaction.')
+      if (!this.labelNames.has(labelId)) throw new ApiError(404, 'No such label.')
       row.label = labelId
       return { result: { id: txnId, label_id: labelId }, recompute: { status: 'unchanged', run: null } }
     })
@@ -410,7 +457,7 @@ export class FakeApi implements Api {
   clearLabel(txnId: number) {
     return this.respond(() => {
       const row = this.rows.find((r) => r.id === txnId)
-      if (!row) throw new ApiError(404, 'no such transaction')
+      if (!row) throw new ApiError(404, 'No such transaction.')
       row.label = null
       return { result: { id: txnId, label_id: null }, recompute: { status: 'unchanged', run: null } }
     })

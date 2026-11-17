@@ -16,7 +16,9 @@ export function roleText(t: Txn): string {
     case 'refund':
       return 'Refund, lowers Spent'
     case 'payback':
-      return 'Money in from a person, not part of Spent: counts as paid back once confirmed'
+      return t.role_basis === 'owner'
+        ? 'Money in from a person, not part of Spent: counts as paid back'
+        : 'Money in from a person, not part of Spent: counts as paid back once you confirm it in To-do'
     case 'income':
       return 'Income'
     case 'uncertain':
@@ -38,7 +40,7 @@ export function roleText(t: Txn): string {
 export function subtitle(t: Txn): string {
   if (t.role === 'spend' || t.role === 'card_bill_counted') return t.category_name
   if (t.role === 'refund') return `Refund · ${t.category_name}`
-  if (t.role === 'payback') return 'Money in, not part of Spent'
+  if (t.role === 'payback') return t.role_basis === 'owner' ? 'Paid back' : 'Money in, to confirm'
   if (t.role === 'income') return 'Income'
   if (t.role === 'uncertain') return 'To confirm'
   return 'Not counted'

@@ -11,7 +11,7 @@ export function TodoScreen() {
   const { api } = useApp()
   const [todo, retryTodo] = useLoad(() => loadTodo(api), ['todo'])
   const [cats, retryCats] = useLoad(() => api.categories(), ['categories'])
-  const [done, retryDone] = useLoad(() => api.senders('confirmed'), ['senders', 'confirmed'])
+  const [done, retryDone] = useLoad(async () => (await api.senders('all')).filter((s) => s.status !== 'to_confirm'), ['senders', 'answered'])
   return (
     <>
       <Header title="To-do" />
@@ -23,7 +23,7 @@ export function TodoScreen() {
           retryDone()
         }}
       >
-        {([t, categories, confirmed]) => (
+        {([t, categories, answered]) => (
           <>
             {t.senders.length === 0 && t.merchants.length === 0 && <Empty>Nothing to do.</Empty>}
             {t.senders.length > 0 && (
@@ -41,9 +41,9 @@ export function TodoScreen() {
                 {t.unnamed} uncategorised {t.unnamed === 1 ? 'payment has' : 'payments have'} no name. Set them in Transactions.
               </p>
             )}
-            {confirmed.length > 0 && (
-              <Section title="Confirmed">
-                {confirmed.map((s) => <SenderRow key={s.id} s={s} answered />)}
+            {answered.length > 0 && (
+              <Section title="Answered">
+                {answered.map((s) => <SenderRow key={s.id} s={s} answered />)}
               </Section>
             )}
           </>
@@ -90,21 +90,25 @@ function Leaving({ left, children }: { left: boolean; children: ReactNode }) {
   )
 }
 
-const ANSWERED: Record<Sender['role'], string> = {
-  payback: 'Friend: counts as paid back',
-  income: 'Family: income',
-  uncertain: 'Not answered',
+/** The answer as the server has it (role, and the income label it saved). */
+function answerText(s: Sender): string {
+  if (s.role === 'payback') return 'Friend: counts as paid back'
+  if (s.role === 'income') return `Income: ${s.income_label ?? 'no label'}`
+  if (s.role === 'ignored') return 'Ignored: not counted'
+  return 'Not answered'
 }
 
 function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
   const { api } = useApp()
   const [mode, setMode] = useState<'answer' | 'family' | 'shown'>(answered ? 'shown' : 'answer')
-  // A confirmed sender stays in its section with the new answer; a new answer leaves.
+  // An answered sender stays in its section with the new answer; a new answer leaves.
   const { busy, error, left, run } = useWrite(answered, () => answered && setMode('shown'))
-  const [family, setFamily] = useState('Family')
+  // "Ask me again" leaves the Answered section: the sender is to confirm again.
+  const reset = useWrite()
+  const [family, setFamily] = useState(s.income_label ?? 'Family')
   const rule = labelName(family, [])
   return (
-    <Leaving left={left}>
+    <Leaving left={left || reset.left}>
       <div className="flex items-baseline gap-3">
         <span className="min-w-0 flex-1 truncate">{s.display_name ?? 'Bank transfer in'}</span>
         <Money paise={s.total_paise} credit />
@@ -114,17 +118,28 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
       </p>
       {mode === 'shown' && (
         <div className="mt-1 flex items-center gap-3">
-          <span className="min-w-0 flex-1 text-sm">{ANSWERED[s.role]}</span>
+          <span className="min-w-0 flex-1 text-sm wrap-break-word">{answerText(s)}</span>
           <Button onClick={() => setMode('answer')}>Change</Button>
         </div>
       )}
       {mode === 'answer' && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          <Button className="flex-1" disabled={busy} onClick={() => run(() => api.answerSender(s.id, { answer: 'friend' }))}>Friend</Button>
-          <Button className="flex-1" disabled={busy} onClick={() => setMode('family')}>Family</Button>
-          <Button className="flex-1" disabled={busy} onClick={() => run(() => api.answerSender(s.id, { answer: 'ignore' }))}>Ignore</Button>
-        </div>
+        <>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button className="flex-1" disabled={busy} onClick={() => run(() => api.answerSender(s.id, { answer: 'friend' }))}>Friend</Button>
+            <Button className="flex-1" disabled={busy} onClick={() => setMode('family')}>Family</Button>
+            <Button className="flex-1" disabled={busy} onClick={() => run(() => api.answerSender(s.id, { answer: 'ignore' }))}>Ignore</Button>
+          </div>
+          {answered && (
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3">
+              <button type="button" className="min-h-11 text-sm text-accent" disabled={reset.busy} onClick={() => reset.run(() => api.resetSender(s.id))}>
+                Ask me again later
+              </button>
+              <button type="button" className="min-h-11 text-sm text-muted" onClick={() => setMode('shown')}>Cancel</button>
+            </div>
+          )}
+        </>
       )}
+      {reset.error && <p className="mt-1 text-sm text-danger" role="alert">{reset.error}</p>}
       {mode === 'family' && (
         <form
           className="mt-2"
@@ -133,7 +148,7 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
             if (!rule.error) void run(() => api.answerSender(s.id, { answer: 'income', label: rule.name }))
           }}
         >
-          <label className="block text-xs text-muted" htmlFor={`family-${s.id}`}>Income, labelled</label>
+          <label className="block text-xs text-muted" htmlFor={`family-${s.id}`}>Income, labelled (1 to 30 characters)</label>
           <div className="mt-1 flex flex-wrap gap-2">
             <input
               id={`family-${s.id}`}

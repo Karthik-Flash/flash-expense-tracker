@@ -10,7 +10,7 @@ import { TxnList } from './Transactions.tsx'
 export function Labels() {
   const { api, changed } = useApp()
   const { open } = useNav()
-  const [load, retry] = useLoad(async () => Promise.all((await api.labels()).map((l) => api.label(l.id))), ['label-views'])
+  const [load, retry] = useLoad(() => api.labels(), ['labels'])
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const rule = labelName(name, load.status === 'ready' ? load.data.map((v) => v.name) : [])

@@ -1,16 +1,14 @@
-// Pure helpers the screens derive from transactions. 3F-3 may move some to the API
-// (docs/ui-spec.md, "API gaps").
+// Pure helpers the screens derive from transactions (docs/ui-spec.md).
 
 import { spentEffect } from '../api/client.ts'
 import type { Txn } from '../api/types.ts'
-import { dayKey } from '../lib/dates.ts'
 import { nameOf } from './common.ts'
 
 export const LABEL_MAX = 30
 
 const tidy = (text: string) => text.trim().replace(/\s+/g, ' ')
 
-/** A name as it will be saved, and why it cannot be ('' when it can). */
+/** A name as it will be saved, and why it cannot be ('' when it can). The API has the same rules. */
 export function labelName(raw: string, existing: string[]): { name: string; error: string } {
   const name = tidy(raw)
   let error = ''
@@ -20,43 +18,34 @@ export function labelName(raw: string, existing: string[]): { name: string; erro
   return { name, error }
 }
 
-/** Spent by category (refunds lower it). */
-export function spentByCategory(txns: Txn[]): Map<string, number> {
-  const out = new Map<string, number>()
-  for (const t of txns) {
-    const effect = spentEffect(t)
-    if (effect) out.set(t.category, (out.get(t.category) ?? 0) + effect)
-  }
-  return out
-}
-
-/** Last month's rows to compare with: all of them, or up to the same IST day when `today` ("2026-11-17") is in the month on screen. */
-export function comparable(lastMonth: Txn[], today: string | null): Txn[] {
-  if (!today) return lastMonth
-  const day = today.slice(8)
-  return lastMonth.filter((t) => dayKey(t.time_utc).slice(8) <= day)
-}
-
-/** Money sent to a person (People spending) or got back from one (paybacks, confirmed or not). */
+/** Money sent to a person (People spending) or got back from one (paybacks). */
 export function isPersonTxn(t: Txn): boolean {
   return (t.category === 'people' && spentEffect(t) !== 0) || (t.direction === 'credit' && t.role === 'payback')
 }
 
+/** The person of a row: the API's person id (one person under a name and a UPI ID once joined). */
+export const personKey = (t: Txn): string => t.person_id ?? `name:${nameOf(t)}`
+
 export interface Person {
+  key: string
   name: string
   sent: number
+  /** Confirmed paybacks: they lower Net. */
   got: number
+  /** Paybacks the engine guessed: shown, never subtracted. */
+  toConfirm: number
 }
 
 /** One row per person, biggest Sent first. Net is sent - got. */
 export function ledger(txns: Txn[]): Person[] {
   const people = new Map<string, Person>()
   for (const t of txns.filter(isPersonTxn)) {
-    const name = nameOf(t)
-    const p = people.get(name) ?? { name, sent: 0, got: 0 }
-    if (t.role === 'payback') p.got += t.amount_paise
-    else p.sent += spentEffect(t)
-    people.set(name, p)
+    const key = personKey(t)
+    const p = people.get(key) ?? { key, name: nameOf(t), sent: 0, got: 0, toConfirm: 0 }
+    if (t.role !== 'payback') p.sent += spentEffect(t)
+    else if (t.role_basis === 'owner') p.got += t.amount_paise
+    else p.toConfirm += t.amount_paise
+    people.set(key, p)
   }
   return [...people.values()].sort((a, b) => b.sent - a.sent || b.got - a.got || a.name.localeCompare(b.name))
 }

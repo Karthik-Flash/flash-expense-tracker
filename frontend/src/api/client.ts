@@ -1,5 +1,5 @@
-// The one interface every screen uses. 3F-1 plugs in the fake adapter; 3F-2 plugs in
-// an HTTP adapter for /api/v1 without touching a screen.
+// The one interface every screen uses: the HTTP adapter (http.ts) for /api/v1, or the
+// demo adapter (fake.ts) in local dev with VITE_DEMO=1.
 
 import type {
   Category,
@@ -8,6 +8,7 @@ import type {
   Page,
   Sender,
   SenderAnswer,
+  SenderStatus,
   Summary,
   Txn,
   TxnQuery,
@@ -18,17 +19,21 @@ export interface Api {
   readonly demo: boolean
   summary(month: string): Promise<Summary>
   transactions(query: TxnQuery): Promise<Page<Txn>>
+  transaction(id: number): Promise<Txn>
   categories(): Promise<Category[]>
   labels(): Promise<LabelSummary[]>
   label(id: number): Promise<LabelView>
-  senders(status?: 'to_confirm' | 'confirmed' | 'all'): Promise<Sender[]>
+  senders(status?: SenderStatus | 'all'): Promise<Sender[]>
   answerSender(id: string, answer: SenderAnswer): Promise<WriteResult<{ id: string; credits: number }>>
+  /** Forget the answer: the sender is to confirm again. */
+  resetSender(id: string): Promise<WriteResult<{ id: string; credits: number }>>
   setCategory(
     txnId: number,
     category: string,
     scope: 'merchant' | 'transaction',
   ): Promise<WriteResult<{ id: number; category: string; scope: string }>>
-  createLabel(name: string): Promise<{ id: number; name: string; created: boolean }>
+  /** 409 when the owner has that name in any case. */
+  createLabel(name: string): Promise<{ id: number; name: string }>
   setLabel(txnId: number, labelId: number): Promise<WriteResult<{ id: number; label_id: number }>>
   clearLabel(txnId: number): Promise<WriteResult<{ id: number; label_id: null }>>
 }

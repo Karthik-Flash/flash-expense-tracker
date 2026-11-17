@@ -76,7 +76,16 @@ export function Transactions() {
 export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn[]; title?: string; empty?: string }) {
   const { view, open, back } = useNav()
   const current = view.txn === null ? undefined : txns.find((t) => t.id === view.txn)
-  if (!txns.length) return <Empty>{empty}</Empty>
+  // A deep link to a transaction that is not in this list loads it by id.
+  const sheet = view.txn !== null && (current ? <TxnSheet txn={current} onClose={back} /> : <LoadedSheet id={view.txn} onClose={back} />)
+  if (!txns.length) {
+    return (
+      <>
+        <Empty>{empty}</Empty>
+        {sheet}
+      </>
+    )
+  }
   const days: [string, Txn[]][] = []
   if (title) days.push([title, txns])
   else {
@@ -109,8 +118,21 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
           ))}
         </Section>
       ))}
-      {current && <TxnSheet txn={current} onClose={back} />}
+      {sheet}
     </>
+  )
+}
+
+function LoadedSheet({ id, onClose }: { id: number; onClose: () => void }) {
+  const { api } = useApp()
+  const [load, retry] = useLoad(() => api.transaction(id), ['txn', id])
+  if (load.status === 'ready') return <TxnSheet txn={load.data} onClose={onClose} />
+  return (
+    <Sheet title="Transaction" onClose={onClose}>
+      <Loaded load={load} retry={retry}>
+        {() => null}
+      </Loaded>
+    </Sheet>
   )
 }
 
