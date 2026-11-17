@@ -4,8 +4,9 @@ Personal expense tracker. It turns bank, card and UPI SMS alerts into clean
 transactions, then categorizes and analyzes them. Minimal UI, algorithm-heavy
 Python engine.
 
-Status: Phase 0 (walking skeleton). See [NOTES.md](NOTES.md) and
-[docs/PLAN.md](docs/PLAN.md).
+Status: Phase 3 done (18 Nov 2026). New here? Start with
+[docs/OVERVIEW.md](docs/OVERVIEW.md), a one-page tour. Then
+[NOTES.md](NOTES.md) and [docs/PLAN.md](docs/PLAN.md).
 
 ## Stack
 

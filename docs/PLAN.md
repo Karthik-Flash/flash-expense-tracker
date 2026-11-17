@@ -4,8 +4,8 @@ Summary of phases 0 to 6. Draft from Phase 0; the planner owns this file and
 refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
-**Status (15 Nov 2026):** Phases 0, 1 and 2 done. **Next: Phase 3:
-Normalise, reconcile, categorise and minimal dashboard.**
+**Status (18 Nov 2026):** Phases 0 to 3 done. **Next: Phase 4**, starting
+with the bank statement check carried from Phase 3.
 
 Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
@@ -70,7 +70,7 @@ Draft scope as planned:
 - Alembic migration for this schema (after `0001` heartbeat).
 - `POST /ingest/sms` batch endpoint. Re-sending the same batch is a no-op.
 
-## Phase 3: Normalise, reconcile, categorise and minimal dashboard (next)
+## Phase 3: Normalise, reconcile, categorise and minimal dashboard (done 18 Nov 2026)
 
 Goal: the owner logs in on their phone and sees their real spending,
 correctly counted and categorised, on a minimal dashboard. Scope and order:
@@ -79,16 +79,16 @@ D-054. What counts as spend: D-055.
 Steps, in this order. Each ends with tests green, a counts-only check on real
 data run by the owner, and a tag (`phase-3a-done` ... `phase-3f-done`).
 
-- 3A Groundwork: docs alignment; a one-page UI design spec and a clickable
+- [x] 3A Groundwork: docs alignment; a one-page UI design spec and a clickable
   dashboard mockup with fake numbers, both approved by the owner before any
   screen is built. The spec and mockup may be approved any time before 3E;
   engine steps do not wait for them.
-- 3B Merchant normalisation: raw counterparty -> merchant, marked person,
+- [x] 3B Merchant normalisation: raw counterparty -> merchant, marked person,
   business or unsure. Pure engine. The built-in dictionary holds only
   well-known public brands. The owner's own merchants and people are learned
   from corrections and live only in the database. Merchant storage is built
   in 3C-6.
-- 3C Reconcile and the derived-data backbone (design:
+- [x] 3C Reconcile and the derived-data backbone (design:
   docs/design/phase-3-backbone.md): owner data (own accounts and UPI IDs,
   parties, income sources, duplicate decisions) loaded from a private file;
   one role for every transaction; duplicates including AutoPay + card spend;
@@ -96,7 +96,7 @@ data run by the owner, and a tag (`phase-3a-done` ... `phase-3f-done`).
   income; storage and one recompute command; terminal review; owner export.
   Built as steps 3C-2 to 3C-8. It links and flags, never deletes, and is
   safe to re-run.
-- 3D Categorise: rules -> merchant dictionary -> owner corrections.
+- [x] 3D Categorise: rules -> merchant dictionary -> owner corrections.
   Corrections always win and survive reparse. Owner labels (D-056): create a
   label and attach it to a transaction; stored like corrections.
   Built 16 Nov 2026 (`categorise-1.0.0`, migration `0006`, D-073, D-074):
@@ -114,9 +114,14 @@ data run by the owner, and a tag (`phase-3a-done` ... `phase-3f-done`).
   3F-1 to 3F-3 (`docs/ui-spec.md`, D-079 to D-084): real login and data,
   category colours and a ring chart, the FLA$H logo, `scripts/backup_db.ps1`.
 
-Done when (open, for the owner): the owner privately checks one normal month and one messy month
-against the bank statement and reports "match" or the difference in rupees;
-nothing is double-counted; a corrected category stays corrected.
+Done when (closed 18 Nov 2026):
+
+- [x] Login and saving on the phone: verified by the owner.
+- [x] Reparse and recompute keep owner corrections: verified.
+- [x] Backup with `scripts/backup_db.ps1`: verified.
+- [ ] OPEN, carried to Phase 4 as its first item: the owner privately checks
+  one normal month and one messy month against the bank statement and
+  reports "match" or the difference in rupees; nothing is double-counted.
 
 Known limits: HDFC and INR only. Foreign-currency (D-035) and other-bank
 messages are not in totals and appear as a "not counted yet" count. A month
@@ -126,7 +131,8 @@ until Phase 4.
 
 ## Phase 4: Full deploy and installable offline-first PWA
 
-No detail yet.
+First item, carried from Phase 3: the bank statement check (one normal, one
+messy month). No detail yet.
 
 ## Phase 5: Android shell and live SMS
 

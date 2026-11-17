@@ -1,12 +1,42 @@
 # Handoff
 
 For a fresh Claude Code session with no memory of earlier work. Read this
-first, then [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase
-in [PLAN.md](PLAN.md). State as of 17 Nov 2026: Phases 0-2 done (tags
-`phase-0-done`, `phase-1-done`, `phase-2-done`); Phase 3 steps 3A to 3F are
-built (3F-3 last: real login and data, colours, chart, logo, backup). Open:
-the push, the owner's deploy settings and the Phase 3 "Done when" check on
-real months; NOTES.md has the details.
+first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
+[NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
+[PLAN.md](PLAN.md).
+
+## Current state (end of Phase 3, 18 Nov 2026)
+
+- Phases 0 to 3 are done. Phase 3 left one check open, now the first item
+  of Phase 4: the bank statement check.
+- Engine versions: parser `hdfc-1.1.1`, `merchant-1.1.1`,
+  `reconcile-1.3.0`, `categorise-1.0.0`.
+- Alembic head: `0006` (categories and labels).
+- Decisions: D-001 to D-084 ([DECISIONS.md](DECISIONS.md)).
+- Live: app https://flash-expense-tracker.vercel.app, API
+  https://flash-expense-tracker.onrender.com (more under "Live URLs").
+- The app: real login (Supabase Auth) and data (`/api/v1`), every screen,
+  category colours, the ring chart and the FLA$H logo
+  ([ui-spec.md](ui-spec.md), [api.md](api.md)).
+
+### Owner commands
+
+The owner runs these; agents never do (real data). Exact arguments are in
+the NOTES.md cheat sheet. CLI commands run from `backend\` as
+`.\.venv\Scripts\python.exe -m app.cli <command>`; all print counts only
+unless marked private.
+
+| Command | What it does |
+| ------- | ------------ |
+| `import-sms --input D:\FlashPrivate\raw` (`--dry-run` first) | Stores new bank messages and transactions; a repeat adds nothing |
+| `reparse --dry-run`, then `reparse` | After a parser version bump: new results, same transaction ids |
+| `recompute` (`--accept-key-changes` when asked) | Rebuilds roles, links and categories from transactions and owner data |
+| `stats`, `merchant-stats`, `reconcile-stats`, `category-stats` | Counts, safe to paste |
+| `totals --month 2026-11` | The month's totals (private) |
+| `merchant-review`, `reconcile-review`, `category-review`, `credit-review` | Terminal-only reviews and answers (private) |
+| `owner-load <file>`, `owner-export <file>` | Owner file into the owner tables, and back out (files in `D:\FlashPrivate\private\`) |
+| `scripts\redact_sms.py ... --verify` (from the repo root) | Makes the redacted sample; must end with `Leaks: 0` |
+| `powershell -ExecutionPolicy Bypass -File scripts\backup_db.ps1` (from the repo root) | Backs up the database to `D:\FlashPrivate\backups\` (Docker running) |
 
 ## Goal and locked stack
 
@@ -156,40 +186,32 @@ redacted sample (288 msgs)        raw_messages --engine--> parse_results --money
 Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 18 open duplicate candidates; re-import added nothing.
 
-## Open items and known limits
+## Open items
 
-- Keep-alive switched to the Data API RPC and verified 15 Nov (security
-  check 8/8 blocked, cron test run 200, `last_seen` moved); the first
-  scheduled 03:30 run is still to check (D-053).
-- Reconcile (3C) is built: roles and links (`reconcile-1.2.1`), owner tables
-  and `owner-load` (`0004`), derived tables and `recompute` (`0005`),
-  `reconcile-review`, `owner-export` and `totals` (owner only, terminal
-  only). Not built: the card bill pair rule. Not pushed since `c2c6600`:
-  the migrations reach Supabase on the next deploy (NOTES.md has the
-  owner's order of commands).
-- Categorise (3D) is built: `categorise-1.0.0`, migration `0006`, owner
-  category decisions and labels, `category-stats`, `category-review`. No
-  CLI creates labels yet (the app will). Not pushed.
-- 3E is built: login (Supabase ES256 tokens, `AUTH_USERS`), the data API
-  (`docs/api.md`), confirmed-only paybacks (D-076), inferred own accounts
-  (D-077). The owner file is a developer tool (D-075). Render needs
-  `SUPABASE_URL` and `AUTH_USERS`; without them data routes answer 503.
-- 3F is built (3F-1 to 3F-3): the view in the URL hash, Back by layers,
-  icons, real login (`@supabase/supabase-js`) and the HTTP adapter, the
-  3F-2 API gaps closed in the backend (D-079), category colours and tiles,
-  the ring chart, the FLA$H logo and PWA icons, `scripts/backup_db.ps1`.
-  The demo adapter exists only in local dev with `VITE_DEMO=1`. Owner:
-  Vercel variables and Supabase Auth settings (infra/README.md section 5),
-  then the Phase 3 "Done when" check on real months.
-- Foreign currency is deferred: 44 messages (D-035).
-- Only HDFC has a parser: 153 messages from SBI, ICICI, India Post, Kotak
-  and PhonePe sit as `no_parser_for_bank`. Add a parser (docs/engine.md,
-  "Adding a bank"), then reparse; no re-import.
-- HDFC H09 word slot is still pseudonymised in the sample; harmless.
-- Import speed ~6 min for 917 messages (about 8 round trips each); batch the
-  lookups for a larger source.
-- No manual entry, statements or budgets yet.
-- Starlette's httpx deprecation warning is known and accepted (D-010).
+1. Bank statement check: one normal and one messy month against the
+   statement, "match" or the difference in rupees (Phase 4, first item).
+2. Joining one person seen under a name and a UPI ID, in the app. Today only
+   the owner file can list both texts on one party (D-079).
+3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
+4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
+   Post, Kotak, PhonePe; add a parser, then reparse) and 44 foreign-currency
+   messages (D-035).
+5. Close category colour pairs (OKLab distance about 4 to 5, such as card
+   bill and uncategorised); icons and names carry identity (D-081).
+6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.
+7. npm audit: 4 moderate findings via vite-plugin-pwa (glob, minimatch in
+   workbox-build); build-time only.
+8. The labels column allows 80 characters, the API 30; owner-file labels
+   may be longer than the app allows.
+9. The Supabase free plan has no backups; the owner runs
+   `scripts/backup_db.ps1` (D-084).
+10. The owner's To-do backlog (about 100 items) to work through on the
+    phone.
+
+Known limits: HDFC and INR only; the card bill pair rule waits for credit
+card SMS; the server sleeps when idle (about a minute to wake); import takes
+about 6 minutes for 917 messages; Starlette's httpx warning is accepted
+(D-010).
 
 ## Where decisions live
 
