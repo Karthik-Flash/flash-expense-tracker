@@ -11,6 +11,7 @@ import {
   monthOf,
   shiftMonth,
   timeLabel,
+  today,
 } from './dates.ts'
 
 test('IST day changes at 18:30 UTC', () => {
@@ -26,6 +27,7 @@ test('IST month edges', () => {
   assert.equal(monthOf('2026-10-31T18:30:00Z'), '2026-11')  // 00:00:00 IST on 1 Nov
   assert.equal(monthOf('2026-12-31T18:30:00Z'), '2027-01')
   assert.equal(currentMonth(Date.parse('2026-11-30T18:30:00Z')), '2026-12')
+  assert.equal(today(Date.parse('2026-11-16T18:30:00Z')), '2026-11-17')
 })
 
 test('month labels and shifting', () => {

@@ -8,7 +8,7 @@ export function Login({ onDone, demo }: { onDone: () => void; demo: boolean }) {
   const [password, setPassword] = useState('')
   const field = 'mt-1 min-h-11 w-full rounded-lg border border-line bg-surface px-3'
   return (
-    <main className="mx-auto flex min-h-dvh max-w-[480px] flex-col justify-center px-6">
+    <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col justify-center px-6 py-8">
       <h1 className="text-2xl font-semibold">Flash</h1>
       <p className="mt-1 text-sm text-muted">Sign in to see your spending.</p>
       <form

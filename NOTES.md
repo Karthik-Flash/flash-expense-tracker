@@ -69,8 +69,12 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
       accounts (D-075 to D-078); not pushed
 - [ ] Render: add `SUPABASE_URL` and `AUTH_USERS`, then the smoke test
 - [x] Phase 3F-1: every screen on demo data ([docs/ui-spec.md](docs/ui-spec.md)); not pushed
+- [x] Phase 3F-2: URL state and Back by layers, icons, design pass, logo
+      options; not pushed
 - [ ] Your look at the demo on your phone (cheat sheet, "Frontend demo on your
       phone"), then approve or list changes
+- [ ] Pick a logo on `#/dev/logos` (Tally, Split or Step); the PWA icons
+      change after that
 - [x] Phase 3D: `categorise-1.0.0`, migration `0006`, `category-stats`,
       `category-review`, labels (D-073, D-074); not pushed
 - [ ] Your `category-stats` run (safe to paste) and `category-review`
@@ -534,6 +538,9 @@ npm run dev -- --host
 Allow Node through Windows Firewall on private networks when asked. Stop with
 Ctrl+C. Demo data only: nothing reaches the API.
 
+The logo options are at the same address plus `#/dev/logos`. Any screen can be
+opened or shared by its URL, for example `#/home/category/people?m=2026-11`.
+
 ### Template survey (reads only the redacted sample)
 
 ```powershell
@@ -588,11 +595,24 @@ gh repo view --web                                # open the repo in the browser
 8. Name detection in redaction covers the usual bank positions only; skim
    new samples. Bank vocabulary covers HDFC wording only: each new bank's
    survey adds its fixed phrases to `BANK_VOCABULARY`.
-9. Replace the placeholder PWA icons before launch (UI spec later, D-020).
+9. Replace the placeholder PWA icons once the owner picks a logo on
+   `#/dev/logos` (D-020).
 10. GitHub cannot enforce required checks on a private repo on the free plan;
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-17: Phase 3F-2, navigation, fixes and design pass
+
+- The view lives in the URL hash; reload and cold links restore it; Back
+  closes sheet, then detail, then reaches the tab root; scroll kept; data
+  reused, "Starting up" only for a slow first request (over 3 s).
+- Lucide 1.74.0 icons (27 SVGs, ISC licence in `frontend/src/icons/`), Home
+  comparison and Recent, people ledger, search, sticky day headers, To-do
+  Confirmed, label rules, three logo options on `#/dev/logos`.
+- Checked at 360, 390 and 480 px, light and dark, and at 200 % text, in
+  headless Edge; Back, scroll and "Starting up" driven over DevTools. Not on a
+  real phone. Lint clean, 19 tests, typecheck and build pass. Not pushed.
 
 ### 2026-11-17: Phase 3F-1, screens on demo data
 

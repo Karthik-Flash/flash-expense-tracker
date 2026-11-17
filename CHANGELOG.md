@@ -75,6 +75,18 @@ Phase 1 is parsing, Phase 2 is the database and import.
   of docs/api.md; a banner and a state switch (waking, empty, error, stale).
 - Money and IST date helpers tested with Node's built-in test runner (no new
   package); the frontend CI job also runs lint and tests.
+- 3F-2: the whole view lives in the URL hash (tab, month, detail, person,
+  label, open sheet, filters, search); reload and cold links restore it, Back
+  closes the sheet, then the detail, then reaches the tab root; lists keep
+  their scroll; loaded data is reused, and "Starting up" shows only when the
+  session's first request takes over 3 s.
+- 3F-2 design pass: Lucide line icons (27 SVGs copied, ISC, no package), tab
+  icons, Home comparison with last month and Recent, people ledger and
+  person view, Transactions search with sticky day headers, To-do Confirmed
+  section and leaving rows, label totals, label-name rules (1 to 30, no
+  duplicates in any case). Fixes: banner in the page flow, bars as share of
+  Spent, To-do buttons on one line. Three logo options on `#/dev/logos`.
+  API gaps for 3F-3 listed in docs/ui-spec.md.
 
 ## Phase 3E: login and API (16 Nov 2026, in progress, tag `phase-3e-done` when done)
 

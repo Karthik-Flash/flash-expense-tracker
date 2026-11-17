@@ -16,7 +16,7 @@ export function roleText(t: Txn): string {
     case 'refund':
       return 'Refund, lowers Spent'
     case 'payback':
-      return 'From a person: counts as paid back once confirmed'
+      return 'Money in from a person, not part of Spent: counts as paid back once confirmed'
     case 'income':
       return 'Income'
     case 'uncertain':
@@ -38,10 +38,36 @@ export function roleText(t: Txn): string {
 export function subtitle(t: Txn): string {
   if (t.role === 'spend' || t.role === 'card_bill_counted') return t.category_name
   if (t.role === 'refund') return `Refund · ${t.category_name}`
-  if (t.role === 'payback') return 'From a person'
+  if (t.role === 'payback') return 'Money in, not part of Spent'
   if (t.role === 'income') return 'Income'
   if (t.role === 'uncertain') return 'To confirm'
   return 'Not counted'
 }
 
 export const isCredit = (t: Txn) => t.direction === 'credit'
+
+/** A Lucide icon for each category slug (src/icons). */
+const CATEGORY_ICON: Record<string, string> = {
+  food_drinks: 'utensils',
+  groceries: 'shopping-basket',
+  travel: 'bus',
+  shopping: 'shopping-bag',
+  bills_recharges: 'smartphone',
+  subscriptions: 'repeat',
+  health: 'heart-pulse',
+  personal_care: 'scissors',
+  entertainment: 'clapperboard',
+  education: 'graduation-cap',
+  rent_hostel: 'bed-double',
+  emi_loans: 'landmark',
+  investments: 'trending-up',
+  gifts_donations: 'gift',
+  people: 'users',
+  cash: 'banknote',
+  card_bill: 'credit-card',
+  fees_charges: 'percent',
+  other: 'ellipsis',
+  uncategorised: 'circle-help',
+}
+
+export const categoryIcon = (slug: string) => CATEGORY_ICON[slug] ?? 'ellipsis'
