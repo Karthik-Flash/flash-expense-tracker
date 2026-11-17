@@ -1,7 +1,7 @@
 // Pure helpers the screens derive from transactions (docs/ui-spec.md).
 
 import { spentEffect } from '../api/client.ts'
-import type { Txn } from '../api/types.ts'
+import type { CategoryAmount, Txn } from '../api/types.ts'
 import { nameOf } from './common.ts'
 
 export const LABEL_MAX = 30
@@ -60,6 +60,31 @@ export function byName(txns: Txn[]): { name: string; total: number; count: numbe
     groups.set(g.name, g)
   }
   return [...groups.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+}
+
+export interface Slice {
+  /** null: "Other", the categories after the biggest ones. */
+  slug: string | null
+  name: string
+  amount: number
+  /** Of the positive categories' sum: the slices fill the ring exactly. */
+  share: number
+}
+
+/** The ring's slices: the `max` biggest categories, the rest as one "Other". A category that
+ *  refunds lowered to zero or below has no slice. */
+export function ringSlices(parts: CategoryAmount[], max = 6): Slice[] {
+  const positive = parts.filter((p) => p.amount_paise > 0).sort((a, b) => b.amount_paise - a.amount_paise)
+  const total = positive.reduce((sum, p) => sum + p.amount_paise, 0)
+  if (!total) return []
+  const shown = positive.length > max + 1 ? positive.slice(0, max) : positive
+  const slices: Slice[] = shown.map((p) => ({ slug: p.slug, name: p.name, amount: p.amount_paise, share: p.amount_paise / total }))
+  const rest = positive.slice(shown.length)
+  if (rest.length) {
+    const amount = rest.reduce((sum, p) => sum + p.amount_paise, 0)
+    slices.push({ slug: null, name: `Other (${rest.length})`, amount, share: amount / total })
+  }
+  return slices
 }
 
 /** Name search: every word must appear in the name, any case. */

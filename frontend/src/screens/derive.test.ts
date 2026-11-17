@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { Txn } from '../api/types.ts'
-import { labelName, ledger, matches } from './derive.ts'
+import { labelName, ledger, matches, ringSlices } from './derive.ts'
 
 const txn = (over: Partial<Txn>): Txn => ({
   id: 1,
@@ -47,6 +47,17 @@ test('people ledger: one row per person id, confirmed got back, biggest sent fir
     { key: 's_2', name: 'Meera S', sent: 120000, got: 0, toConfirm: 0 },
     { key: 's_3', name: 'ramesh.k@okaxis', sent: 0, got: 0, toConfirm: 1000000 },
   ])
+})
+
+test('ring: six biggest, the rest as Other, shares fill the ring', () => {
+  const part = (slug: string, amount_paise: number) => ({ slug, name: slug, amount_paise })
+  const nine = [1, 9, 2, 8, 3, 7, 4, 6, 5].map((n) => part(`c${n}`, n * 100))
+  const slices = ringSlices([...nine, part('refunded', -300), part('zero', 0)])
+  assert.deepEqual(slices.map((s) => s.slug), ['c9', 'c8', 'c7', 'c6', 'c5', 'c4', null])
+  assert.deepEqual(slices.at(-1), { slug: null, name: 'Other (3)', amount: 600, share: 600 / 4500 })
+  assert.ok(Math.abs(slices.reduce((sum, s) => sum + s.share, 0) - 1) < 1e-9)
+  assert.equal(ringSlices(nine.slice(0, 7)).length, 7) // seven fit: no Other of one
+  assert.deepEqual(ringSlices([part('refunded', -300)]), [])
 })
 
 test('name search', () => {

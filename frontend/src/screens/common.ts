@@ -73,3 +73,6 @@ const CATEGORY_ICON: Record<string, string> = {
 }
 
 export const categoryIcon = (slug: string) => CATEGORY_ICON[slug] ?? 'ellipsis'
+
+/** A category's colour (index.css), for its tile, bar and chart slice. */
+export const catColor = (slug: string) => `var(--cat-${slug}, var(--cat-other))`

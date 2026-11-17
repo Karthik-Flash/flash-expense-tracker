@@ -1,5 +1,8 @@
 # UI spec (Phase 3F)
 
+3F-3 superseded two 3F-2 rules: icons now sit on tiles tinted with their
+category colour, and Home has a ring chart next to the list.
+
 The app should feel like a calm bank statement, not a startup landing page.
 Nothing on screen should look generated: no decoration that does not carry
 information.
@@ -22,16 +25,18 @@ information.
 ## Icons
 
 Lucide 1.74.0 (ISC; `frontend/src/icons/LICENSE`, which also carries the MIT
-notice for the icons derived from Feather). Only the 27 SVGs in use are copied
+notice for the icons derived from Feather). Only the 28 SVGs in use are copied
 into `frontend/src/icons/`; there is no icon package at runtime. Rounded line
-icons, 20 px (1.25 rem), 2/24 stroke (about 1.7 px), in the muted text colour;
-the accent only on the active tab. No coloured circles behind icons. Icons are
+icons, 20 px (1.25 rem), 2/24 stroke (about 1.7 px). Tab and control icons are
+in the muted text colour, the accent only on the active tab. A category icon
+sits on its **category tile**: a 36 px rounded square (8 px radius) tinted with
+the category colour, the icon in that colour (see Category colours). Icons are
 decorative (`aria-hidden`); the text beside them names them.
 
 | Use | Icons |
 | --- | ----- |
 | Tabs | house, receipt-text, list-checks, tag |
-| Controls | chevron-left, chevron-right, search |
+| Controls | chevron-left, chevron-right, search, log-out (Sign out) |
 | Categories | food_drinks utensils, groceries shopping-basket, travel bus, shopping shopping-bag, bills_recharges smartphone, subscriptions repeat, health heart-pulse, personal_care scissors, entertainment clapperboard, education graduation-cap, rent_hostel bed-double, emi_loans landmark, investments trending-up, gifts_donations gift, people users, cash banknote, card_bill credit-card, fees_charges percent, other ellipsis, uncategorised circle-help |
 
 ## Navigation and the URL
@@ -44,7 +49,7 @@ link opens it from cold (`frontend/src/view.ts`, tested both ways):
 | Part | Meaning |
 | ---- | ------- |
 | tab | `home`, `transactions`, `todo`, `labels` (`dev` for dev pages) |
-| detail | `home/category/<slug>`, `home/category/<slug>/<name>`, `labels/<id>` |
+| detail | `home/category/<slug>`, `home/category/<slug>/<name>` (for People, a person id), `labels/<id>` |
 | `m` | the month, `2026-11`; none means the current IST month |
 | `cat`, `label`, `q` | Transactions: category filter, label filter, name search |
 | `txn` | the transaction whose sheet is open |
@@ -82,12 +87,86 @@ on both the page and card backgrounds.
 | on-accent | `#ffffff` | `#111214` | text on the accent (6.6:1, 8.1:1) |
 | positive | `#2b6a48` | `#86c3a0` | "+" money in (6.5:1, 8.7:1) |
 | danger | `#b42318` | `#f2826f` | errors only (6.6:1, 6.9:1) |
-| bar | `#8d9298` | `#7b8086` | category bars (neutral, never the accent) |
+| faint | `#b5b8bc` | `#4a4d52` | disabled controls; the ring's "Other" slice |
+
+## Category colours
+
+One muted colour per category, chosen as a set in OKLCH: low chroma (0.035
+to 0.11), hues spread around the circle, neighbours in hue told apart by
+lightness. Uncategorised is a neutral grey. The same colour is used for the
+category's icon, its tile, its bar and its ring slice. Text never takes a
+category colour.
+
+- Tile: the colour mixed into the surface, 13 % in light and 20 % in dark
+  (`color-mix` in `index.css`), with the icon in the full colour.
+- Every colour has at least 3:1 against the surface (lowest 3.62:1 light,
+  4.83:1 dark) and against its own tile (lowest 3.16:1 light, 3.67:1 dark).
+- Twenty colours cannot all be far apart at low chroma: the closest pairs
+  (card bill and uncategorised; rent and cash) differ by about 4 to 5 OKLab
+  units. Identity never rests on colour alone: every tile has its icon and
+  every bar, slice and legend row its name.
+
+| Category | Light | Dark |
+| -------- | ----- | ---- |
+| food_drinks | `#a66535` | `#dd9e73` |
+| groceries | `#508659` | `#8ec094` |
+| travel | `#4476a0` | `#85b4dc` |
+| shopping | `#995a7e` | `#d295b7` |
+| bills_recharges | `#8f7835` | `#cbb67b` |
+| subscriptions | `#7d659a` | `#b9a2d5` |
+| health | `#a24f4e` | `#dc8b89` |
+| personal_care | `#a27a9d` | `#d6b0d1` |
+| entertainment | `#49578d` | `#8796cb` |
+| education | `#206173` | `#659cad` |
+| rent_hostel | `#785e40` | `#b39a7d` |
+| emi_loans | `#3d4e69` | `#7787a2` |
+| investments | `#2c6e5a` | `#70a995` |
+| gifts_donations | `#7a4058` | `#b57c91` |
+| people | `#388b94` | `#65acb4` |
+| cash | `#60612c` | `#979968` |
+| card_bill | `#7d7d9b` | `#aeaeca` |
+| fees_charges | `#804034` | `#bf8073` |
+| other | `#594f3a` | `#8f8571` |
+| uncategorised | `#7a7a7a` | `#b4b4b4` |
+
+## Ring chart
+
+Home shows Spent by category as a List (the default) or a Chart; a
+segmented "List | Chart" control above the categories switches, and the
+choice is remembered on the device (`localStorage`, wrapped so a private
+window still works). The chart is a hand-drawn SVG ring, no chart package:
+a thin stroke (7 of 120 units, about 13 px), Spent in the centre, the six
+biggest categories as slices plus one "Other" slice (in the faint grey) for
+the rest, 0.8 % of the ring as a gap between slices. A category that refunds
+lowered to zero or below has no slice. The legend below lists the same
+slices with tile, name, amount and percent. A slice (with a finger-sized
+invisible target) or a legend row opens the category; "Other" switches to
+the list. Each slice is a labelled button ("Food & Drinks, ₹1,240, 37%"),
+and List stays the default view, so a screen reader meets the list first.
+
+## Logo
+
+An original mark, drawn as paths with no font: the **$ mark** is three
+horizontal bars joined by two half circles, with a stub above and below,
+monoline with round ends (`frontend/src/brand.tsx`). It is not slanted and
+not on a green tile, to stay clear of well-known dollar-sign app icons, and
+it is not a lightning bolt. The **wordmark** "FLA$H" uses the same geometry
+for the S, slanted 10 degrees for speed: letters in the text colour, the $ in
+the accent. The wordmark sits at the top of Home and on the login screen.
+
+The app icon is the $ mark in `#7cc4bb` on a `#16191b` tile (8.7:1), which
+reads on light and dark launchers and browser tabs: `favicon.svg`,
+`pwa-192x192.png` and `pwa-512x512.png` (rounded tile),
+`maskable-512x512.png` (full bleed, mark inside the safe circle) and
+`apple-touch-icon.png` (180 px, full bleed). The PNGs were rendered from
+the same path with headless Edge. `#/dev/logos` (local demo only) shows
+them all in light and dark. Not checked against a trademark register.
 
 ## Never
 
-Gradients, glow, glass effects, emoji, illustrations, icons in coloured
-circles, donut charts, a "Set budget" link on every row, ads, promo cards.
+Gradients, glow, glass effects, emoji, illustrations, saturated or neon
+colours, more than one chart, a chart without its legend, a "Set budget"
+link on every row, ads, promo cards.
 
 ## Words and numbers
 
@@ -101,41 +180,54 @@ circles, donut charts, a "Set budget" link on every row, ads, promo cards.
 
 ## Screens
 
-1. **Login**: email and password, no sign-up link. In demo mode any input
-   continues.
-2. **Home**, in this order: month switcher (‹ Nov 2026 ›); Net as the
+1. **Login**: the wordmark, email and password, no sign-up link. Supabase
+   Auth (`@supabase/supabase-js`) keeps the session and refreshes the token.
+   A wrong password says "Email or password is wrong."; after a 401 the
+   screen says "Your session ended. Sign in again." A login the API does not
+   know (403) shows "This account has no access" with Sign out. In demo mode
+   any input continues.
+2. **Home**, in this order: the wordmark and a Sign out button; month
+   switcher (‹ Nov 2026 ›); Net as the
    headline; "Spent ₹X · Paid back ₹Y"; one plain line comparing Spent with
    last month ("Spent ₹7,580 more than this time last month": the current
    month compares with last month up to the same IST day, a past month with
    the whole month before it); a "To confirm: ₹Z from N people" row when
-   Z > 0, opening To-do; Spent by category, sorted by amount: icon, name,
-   amount, percent of Spent, a thin neutral bar filled to that share (37 %
-   fills 37 %), and a small change versus last month ("₹889 more", "same",
-   "new"); "Recent", the last five transactions; a muted footnote "N messages
-   not counted yet".
-3. **Category detail**: merchants with their totals, biggest first ("Paid
-   to"); tap one for its transactions.
-4. **People ledger** (People's category detail): one row per person with
-   Net, and Sent and Got back under it, biggest Sent first. Sent is People
-   spending to them; Got back is their paybacks, confirmed or not. A person's
-   view shows Sent, Got back and Net, then both directions by day; money in is
-   marked "+" in the muted green and "Money in, not part of Spent".
+   Z > 0, opening To-do; Spent by category with the List | Chart control.
+   List, sorted by amount: tile, name, amount, percent of Spent, a thin bar
+   in the category colour filled to that share (37 % fills 37 %), and a small
+   change versus last month ("₹889 more", "same", "new"; a caption names what
+   it compares with). Chart: the ring above. Then "Recent", the last five
+   transactions; a muted footnote "N messages not counted yet". The
+   comparison comes from `/summary` (`previous`).
+3. **Category detail**: the category tile beside the title; merchants with
+   their totals, biggest first ("Paid to"); tap one for its transactions.
+4. **People ledger** (People's category detail): one row per person (the
+   API's `person_id`) with Net, and Sent and Got back under it, biggest Sent
+   first. Sent is People spending to them; Got back is their confirmed
+   paybacks (they count as Paid back); paybacks still to confirm show as "To
+   confirm" and never lower Net. A person's view shows Sent, Got back, To
+   confirm and Net, then both directions by day; money in is marked "+" in
+   the muted green, and a payback row says "Paid back" or "Money in, to
+   confirm".
 5. **Transactions**: month switcher, a name search (every word must appear,
    any case), category and label filters. The whole month is loaded, so
    search and filters cover all of it. Grouped by IST day; day headers stay at
-   the top while their rows scroll. Each row: name, category in small text,
-   amount right-aligned. A row opens a bottom sheet: amount with paise, time,
+   the top while their rows scroll. Each row: category tile, name, category in
+   small text, amount right-aligned. A row opens a bottom sheet: amount with paise, time,
    how it is counted, category (automatic or set by you), label; "Change
-   category" (then "Just this one" or "All from <name>") and "Label" (pick,
-   remove, or make a new one).
+   category" (a picker with each category's tile, then "Just this one" or "All
+   from <name>") and "Label" (pick, remove, or make a new one). A link to a
+   transaction that is not in the list loads it by id.
 6. **To-do**: compact rows. "Who sent you money?": senders to confirm,
    biggest first, each with Friend, Family and Ignore on one line (they wrap
    only at large text sizes). Family means income; its label defaults to
    "Family" and can be edited (trimmed, 1 to 30 characters; several senders
    may share one). "Pick a category": uncategorised merchants with a category
    picker. An answered row collapses away in 200 ms (at once with reduced
-   motion). "Confirmed": senders already answered, with the answer and
-   "Change".
+   motion). "Answered": senders already answered (friend, income or ignored),
+   with the answer as the server saved it ("Income: Pocket money") and
+   "Change", which offers Friend, Family, Ignore and "Ask me again later"
+   (the sender goes back to "Who sent you money?").
 7. **Labels**: each label with Spent, Paid back and Net, and its number of
    payments; tap for its category breakdown (bars are shares of the label's
    Spent) and transactions; make a new label.
@@ -146,7 +238,9 @@ wrap under their terms and buttons grow.
 ## Label names
 
 Trimmed (inner runs of spaces become one), 1 to 30 characters, and refused
-when another label has the same name in any case. The reason shows under the
+when another label has the same name in any case. The API applies the same
+rules (a duplicate is a 409), so a name the app lets through is saved as
+shown. The reason shows under the
 field as the owner types ("A label with this name already exists.", "Use at
 most 30 characters."); Create stays disabled until the name is fine.
 
@@ -157,14 +251,21 @@ most 30 characters."); Create stays disabled until the name is fine.
   slows as it goes. No spinner wall. After any answer, a slow load shows only
   "Loading".
 - **Empty month**: one line, "Nothing recorded in Nov 2026."
-- **Error**: "Could not load", the reason, and "Try again".
+- **Error**: "Could not load", the reason, and "Try again". No network:
+  "Could not reach the server. Check the connection and try again." A 503:
+  "The server is not ready yet. Try again in a minute."
+- **Signed out**: a 401 from the API signs out on this device and shows the
+  login with "Your session ended. Sign in again."
+- **No access**: a 403 shows "This account has no access" and Sign out.
 - **Stale**: a quiet notice "Totals are being updated." above the numbers.
 - While a screen reloads after a change, the old numbers stay until the new
   ones arrive.
 
 ## Demo mode
 
-Every screen carries a "Demo data. Not your real numbers." banner at the top,
+Only in local development with `VITE_DEMO=1`: a production build always
+uses the HTTP adapter and leaves the demo adapter, banner, State switch and
+`#/dev` page out of the bundle. Every screen carries a "Demo data. Not your real numbers." banner at the top,
 in the page flow: it scrolls away with the page and never covers content, at
 any width or text size. Its State switch (normal, waking, empty, error, stale)
 is there only while the demo adapter is in use; picking a state starts a new
@@ -172,33 +273,16 @@ session, so "waking" shows "Starting up" again. The data is a student's
 October and November 2026 with fake names: daily chai and canteen meals, a few
 large transfers to people, UPI senders to confirm, and a Goa trip label.
 
-## Logo options (dev page)
+## API gaps
 
-`#/dev/logos` (in development, or while the demo adapter is in use) shows
-three original monochrome marks, drawn from plain shapes, at 16, 24, 32, 48
-and 96 px and beside the name, in light and dark. Nothing else uses them yet;
-the PWA icons stay as they are until the owner picks one.
+3F-3 closed every "Backend" gap of the 3F-2 list (role basis, label totals,
+last month, person id, ignored senders and undo, the income label, a
+transaction by id, label name rules; `docs/api.md`). What stays in the
+client on purpose:
 
-1. **Tally**: three left-aligned bars, longest first, like Spent by category.
-2. **Split**: a solid rounded tile parted by a stepped line into two parts.
-3. **Step**: a level line that drops once and carries on.
-
-None is a letter or a lightning bolt, to stay clear of existing "Flash" marks.
-They were not checked against a trademark register.
-
-## API gaps the demo papers over (for 3F-3)
-
-| Gap | What the client does now | Where it belongs |
-| --- | ------------------------ | ---------------- |
-| `role_basis` on transaction items | A payback row says "Money in, not part of Spent"; it cannot say "to confirm" or "paid back". Got back in the people ledger mixes both. | Backend: add `role_basis` (or a `confirmed` flag) to `/transactions` items. |
-| Totals on `/labels` | The Labels list calls `/labels/{id}` once per label. | Backend: Spent, Paid back and Net on `/labels` items. Fine in the client for a handful of labels. |
-| Last-month figures | Home loads last month's whole transaction list to compute Spent and Spent by category, to the same IST day for the current month. | Backend: a `previous` block in `/summary`, so the comparison follows the same Spent rules (refund links, recompute). Works in the client meanwhile. |
-| The person ledger | Groups People spending and payback credits by display name. One person seen under two names (a UPI ID and a name) shows twice. | Backend: a party id on transaction items, or `/people?month=`. |
-| "Unanswer" and ignored senders | `/senders` never lists ignored senders, so Ignore cannot be changed in the app, and no answer can be taken back to "to confirm". | Backend: `status=ignored` on `/senders`, and `DELETE /senders/{id}` to remove the owner answer. |
-| The income label of a sender | Confirmed shows "Family: income", not the name given. | Backend: return the label on sender items. |
-| A transaction by id | `?txn=` opens a sheet only when that transaction is in the list on screen. | Backend: `GET /transactions/{id}`. Small. |
-| Name search | Transactions loads the whole month (pages of 200) and filters. | Fine in the client at a few hundred rows a month; add `q` only if months grow far larger. |
-| Merchant groups | Category detail and To-do group transactions by display name; To-do loads every uncategorised row, all months. | Fine in the client for now; `/merchants?category=` if it grows. |
-| Merchant answers | There is no list of "All from" answers; one is changed by opening any of its transactions. | Backend, later: list owner merchant categories. |
-| Label name rules | The app refuses names over 30 characters and duplicates in any case. The API accepts 1 to 80 and answers a duplicate with the existing label (200). | Backend: align to 30 and answer a duplicate with 409. |
-| The waking probe | The session's first request is the probe. | Fine in the client. |
+| What | Why it is fine in the client |
+| ---- | ---------------------------- |
+| Name search | Transactions loads the whole month (pages of 200); fine at a few hundred rows a month. Add `q` to the API if months grow far larger. |
+| Merchant groups | Category detail and To-do group by display name; `/merchants?category=` if it grows. |
+| Merchant answers | No list of "All from" answers yet; one is changed from any of its transactions. Backend, later. |
+| The waking probe | The session's first request is the probe. |

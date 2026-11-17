@@ -1,9 +1,10 @@
 // Shared pieces: rows, money, icons, month switcher, bottom sheet, states. Calm and plain.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
 import { moneyIn, rupees, rupeesExact } from './lib/money.ts'
 import { monthLabel, shiftMonth } from './lib/dates.ts'
+import { catColor, categoryIcon } from './screens/common.ts'
 import type { Load } from './state.tsx'
 
 // Lucide icons (ISC, src/icons/LICENSE), copied as files: no icon package at runtime.
@@ -12,6 +13,15 @@ const SVGS = import.meta.glob('./icons/*.svg', { query: '?raw', import: 'default
 /** A 20 px line icon in the current text colour. Decorative: the text next to it names it. */
 export function Icon({ name, className = '' }: { name: string; className?: string }) {
   return <span aria-hidden="true" className={`icon ${className}`} dangerouslySetInnerHTML={{ __html: SVGS[`./icons/${name}.svg`] ?? '' }} />
+}
+
+/** The category icon on a tile tinted with the category colour. Decorative: the name is next to it. */
+export function CategoryTile({ slug, className = '' }: { slug: string; className?: string }) {
+  return (
+    <span className={`tile ${className}`} style={{ '--cat': catColor(slug) } as CSSProperties}>
+      <Icon name={categoryIcon(slug)} />
+    </span>
+  )
 }
 
 export function Money({ paise, credit = false, exact = false, className = '' }: {
@@ -24,7 +34,7 @@ export function Money({ paise, credit = false, exact = false, className = '' }: 
   return <span className={`shrink-0 whitespace-nowrap tabular-nums ${credit ? 'text-positive' : ''} ${className}`}>{text}</span>
 }
 
-export function Header({ title, back, children }: { title: string; back?: () => void; children?: ReactNode }) {
+export function Header({ title, back, lead, children }: { title: string; back?: () => void; lead?: ReactNode; children?: ReactNode }) {
   return (
     <header className="flex min-h-14 items-center gap-2 px-4 pt-2">
       {back && (
@@ -32,6 +42,7 @@ export function Header({ title, back, children }: { title: string; back?: () => 
           <Icon name="chevron-left" />
         </button>
       )}
+      {lead}
       <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{title}</h1>
       {children}
     </header>
@@ -79,12 +90,12 @@ export function RowButton({ onClick, children, label }: { onClick?: () => void; 
   )
 }
 
-/** A thin neutral bar: `share` of the whole (0.37 fills 37%). */
-export function Bar({ share }: { share: number }) {
+/** A thin bar in the category colour: `share` of the whole (0.37 fills 37%). */
+export function Bar({ share, slug }: { share: number; slug: string }) {
   const width = Number.isFinite(share) ? Math.max(0, Math.min(1, share)) * 100 : 0
   return (
     <span className="block h-1 min-w-0 flex-1 rounded-full bg-track" aria-hidden="true">
-      <span className="block h-1 rounded-full bg-bar" style={{ width: `${width}%` }} />
+      <span className="block h-1 rounded-full" style={{ width: `${width}%`, background: catColor(slug) }} />
     </span>
   )
 }

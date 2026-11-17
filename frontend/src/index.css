@@ -11,7 +11,6 @@
   --color-faint: #b5b8bc;
   --color-line: #e2e2de;
   --color-track: #ececea;
-  --color-bar: #8d9298;
   --color-accent: #0e6862;
   --color-on-accent: #ffffff;
   --color-positive: #2b6a48;
@@ -30,7 +29,6 @@
     --color-faint: #4a4d52;
     --color-line: #2a2c2f;
     --color-track: #26282b;
-    --color-bar: #7b8086;
     --color-accent: #6bb7af;
     --color-on-accent: #111214;
     --color-positive: #86c3a0;
@@ -42,6 +40,55 @@
 
 :root {
   color-scheme: light dark;
+  /* Category colours (docs/ui-spec.md): icon, tile tint, bar and chart slice. Each has
+     at least 3:1 against the surface and against its own tile, in both themes. */
+  --tile-tint: 13%;
+  --cat-food_drinks: #a66535;
+  --cat-groceries: #508659;
+  --cat-travel: #4476a0;
+  --cat-shopping: #995a7e;
+  --cat-bills_recharges: #8f7835;
+  --cat-subscriptions: #7d659a;
+  --cat-health: #a24f4e;
+  --cat-personal_care: #a27a9d;
+  --cat-entertainment: #49578d;
+  --cat-education: #206173;
+  --cat-rent_hostel: #785e40;
+  --cat-emi_loans: #3d4e69;
+  --cat-investments: #2c6e5a;
+  --cat-gifts_donations: #7a4058;
+  --cat-people: #388b94;
+  --cat-cash: #60612c;
+  --cat-card_bill: #7d7d9b;
+  --cat-fees_charges: #804034;
+  --cat-other: #594f3a;
+  --cat-uncategorised: #7a7a7a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tile-tint: 20%;
+    --cat-food_drinks: #dd9e73;
+    --cat-groceries: #8ec094;
+    --cat-travel: #85b4dc;
+    --cat-shopping: #d295b7;
+    --cat-bills_recharges: #cbb67b;
+    --cat-subscriptions: #b9a2d5;
+    --cat-health: #dc8b89;
+    --cat-personal_care: #d6b0d1;
+    --cat-entertainment: #8796cb;
+    --cat-education: #659cad;
+    --cat-rent_hostel: #b39a7d;
+    --cat-emi_loans: #7787a2;
+    --cat-investments: #70a995;
+    --cat-gifts_donations: #b57c91;
+    --cat-people: #65acb4;
+    --cat-cash: #979968;
+    --cat-card_bill: #aeaeca;
+    --cat-fees_charges: #bf8073;
+    --cat-other: #8f8571;
+    --cat-uncategorised: #b4b4b4;
+  }
 }
 
 html,
@@ -67,6 +114,19 @@ body {
 .icon > svg {
   width: 100%;
   height: 100%;
+}
+
+/* A category icon on a rounded tile tinted with the same colour. Set --cat on the element. */
+.tile {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 8px;
+  color: var(--cat);
+  background: color-mix(in srgb, var(--cat) var(--tile-tint), var(--color-surface));
 }
 
 :focus-visible {

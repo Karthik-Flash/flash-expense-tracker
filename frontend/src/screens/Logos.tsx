@@ -1,78 +1,45 @@
-// Dev page (#/dev/logos): three original marks for the owner to pick from. Drawn here from
-// plain shapes, not traced. The PWA icons stay as they are until one is chosen.
+// Dev page (#/dev/logos, local demo only): the brand at the sizes it is used, light and dark,
+// and the PWA icons as built (public/).
 
-import { useId } from 'react'
+import { Mark, Wordmark } from '../brand.tsx'
 
-type Mark = (props: { size: number }) => React.JSX.Element
-
-/** Tally: three bars, longest first, like Spent by category. */
-function Tally({ size }: { size: number }) {
+function Panel({ theme }: { theme: 'light' | 'dark' }) {
+  const colours = theme === 'light' ? 'bg-[#f6f6f4] text-[#1b1c1e] [--color-accent:#0e6862]' : 'bg-[#111214] text-[#e7e7e4] [--color-accent:#6bb7af]'
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" aria-hidden="true">
-      <path d="M6 8.5h20M6 16h13M6 23.5h6" />
-    </svg>
+    <section className={`space-y-6 p-6 ${colours}`}>
+      <h2 className="text-sm font-medium opacity-70">{theme === 'light' ? 'Light' : 'Dark'}</h2>
+      <div className="flex flex-wrap items-end gap-5">
+        {[16, 20, 24, 32, 48, 96].map((size) => (
+          <span key={size} className="flex flex-col items-center gap-1">
+            <Mark size={size} />
+            <span className="text-xs opacity-60">{size}</span>
+          </span>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-end gap-6">
+        <Wordmark height={22} />
+        <Wordmark height={40} />
+        <Wordmark height={72} />
+      </div>
+      <div className="flex flex-wrap items-end gap-4">
+        <img src="/favicon.svg" width={16} height={16} alt="favicon 16" />
+        <img src="/favicon.svg" width={32} height={32} alt="favicon 32" />
+        <img src="/apple-touch-icon.png" width={60} height={60} alt="apple-touch-icon" />
+        <img src="/pwa-192x192.png" width={96} height={96} alt="pwa 192" />
+        <img src="/maskable-512x512.png" width={96} height={96} alt="maskable 512" className="rounded-full" />
+      </div>
+    </section>
   )
 }
-
-/** Split: a solid tile parted by a stepped line into two interlocking parts. */
-function Split({ size }: { size: number }) {
-  const id = `split${useId().replace(/[^a-zA-Z0-9]/g, '')}`
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <mask id={id}>
-        <rect width="32" height="32" fill="#fff" />
-        <path d="M1 13h14v6h16" fill="none" stroke="#000" strokeWidth="3" />
-      </mask>
-      <rect x="4" y="4" width="24" height="24" rx="7" fill="currentColor" mask={`url(#${id})`} />
-    </svg>
-  )
-}
-
-/** Step: a level line that drops once and carries on, a quick fall. */
-function Step({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M5 10h10l3 12h9" />
-    </svg>
-  )
-}
-
-const MARKS: [string, string, Mark][] = [
-  ['Tally', 'Three bars, longest first, like Spent by category.', Tally],
-  ['Split', 'A solid tile parted by a stepped line into two parts.', Split],
-  ['Step', 'A level line that drops once: a quick fall.', Step],
-]
-
-// The spec's surface, ink and muted colours, fixed here so both themes show side by side.
-const THEMES = [
-  { name: 'Light', bg: '#ffffff', ink: '#1b1c1e', muted: '#5c6066', line: '#e2e2de' },
-  { name: 'Dark', bg: '#18191b', ink: '#e7e7e4', muted: '#a3a6ab', line: '#2a2c2f' },
-]
 
 export function Logos() {
   return (
-    <main className="mx-auto max-w-[960px] px-4 py-6">
-      <h1 className="text-lg font-semibold">Logo options</h1>
-      <p className="mt-1 text-sm text-muted">Three monochrome marks for Flash, at 16, 24, 32, 48 and 96 px. Dev page: nothing in the app uses them yet.</p>
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        {THEMES.map((t) => (
-          <section key={t.name} className="rounded-lg border p-4" style={{ background: t.bg, color: t.ink, borderColor: t.line }}>
-            <h2 className="text-sm font-medium" style={{ color: t.muted }}>{t.name}</h2>
-            {MARKS.map(([name, note, Mark]) => (
-              <div key={name} className="border-t py-4 first-of-type:border-t-0" style={{ borderColor: t.line }}>
-                <p className="font-medium">{name}</p>
-                <p className="text-sm" style={{ color: t.muted }}>{note}</p>
-                <div className="mt-3 flex flex-wrap items-end gap-4">
-                  {[16, 24, 32, 48, 96].map((size) => <Mark key={size} size={size} />)}
-                </div>
-                <div className="mt-4 flex items-center gap-2">
-                  <Mark size={28} />
-                  <span className="text-2xl font-semibold tracking-tight">Flash</span>
-                </div>
-              </div>
-            ))}
-          </section>
-        ))}
+    <main className="mx-auto max-w-5xl">
+      <h1 className="px-6 pt-6 text-lg font-semibold">Logo</h1>
+      <p className="px-6 pt-1 pb-4 text-sm text-muted">The $ mark, the FLA$H wordmark and the icons, as shipped. The maskable icon is shown in a circle, as Android may crop it.</p>
+      <div className="grid md:grid-cols-2">
+        <Panel theme="light" />
+        <Panel theme="dark" />
       </div>
     </main>
   )

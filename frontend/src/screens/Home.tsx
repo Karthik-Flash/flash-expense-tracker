@@ -1,11 +1,15 @@
+import { useState } from 'react'
+
 import type { Summary, Txn } from '../api/types.ts'
+import { Wordmark } from '../brand.tsx'
 import { currentMonth, monthLabel } from '../lib/dates.ts'
 import { percentOf, rupees } from '../lib/money.ts'
 import { HOME } from '../view.ts'
 import { joinLoads, navigate, useApp, useLoad, useMonthTxns, useNav } from '../state.tsx'
-import { Bar, Empty, Figure, Header, Icon, Loaded, Money, MonthSwitcher, Notice, RowButton, Section } from '../ui.tsx'
-import { categoryIcon, nameOf } from './common.ts'
+import { Bar, CategoryTile, Empty, Figure, Header, Icon, Loaded, Money, MonthSwitcher, Notice, RowButton, Section } from '../ui.tsx'
+import { nameOf } from './common.ts'
 import { byName, isPersonTxn, ledger, personKey } from './derive.ts'
+import { Ring } from './Ring.tsx'
 import { TxnList } from './Transactions.tsx'
 
 export function Home() {
@@ -15,11 +19,14 @@ export function Home() {
   const [txns, retryTxns] = useMonthTxns(month)
   return (
     <>
-      <Header title="Flash">
+      <header className="flex min-h-14 items-center justify-between gap-2 px-4 pt-2">
+        <h1>
+          <Wordmark height={22} />
+        </h1>
         <button type="button" onClick={signOut} className="-mr-3 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted" aria-label="Sign out">
           <Icon name="log-out" />
         </button>
-      </Header>
+      </header>
       <MonthSwitcher month={month} setMonth={(m) => replace({ month: m })} latest={currentMonth()} />
       <Loaded
         load={joinLoads(summary, txns)}
@@ -48,8 +55,47 @@ function change(now: number, before: number): string {
   return `${rupees(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'}`
 }
 
+type Mode = 'list' | 'chart'
+const MODE_KEY = 'flash-category-view'
+
+function savedMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'chart' ? 'chart' : 'list'
+  } catch {
+    return 'list'
+  }
+}
+
+/** List | Chart. List is the default; the choice is remembered on this device. */
+function ViewSwitch({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {
+  return (
+    <div role="group" aria-label="Show categories as" className="flex shrink-0 rounded-lg border border-line bg-surface p-0.5 text-sm">
+      {(['list', 'chart'] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          aria-pressed={value === m}
+          onClick={() => onChange(m)}
+          className={`min-h-9 min-w-14 rounded-md px-3 ${value === m ? 'bg-press font-medium text-ink' : 'text-muted'}`}
+        >
+          {m === 'list' ? 'List' : 'Chart'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function SummaryView({ s, txns }: { s: Summary; txns: Txn[] }) {
   const { view, open } = useNav()
+  const [mode, pick] = useState<Mode>(savedMode)
+  const setMode = (m: Mode) => {
+    pick(m)
+    try {
+      localStorage.setItem(MODE_KEY, m)
+    } catch {
+      // Private mode: the choice lasts for this page.
+    }
+  }
   const empty = s.spent_paise === 0 && s.categories.length === 0 && s.to_confirm.amount_paise === 0
   if (empty) return <Empty>Nothing recorded in {monthLabel(s.month)}.</Empty>
   const base = new Map(s.previous.categories.map((c) => [c.slug, c.amount_paise]))
@@ -78,27 +124,39 @@ function SummaryView({ s, txns }: { s: Summary; txns: Txn[] }) {
           </RowButton>
         </Section>
       )}
-      <Section title="Spent by category" aside={compared && <span className="shrink-0 text-xs text-muted">vs last month</span>}>
-        {parts.length === 0 && <Empty>No spending this month.</Empty>}
-        {parts.map((p) => (
-          <RowButton key={p.slug} onClick={() => open({ path: ['category', p.slug] })}>
-            <Icon name={categoryIcon(p.slug)} className="text-muted" />
-            <span className="min-w-0 flex-1">
-              <span className="flex items-baseline gap-3">
-                <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                <Money paise={p.amount_paise} />
-                <span className="w-9 shrink-0 text-right text-sm text-muted tabular-nums">{percentOf(p.amount_paise, s.spent_paise)}</span>
-              </span>
-              <span className="mt-1.5 flex items-center gap-3">
-                <Bar share={s.spent_paise > 0 ? p.amount_paise / s.spent_paise : 0} />
-                {compared && (
-                  <span className="shrink-0 text-xs whitespace-nowrap text-muted tabular-nums">{change(p.amount_paise, base.get(p.slug) ?? 0)}</span>
-                )}
-              </span>
-            </span>
-          </RowButton>
-        ))}
-      </Section>
+      <div className="mt-4 flex items-center justify-between gap-3 px-4">
+        <h2 className="truncate text-sm font-medium text-muted">Spent by category</h2>
+        {parts.length > 0 && <ViewSwitch value={mode} onChange={setMode} />}
+      </div>
+      {parts.length === 0 && <Empty>No spending this month.</Empty>}
+      {parts.length > 0 && mode === 'chart' && (
+        <Ring parts={parts} spent={s.spent_paise} onOpen={(slug) => open({ path: ['category', slug] })} onOther={() => setMode('list')} />
+      )}
+      {parts.length > 0 && mode === 'list' && (
+        <>
+          {compared && <p className="px-4 pt-1 text-xs text-muted">Change against {s.previous.whole ? monthLabel(s.previous.month) : 'this time last month'}</p>}
+          <Section>
+            {parts.map((p) => (
+              <RowButton key={p.slug} onClick={() => open({ path: ['category', p.slug] })}>
+                <CategoryTile slug={p.slug} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline gap-3">
+                    <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                    <Money paise={p.amount_paise} />
+                    <span className="w-9 shrink-0 text-right text-sm text-muted tabular-nums">{percentOf(p.amount_paise, s.spent_paise)}</span>
+                  </span>
+                  <span className="mt-1.5 flex items-center gap-3">
+                    <Bar slug={p.slug} share={s.spent_paise > 0 ? p.amount_paise / s.spent_paise : 0} />
+                    {compared && (
+                      <span className="shrink-0 text-xs whitespace-nowrap text-muted tabular-nums">{change(p.amount_paise, base.get(p.slug) ?? 0)}</span>
+                    )}
+                  </span>
+                </span>
+              </RowButton>
+            ))}
+          </Section>
+        </>
+      )}
       {txns.length > 0 && <TxnList txns={txns.slice(0, 5)} title="Recent" />}
       {s.counts.not_counted_yet > 0 && (
         <p className="px-4 pt-4 pb-2 text-center text-xs text-muted">
@@ -124,7 +182,7 @@ export function CategoryDetail({ slug, name }: { slug: string; name?: string }) 
   const heading = name === undefined ? title : people ? (person ? nameOf(person) : 'Person') : name
   return (
     <>
-      <Header title={heading} back={back} />
+      <Header title={heading} back={back} lead={<CategoryTile slug={slug} />} />
       <p className="px-4 text-sm text-muted">{name !== undefined ? `${title} · ` : ''}{monthLabel(month)}</p>
       <Loaded load={load} retry={retry}>
         {(txns) => {
