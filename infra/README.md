@@ -101,7 +101,7 @@ Notes:
   database fails, the deploy fails and the previous version keeps serving.
 - A free service sleeps after 15 minutes without traffic. The next request
   waits for a cold start (often 30 to 60 seconds). The frontend shows
-  "Server is waking up" during that time.
+  "Starting up, this can take about a minute" during that time.
 - `/health/db` answers 401 for a missing or wrong `X-Ping-Token`, 503
   "ping token not configured" if `PING_TOKEN` is unset, and 503 "database
   unavailable" if Postgres is unreachable.
@@ -118,17 +118,22 @@ Notes:
    - **Root Directory**: click **Edit**, select `frontend`, then **Continue**.
    - **Framework Preset**: `Vite` (detected automatically).
    - Leave the build and output settings at their defaults.
-   - **Environment Variables**: `VITE_API_URL` = `https://<your-service>.onrender.com`
-     (no trailing slash).
+   - **Environment Variables** (all three are public; they end up in the
+     browser bundle):
+     - `VITE_API_URL` = `https://<your-service>.onrender.com` (no trailing slash)
+     - `VITE_SUPABASE_URL` = `https://<project-ref>.supabase.co`
+     - `VITE_SUPABASE_PUBLISHABLE_KEY` = the project's publishable key
+       (`sb_publishable_...`, Project Settings > API Keys)
+     Never set `VITE_DEMO` on Vercel; a production build ignores it anyway.
 4. Click **Deploy**. Note the production URL, for example
    `https://flash-expense-tracker.vercel.app`.
 5. In Render, open the service, then **Environment**. Set `CORS_ORIGINS` to the
    Vercel URL. Add `,http://localhost:5173` if you also want local dev to
    reach the deployed API. Click **Save, rebuild, and deploy**.
-6. Open the Vercel URL. It shows "Backend online" (after a possible wake-up).
+6. Open the Vercel URL. It shows the login screen; sign in after section 5.
 
-`VITE_API_URL` is baked in at build time. After you change it in Vercel,
-redeploy the frontend.
+The `VITE_` variables are baked in at build time. After you change one in
+Vercel, redeploy the frontend.
 
 ## 4. cron-job.org (keep Supabase active)
 
@@ -199,6 +204,30 @@ which failed with "output too large", and Render never woke. `/health/db`
 and `PING_TOKEN` stay for manual checks.
 
 There are no scheduled GitHub workflows, on purpose.
+
+## 5. Login (Supabase Auth)
+
+The app signs in with Supabase Auth (email and password, one user); the API
+checks the token (D-078).
+
+1. Supabase > **Authentication > Sign In / Providers**: keep **Email**
+   enabled; turn **Allow new users to sign up** off; **Confirm email** may
+   stay on (you confirm your own user in step 2).
+2. **Authentication > Users > Add user > Create new user**: your email and
+   a strong password (password manager), **Auto Confirm User** on. Copy the
+   user's **UID**.
+3. **Authentication > URL Configuration**: **Site URL** =
+   `https://flash-expense-tracker.vercel.app`.
+4. **Project Settings > JWT Keys**: the current signing key must be an
+   asymmetric **ECC (P-256)** key (ES256). The API accepts no other kind. If
+   the project still signs with the legacy HS256 secret, create an ECC key
+   and rotate to it.
+5. Render > service > **Environment**: `SUPABASE_URL` =
+   `https://<project-ref>.supabase.co` and `AUTH_USERS` =
+   `<UID from step 2>:<OWNER_ID>` (the owner id the data was imported with).
+   Save, rebuild and deploy.
+6. Open the Vercel URL and sign in. A login that is not in `AUTH_USERS`
+   sees "This account has no access".
 
 ## Runbook
 

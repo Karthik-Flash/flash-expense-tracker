@@ -20,9 +20,9 @@ Quick reference and progress log. Updated after every task.
 **Phase 0-2 complete** (12-14 Nov 2026): scaffold and deploy, redaction,
 HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
 Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
-`phase-1-done`, `phase-2-done`. Next: Phase 3, steps 3A-3F
-([docs/PLAN.md](docs/PLAN.md), D-054); 3A docs done (UI spec and mockup
-due before 3E); 3B merchant engine built, waiting for your merchant-stats run.
+`phase-1-done`, `phase-2-done`. **Phase 3** (3A-3F) is built, not pushed
+(17 Nov 2026, 3F-3 last); open: the push, your deploy settings (Vercel,
+Supabase Auth, Render) and the "Done when" check on real months.
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
@@ -71,10 +71,17 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Phase 3F-1: every screen on demo data ([docs/ui-spec.md](docs/ui-spec.md)); not pushed
 - [x] Phase 3F-2: URL state and Back by layers, icons, design pass, logo
       options; not pushed
-- [ ] Your look at the demo on your phone (cheat sheet, "Frontend demo on your
-      phone"), then approve or list changes
-- [ ] Pick a logo on `#/dev/logos` (Tally, Split or Step); the PWA icons
-      change after that
+- [x] Phase 3F-3: API gaps closed (D-079), real login and data (D-080),
+      category colours, ring chart, FLA$H logo and icons (D-081 to D-083),
+      `scripts/backup_db.ps1` (D-084); not pushed
+- [ ] Vercel: set `VITE_API_URL`, `VITE_SUPABASE_URL`,
+      `VITE_SUPABASE_PUBLISHABLE_KEY`; Supabase Auth settings and Render
+      `SUPABASE_URL`, `AUTH_USERS` (infra/README.md section 5)
+- [ ] Your look at the app on your phone after the deploy, then approve or
+      list changes
+- [ ] Your first backup (cheat sheet, "Back up and restore"), after the push
+- [ ] Phase 3 "Done when": one normal and one messy month against the bank
+      statement (docs/PLAN.md)
 - [x] Phase 3D: `categorise-1.0.0`, migration `0006`, `category-stats`,
       `category-review`, labels (D-073, D-074); not pushed
 - [ ] Your `category-stats` run (safe to paste) and `category-review`
@@ -321,6 +328,11 @@ cd backend; .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8
 cd frontend; npm run dev                                                             # terminal 2, http://localhost:5173
 ```
 
+The frontend uses the real API and Supabase login from `frontend\.env`
+(`VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`; see
+`.env.example`). For fake data with no login, add `VITE_DEMO=1` to
+`frontend\.env` (dev only; a build ignores it).
+
 ### Checks (same as CI)
 
 ```powershell
@@ -536,10 +548,44 @@ npm run dev -- --host
 ```
 
 Allow Node through Windows Firewall on private networks when asked. Stop with
-Ctrl+C. Demo data only: nothing reaches the API.
+Ctrl+C. With `VITE_DEMO=1` in `frontend\.env` it shows demo data and nothing
+reaches the API.
 
-The logo options are at the same address plus `#/dev/logos`. Any screen can be
+The logo and icons are at the same address plus `#/dev/logos` (demo only). Any screen can be
 opened or shared by its URL, for example `#/home/category/people?m=2026-11`.
+
+### Back up and restore (you run these; agents never do)
+
+Back up (Docker Desktop running; reads `DATABASE_URL` from `backend\.env`,
+prints only the file name and size):
+
+```powershell
+cd D:\Projects\FinancesApp
+powershell -ExecutionPolicy Bypass -File scripts\backup_db.ps1
+# flash-20261117-2210.dump  0.4 MB   -> D:\FlashPrivate\backups\
+```
+
+Use the Session pooler URL (port 5432), as the app does; the transaction
+pooler (6543) cannot run pg_dump. A failure prints one line and keeps
+nothing. Keep a copy of `D:\FlashPrivate\backups\` off this PC.
+
+Look inside a backup (lists tables, no data):
+
+```powershell
+docker run --rm -v D:\FlashPrivate\backups:/in postgres:17 pg_restore --list /in/flash-20261117-2210.dump
+```
+
+Restore, into an **empty** database first (a new Supabase project, or a local
+`postgres:17` container), never straight over the live one:
+
+1. Put the target URL in an environment variable for this window only (it
+   is not printed): `$env:FLASH_RESTORE_URL = Read-Host "Target postgresql:// URL"`
+2. `docker run --rm -e FLASH_RESTORE_URL -v D:\FlashPrivate\backups:/in postgres:17 sh -c 'pg_restore --no-owner --no-privileges --dbname="$FLASH_RESTORE_URL" /in/flash-20261117-2210.dump'`
+   One error, "schema public already exists", is expected and harmless.
+3. `Remove-Item Env:FLASH_RESTORE_URL`
+4. Point `DATABASE_URL` (backend\.env, Render) at it, then from `backend\`
+   run `alembic current` (it should name the newest migration) and
+   `python -m app.cli stats`. Only then switch the app over.
 
 ### Template survey (reads only the redacted sample)
 
@@ -595,12 +641,27 @@ gh repo view --web                                # open the repo in the browser
 8. Name detection in redaction covers the usual bank positions only; skim
    new samples. Bank vocabulary covers HDFC wording only: each new bank's
    survey adds its fixed phrases to `BANK_VOCABULARY`.
-9. Replace the placeholder PWA icons once the owner picks a logo on
-   `#/dev/logos` (D-020).
+9. PWA icons replaced with the $ mark (D-083). The logo was not checked
+   against a trademark register.
 10. GitHub cannot enforce required checks on a private repo on the free plan;
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-17: Phase 3F-3, real login and data, colours, chart, logo, backup
+
+- API (D-079): `role_basis` and `person_id` on items, `GET
+  /transactions/{id}`, `previous` in `/summary`, label totals, ignored
+  senders, `DELETE /senders/{id}`, `income_label`, label names 1 to 30
+  with 409. No migration.
+- App (D-080): `@supabase/supabase-js` 2.119.0 login, HTTP adapter, 401,
+  403, 503 and offline states, Sign out; demo only with `VITE_DEMO=1` in dev.
+- Design (D-081 to D-083): category colours and tiles, List | Chart ring,
+  $ mark and FLA$H wordmark, new PWA icons. Backup script (D-084).
+- Tests: 685 backend on SQLite (3 Postgres-only skipped), 688 on Postgres 17
+  in Docker; frontend lint clean, 24 tests, typecheck and build. Real
+  adapter checked against a local backend on fake data and a stand-in auth
+  server, 360 and 390 px, light and dark, in headless Edge. Not pushed.
 
 ### 2026-11-17: Phase 3F-2, navigation, fixes and design pass
 
