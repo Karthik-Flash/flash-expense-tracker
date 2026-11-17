@@ -20,6 +20,7 @@ export interface AppState {
   /** Bumped after every write, so screens load again. */
   version: number
   changed: () => void
+  signOut: () => void
 }
 
 export const AppContext = createContext<AppState | null>(null)

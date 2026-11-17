@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { Txn } from '../api/types.ts'
 import { currentMonth, dayKey, dayLabel, fullLabel } from '../lib/dates.ts'
 import { useApp, useLoad, useMonthTxns, useNav } from '../state.tsx'
-import { Button, Empty, Icon, Loaded, Money, MonthSwitcher, RowButton, Section, Sheet } from '../ui.tsx'
+import { Button, CategoryTile, Empty, Icon, Loaded, Money, MonthSwitcher, RowButton, Section, Sheet } from '../ui.tsx'
 import { isCredit, nameOf, roleText, subtitle } from './common.ts'
 import { labelName, matches } from './derive.ts'
 
@@ -76,7 +76,16 @@ export function Transactions() {
 export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn[]; title?: string; empty?: string }) {
   const { view, open, back } = useNav()
   const current = view.txn === null ? undefined : txns.find((t) => t.id === view.txn)
-  if (!txns.length) return <Empty>{empty}</Empty>
+  // A deep link to a transaction that is not in this list loads it by id.
+  const sheet = view.txn !== null && (current ? <TxnSheet txn={current} onClose={back} /> : <LoadedSheet id={view.txn} onClose={back} />)
+  if (!txns.length) {
+    return (
+      <>
+        <Empty>{empty}</Empty>
+        {sheet}
+      </>
+    )
+  }
   const days: [string, Txn[]][] = []
   if (title) days.push([title, txns])
   else {
@@ -92,6 +101,7 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
         <Section key={key} title={title ?? dayLabel(rows[0].time_utc)} sticky={!title}>
           {rows.map((t) => (
             <RowButton key={t.id} onClick={() => open({ txn: t.id })}>
+              <CategoryTile slug={t.category} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{nameOf(t)}</span>
                 <span className="block truncate text-xs text-muted">
@@ -109,8 +119,21 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
           ))}
         </Section>
       ))}
-      {current && <TxnSheet txn={current} onClose={back} />}
+      {sheet}
     </>
+  )
+}
+
+function LoadedSheet({ id, onClose }: { id: number; onClose: () => void }) {
+  const { api } = useApp()
+  const [load, retry] = useLoad(() => api.transaction(id), ['txn', id])
+  if (load.status === 'ready') return <TxnSheet txn={load.data} onClose={onClose} />
+  return (
+    <Sheet title="Transaction" onClose={onClose}>
+      <Loaded load={load} retry={retry}>
+        {() => null}
+      </Loaded>
+    </Sheet>
   )
 }
 
@@ -168,7 +191,8 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
           {cats.map((c) => (
             <li key={c.slug}>
               <button type="button" className={choice} onClick={() => setStep({ kind: 'scope', slug: c.slug })}>
-                <span className="min-w-0 truncate">{c.name}</span>
+                <CategoryTile slug={c.slug} />
+                <span className="min-w-0 flex-1 truncate">{c.name}</span>
                 {c.slug === txn.category && <span className="shrink-0 text-sm text-muted">current</span>}
               </button>
             </li>

@@ -87,6 +87,19 @@ Phase 1 is parsing, Phase 2 is the database and import.
   duplicates in any case). Fixes: banner in the page flow, bars as share of
   Spent, To-do buttons on one line. Three logo options on `#/dev/logos`.
   API gaps for 3F-3 listed in docs/ui-spec.md.
+- 3F-3 API (D-079): `role_basis` and `person_id` on transaction items,
+  `GET /transactions/{id}`, `previous` in `/summary`, totals on `/labels`,
+  ignored senders, `DELETE /senders/{id}`, `income_label`, label names 1 to
+  30 characters with 409 for a duplicate.
+- 3F-3 app (D-080): real login with `@supabase/supabase-js` 2.119.0 and the
+  HTTP adapter; 401 to login, 403 "no access", 503 and offline with retry;
+  Sign out; demo only in dev with `VITE_DEMO=1`. Client workarounds removed.
+- 3F-3 design (D-081 to D-083): 20 muted category colours on tiles, bars and
+  a hand-drawn ring chart (List | Chart); the $ mark and FLA$H wordmark; PWA
+  icons, favicon and apple-touch-icon from the mark.
+- 3F-3 backup (D-084): `scripts/backup_db.ps1` (pg_dump from `postgres:17`
+  in Docker, custom format, to `D:\FlashPrivate\backups`); restore note in
+  NOTES.md.
 
 ## Phase 3E: login and API (16 Nov 2026, in progress, tag `phase-3e-done` when done)
 

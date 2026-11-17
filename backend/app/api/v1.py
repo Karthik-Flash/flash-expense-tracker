@@ -7,11 +7,12 @@ transaction: the answer and the derived rows are saved together, or nothing is.
 """
 
 import uuid
-from datetime import UTC, datetime
+from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -19,10 +20,12 @@ from sqlalchemy.orm import Session
 from app.api.auth import current_owner
 from app.db import get_session
 from app.engine.categorise import CATEGORIES, SPENDING_ROLES, UNCATEGORISED, breakdown, label_view
-from app.engine.reconcile import ist_month, totals
+from app.engine.credits import sender_id
+from app.engine.reconcile import IST, ist_month, totals
 from app.models import (
     Label,
     ParseResult,
+    Party,
     RawMessage,
     Transaction,
     TxnDerived,
@@ -52,7 +55,7 @@ class Body(BaseModel):
 
 class SenderAnswer(Body):
     answer: Literal["friend", "income", "ignore"]
-    label: str | None = Field(None, max_length=80)
+    label: str | None = Field(None, max_length=200)  # the rules: owner_actions.clean_name
 
 
 class CategoryAnswer(Body):
@@ -61,11 +64,15 @@ class CategoryAnswer(Body):
 
 
 class NewLabel(Body):
-    name: str = Field(min_length=1, max_length=80)
+    name: str = Field(max_length=200)  # the rules: owner_actions.clean_name
 
 
 class LabelAnswer(Body):
     label_id: int
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _month(month: str) -> tuple[datetime, datetime]:
@@ -102,6 +109,77 @@ def _engine_view(rows: list) -> tuple[list, dict, dict]:
 
 def _categories(parts: dict[str, int]) -> list[dict]:
     return [{"slug": s, "name": CATEGORIES[s], "amount_paise": v} for s, v in parts.items()]
+
+
+def _person(owner: uuid.UUID, t: Transaction, d: TxnDerived) -> str | None:
+    """Who the money went to or came from: the owner party its text matches (p_), else the
+    sender id of its text (s_, as in /senders). One person under a name and a UPI ID is one
+    only once the owner lists both texts on one party."""
+    if d.party_id is not None:
+        return f"p_{d.party_id}"
+    return sender_id(str(owner), d.merchant_key, t.id) if d.merchant_key else None
+
+
+def _item(owner: uuid.UUID, t: Transaction, d: TxnDerived, lab: Label | None) -> dict:
+    return {
+        "id": t.id,
+        "time_utc": _iso(t.txn_time_utc),
+        "amount_paise": t.amount_paise,
+        "direction": t.direction,
+        "display_name": d.display_name,
+        "person_id": _person(owner, t, d),
+        "role": d.role,
+        "role_basis": d.role_basis,
+        "category": d.category,
+        "category_name": CATEGORIES.get(d.category, d.category),
+        "category_basis": d.category_basis,
+        "label": {"id": lab.id, "name": lab.name} if lab else None,
+    }
+
+
+def _items(owner: uuid.UUID):
+    return (
+        select(Transaction, TxnDerived, Label)
+        .join(TxnDerived, TxnDerived.transaction_id == Transaction.id)
+        .outerjoin(TxnLabel, TxnLabel.transaction_id == Transaction.id)
+        .outerjoin(Label, Label.id == TxnLabel.label_id)
+        .where(Transaction.owner_id == owner, Transaction.status == "active")
+    )
+
+
+def _previous(session: Session, owner: uuid.UUID, month: str) -> dict:
+    """The month before, to compare with: up to the same IST day when `month` is the current
+    IST month, else the whole month. Same rules as Spent."""
+    year, number = map(int, month.split("-"))
+    before = f"{year - (number == 1)}-{(number - 2) % 12 + 1:02d}"
+    start, end = _month(before)
+    today = _now().astimezone(IST)
+    whole = today.strftime("%Y-%m") != month
+    if not whole:
+        end = min(end, start + timedelta(days=today.day))
+    rows = _stored(
+        session, owner, Transaction.txn_time_utc >= start, Transaction.txn_time_utc < end
+    )
+    txns, roles, categories = _engine_view(rows)
+    return {
+        "month": before,
+        "whole": whole,
+        "spent_paise": totals(txns, roles, start, end).spent_paise,
+        "categories": _categories(breakdown(txns, roles, categories, start, end)),
+    }
+
+
+def _label_totals(rows: list) -> dict:
+    txns, roles, cats = _engine_view(rows)
+    t, parts = label_view(txns, roles, cats, [x.id for x in txns])
+    return {
+        "transactions": len(rows),
+        "spent_paise": t.spent_paise,
+        "paid_back_paise": t.paid_back_paise,
+        "to_confirm_paise": t.to_confirm_paise,
+        "net_paise": t.net_paise,
+        "categories": _categories(parts),
+    }
 
 
 def _write(session: Session, owner: uuid.UUID, action) -> dict:
@@ -166,6 +244,7 @@ def summary(owner: Owner, session: Db, month: Month) -> dict:
         },
         "stale": stale_reason(p) is not None,
         "last_recompute_utc": _iso(last_run_time(session, owner)),
+        "previous": _previous(session, owner, month),
     }
 
 
@@ -181,13 +260,7 @@ def transactions(
 ) -> dict:
     if category is not None and category not in CATEGORIES:
         raise HTTPException(422, "not a category of the list")
-    query = (
-        select(Transaction, TxnDerived, Label)
-        .join(TxnDerived, TxnDerived.transaction_id == Transaction.id)
-        .outerjoin(TxnLabel, TxnLabel.transaction_id == Transaction.id)
-        .outerjoin(Label, Label.id == TxnLabel.label_id)
-        .where(Transaction.owner_id == owner, Transaction.status == "active")
-    )
+    query = _items(owner)
     if month:
         start, end = _month(month)
         query = query.where(Transaction.txn_time_utc >= start, Transaction.txn_time_utc < end)
@@ -206,26 +279,20 @@ def transactions(
         )
     query = query.order_by(Transaction.txn_time_utc.desc(), Transaction.id.desc()).limit(limit + 1)
     rows = list(session.execute(query))
-    items = [
-        {
-            "id": t.id,
-            "time_utc": _iso(t.txn_time_utc),
-            "amount_paise": t.amount_paise,
-            "direction": t.direction,
-            "display_name": d.display_name,
-            "role": d.role,
-            "category": d.category,
-            "category_name": CATEGORIES.get(d.category, d.category),
-            "category_basis": d.category_basis,
-            "label": {"id": lab.id, "name": lab.name} if lab else None,
-        }
-        for t, d, lab in rows[:limit]
-    ]
+    items = [_item(owner, t, d, lab) for t, d, lab in rows[:limit]]
     next_cursor = None
     if len(rows) > limit:
         last = rows[limit - 1][0]
         next_cursor = f"{int(last.txn_time_utc.timestamp() * 1000)}_{last.id}"
     return {"items": items, "next_cursor": next_cursor}
+
+
+@router.get("/transactions/{txn_id}")
+def transaction(owner: Owner, session: Db, txn_id: int) -> dict:
+    row = session.execute(_items(owner).where(Transaction.id == txn_id)).first()
+    if row is None:
+        raise HTTPException(404, "no such transaction")
+    return _item(owner, *row)
 
 
 @router.get("/categories")
@@ -235,15 +302,23 @@ def categories(owner: Owner) -> list[dict]:
 
 @router.get("/labels")
 def labels(owner: Owner, session: Db) -> list[dict]:
-    counts = dict(
-        session.execute(
-            select(TxnLabel.label_id, func.count())
-            .where(TxnLabel.owner_id == owner)
-            .group_by(TxnLabel.label_id)
-        ).all()
+    """Every label with its totals across all dates (no breakdown: see /labels/{id})."""
+    rows = defaultdict(list)
+    query = (
+        select(Transaction, TxnDerived, TxnLabel.label_id)
+        .join(TxnDerived, TxnDerived.transaction_id == Transaction.id)
+        .join(TxnLabel, TxnLabel.transaction_id == Transaction.id)
+        .where(Transaction.owner_id == owner, Transaction.status == "active")
     )
+    for t, d, label_id in session.execute(query):
+        rows[label_id].append((t, d))
     found = session.scalars(select(Label).where(Label.owner_id == owner).order_by(Label.name))
-    return [{"id": x.id, "name": x.name, "transactions": counts.get(x.id, 0)} for x in found]
+    out = []
+    for x in found:
+        view = _label_totals(rows[x.id])
+        del view["categories"]
+        out.append({"id": x.id, "name": x.name, **view})
+    return out
 
 
 @router.get("/labels/{label_id}")
@@ -254,26 +329,22 @@ def label_detail(owner: Owner, session: Db, label_id: int) -> dict:
     rows = _stored(session, owner, Transaction.id.in_(
         select(TxnLabel.transaction_id).where(TxnLabel.label_id == label_id)
     ))  # fmt: skip
-    txns, roles, cats = _engine_view(rows)
-    t, parts = label_view(txns, roles, cats, [x.id for x in txns])
-    return {
-        "id": found.id,
-        "name": found.name,
-        "transactions": len(rows),
-        "spent_paise": t.spent_paise,
-        "paid_back_paise": t.paid_back_paise,
-        "to_confirm_paise": t.to_confirm_paise,
-        "net_paise": t.net_paise,
-        "categories": _categories(parts),
-    }
+    return {"id": found.id, "name": found.name, **_label_totals(rows)}
 
 
 @router.get("/senders")
 def senders(
     owner: Owner,
     session: Db,
-    status: Literal["to_confirm", "confirmed", "all"] = "to_confirm",
+    status: Literal["to_confirm", "confirmed", "ignored", "all"] = "to_confirm",
 ) -> list[dict]:
+    income = dict(
+        session.execute(
+            select(Party.id, Party.income_label).where(
+                Party.owner_id == owner, Party.income_label.is_not(None)
+            )
+        ).all()
+    )
     return [
         {
             "id": s.id,
@@ -284,6 +355,7 @@ def senders(
             "basis": s.basis,
             "status": s.status,
             "last_time_utc": _iso(s.last_time_utc),
+            "income_label": income.get(s.party_id) if s.role == "income" else None,
         }
         for s in owner_actions.senders(session, owner)
         if status in ("all", s.status)
@@ -299,6 +371,15 @@ def answer_sender(owner: Owner, session: Db, sender_id: str, body: SenderAnswer)
     return _write(session, owner, action)
 
 
+@router.delete("/senders/{sender_id}")
+def reset_sender(owner: Owner, session: Db, sender_id: str) -> dict:
+    def action() -> dict:
+        s = owner_actions.reset_sender(session, owner, sender_id)
+        return {"id": s.id, "credits": s.count}
+
+    return _write(session, owner, action)
+
+
 @router.put("/transactions/{txn_id}/category")
 def set_category(owner: Owner, session: Db, txn_id: int, body: CategoryAnswer) -> dict:
     def action() -> dict:
@@ -309,17 +390,16 @@ def set_category(owner: Owner, session: Db, txn_id: int, body: CategoryAnswer) -
 
 
 @router.post("/labels", status_code=201)
-def create_label(owner: Owner, session: Db, body: NewLabel, response: Response) -> dict:
+def create_label(owner: Owner, session: Db, body: NewLabel) -> dict:
+    """A new label: 201. A name the owner already has, in any case: 409."""
     with owner_lock(session, owner):
         try:
-            found, created = owner_actions.create_label(session, owner, body.name, "app")
+            made = owner_actions.create_label(session, owner, body.name, "app")
         except ActionError as exc:
             session.rollback()
-            raise HTTPException(422, str(exc)) from None
+            raise HTTPException(409 if exc.kind == "conflict" else 422, str(exc)) from None
         session.commit()
-    if not created:
-        response.status_code = 200
-    return {"id": found.id, "name": found.name, "created": created}
+    return {"id": made.id, "name": made.name}
 
 
 @router.put("/transactions/{txn_id}/label")

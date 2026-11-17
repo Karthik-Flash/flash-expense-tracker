@@ -2,11 +2,11 @@
 
 For a fresh Claude Code session with no memory of earlier work. Read this
 first, then [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase
-in [PLAN.md](PLAN.md). State as of 15 Nov 2026: Phases 0-2 done (tags
-`phase-0-done`, `phase-1-done`, `phase-2-done`); Phase 3 is in progress
-(3B merchant engine; Reconcile engine, owner tables, derived storage and
-recompute, review, export and private totals, steps 3C-2 to 3C-8, are built;
-NOTES.md has the current step).
+in [PLAN.md](PLAN.md). State as of 17 Nov 2026: Phases 0-2 done (tags
+`phase-0-done`, `phase-1-done`, `phase-2-done`); Phase 3 steps 3A to 3F are
+built (3F-3 last: real login and data, colours, chart, logo, backup). Open:
+the push, the owner's deploy settings and the Phase 3 "Done when" check on
+real months; NOTES.md has the details.
 
 ## Goal and locked stack
 
@@ -75,10 +75,10 @@ backend/            Render root
   app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals | category-stats | category-review | credit-review
   alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
-frontend/           Vercel root; every screen on demo data (docs/ui-spec.md): src/api (Api interface, fake adapter), src/screens, src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs)
-scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests)
+frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs)
+scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests); backup_db.ps1 (owner: pg_dump via Docker)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-078), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-084), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```
@@ -174,11 +174,13 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
   (`docs/api.md`), confirmed-only paybacks (D-076), inferred own accounts
   (D-077). The owner file is a developer tool (D-075). Render needs
   `SUPABASE_URL` and `AUTH_USERS`; without them data routes answer 503.
-- 3F-1 and 3F-2 are built: every screen on demo data, the view in the URL
-  hash (`frontend/src/view.ts`), Back by layers, icons, and the design pass.
-  The owner picks a logo on `#/dev/logos`. 3F-3 swaps the demo adapter
-  (`frontend/src/api/index.ts`) for an HTTP adapter; docs/ui-spec.md lists
-  the API gaps it should close first.
+- 3F is built (3F-1 to 3F-3): the view in the URL hash, Back by layers,
+  icons, real login (`@supabase/supabase-js`) and the HTTP adapter, the
+  3F-2 API gaps closed in the backend (D-079), category colours and tiles,
+  the ring chart, the FLA$H logo and PWA icons, `scripts/backup_db.ps1`.
+  The demo adapter exists only in local dev with `VITE_DEMO=1`. Owner:
+  Vercel variables and Supabase Auth settings (infra/README.md section 5),
+  then the Phase 3 "Done when" check on real months.
 - Foreign currency is deferred: 44 messages (D-035).
 - Only HDFC has a parser: 153 messages from SBI, ICICI, India Post, Kotak
   and PhonePe sit as `no_parser_for_bank`. Add a parser (docs/engine.md,
@@ -186,8 +188,7 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 - HDFC H09 word slot is still pseudonymised in the sample; harmless.
 - Import speed ~6 min for 917 messages (about 8 round trips each); batch the
   lookups for a larger source.
-- No API endpoints beyond health, no auth (single `OWNER_ID`), no UI beyond
-  the status page, no categories, no manual entry or statements yet.
+- No manual entry, statements or budgets yet.
 - Starlette's httpx deprecation warning is known and accepted (D-010).
 
 ## Where decisions live

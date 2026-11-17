@@ -844,3 +844,76 @@ is a candidate (`no_own_text`). Nothing is guessed from amounts alone.
   idempotent, and commit together with their recompute.
 - CORS: the Vercel origin and localhost dev origins only.
 - New packages: `PyJWT[crypto]==2.15.1`, `cryptography==50.0.2` (PyCA).
+
+## D-079 The API gaps of 3F-2, closed (2026-11-17)
+
+- Transaction items carry `role_basis` and `person_id`. A person is the
+  owner party the text matches (`p_<id>`), else the sender id of the text.
+  The engine never joins a name and a UPI ID on its own, so one person is
+  one id only after the owner lists both texts on one party.
+- `/summary` carries `previous`: the month before under the Spent rules, cut
+  at the same IST day when the month on screen is the current one.
+- `/labels` carries every label's totals, so the list needs one request.
+- Senders: status `ignored` (every credit ignored); an ignored sender can be
+  answered again; `DELETE /senders/{id}` forgets the answer. A party made
+  only for the answer is removed; one that also holds a category default or
+  comes from the owner file keeps it and becomes a business. Party kind
+  carries both "a person" and "money from them is a payback" (D-076), so
+  there is no "unknown" kind to return to; adding one would need a
+  migration for this single case.
+- Label and income-label names: trimmed, spaces joined, 1 to 30 characters,
+  the same rules as the client. A label name the owner has in any case is a
+  409; the old "200 with the existing label" is gone, so a second create
+  never looks like success. No migration: the column stays 80 wide for
+  labels loaded from an owner file.
+
+## D-080 Real login and data in the app (2026-11-17)
+
+- The app signs in with `@supabase/supabase-js` 2.119.0 (email and
+  password; no sign-up). The library keeps the session in localStorage and
+  refreshes the token; the HTTP adapter asks it for the access token on
+  every request. No screen talks to Supabase.
+- A 401 from the API signs out on this device and shows the login with a
+  note; a 403 shows "This account has no access" with Sign out; a 503 or a
+  network failure shows the error state with "Try again".
+- A production build always uses the HTTP adapter. The demo adapter, its
+  banner and State switch, and `#/dev` exist only in `vite` dev with
+  `VITE_DEMO=1`, and are left out of the bundle.
+- Writes show the server's answer: the screen reloads from the API after
+  each write, so a reload shows the same thing.
+
+## D-081 Category colours on tiles (2026-11-17)
+
+Supersedes "no coloured backgrounds behind icons" (3F-2). One muted colour
+per category (20; Uncategorised neutral grey), light and dark, chosen as a
+set in OKLCH. The icon sits on a 36 px rounded tile tinted with the colour;
+the same colour is the bar and the ring slice. Each colour has at least 3:1
+against the surface and its own tile. Twenty muted colours cannot all be far
+apart, so identity never rests on colour: every tile has its icon and every
+mark its name. Text never takes a category colour. Values in
+docs/ui-spec.md.
+
+## D-082 A ring chart beside the list (2026-11-17)
+
+Home has List (default) and Chart, remembered per device. The chart is a
+hand-drawn SVG ring, no package: six slices plus Other, gaps, Spent in the
+centre, a legend with the same rows. A slice or legend row opens the
+category. Supersedes "no donut charts" for this one chart.
+
+## D-083 The FLA$H logo (2026-11-17)
+
+An original $ mark (three bars joined by half circles, two stubs, monoline)
+and the wordmark FLA$H drawn as paths. The mark is upright and on a dark
+tile, to stay clear of well-known dollar-sign app icons; no lightning bolt.
+The PWA icons, favicon and apple-touch-icon are made from it. The three
+3F-2 options are retired. Not checked against a trademark register.
+
+## D-084 Database backup by the owner (2026-11-17)
+
+`scripts/backup_db.ps1` runs `pg_dump` from the `postgres:17` Docker image
+(custom format, public schema, no owners or grants) and writes
+`D:\FlashPrivate\backups\flash-YYYYMMDD-HHmm.dump`. It reads
+`DATABASE_URL` from `backend\.env` itself, passes it to the container as an
+environment variable, never prints it, and drops pg_dump's messages (they
+can name the host and user). Only the owner runs it. Restore is a manual
+step in NOTES.md, into an empty database first.

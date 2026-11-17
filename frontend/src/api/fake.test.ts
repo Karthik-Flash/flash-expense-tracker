@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { allTransactions, spentEffect } from './client.ts'
+import { allTransactions, ApiError, spentEffect } from './client.ts'
 import { FakeApi } from './fake.ts'
 
 test('demo month: the breakdown adds up to Spent, Net = Spent - Paid back', async () => {
@@ -46,17 +46,42 @@ test('answers change the totals the way the API does', async () => {
   assert.ok(!left.some((t) => t.display_name === 'Vendmart Block B'))
 
   const made = await api.createLabel('Test Fest')
-  assert.equal((await api.createLabel('test fest')).id, made.id)
+  await assert.rejects(api.createLabel(' test  FEST '), (e: ApiError) => e.status === 409)
   await api.setLabel(vending.id, made.id)
   assert.equal((await api.label(made.id)).transactions, 1)
   await api.clearLabel(vending.id)
   assert.equal((await api.label(made.id)).transactions, 0)
 })
 
+test('ignored senders, a reset, and the income label', async () => {
+  const api = new FakeApi()
+  const [first, second] = await api.senders('to_confirm')
+  await api.answerSender(first.id, { answer: 'ignore' })
+  await api.answerSender(second.id, { answer: 'income', label: ' Pocket   money ' })
+  assert.deepEqual((await api.senders('ignored')).map((s) => s.id), [first.id])
+  const income = (await api.senders('confirmed')).find((s) => s.id === second.id)!
+  assert.equal(income.income_label, 'Pocket money')
+  await api.resetSender(first.id)
+  await api.resetSender(second.id)
+  const open = (await api.senders('to_confirm')).map((s) => s.id)
+  assert.ok(open.includes(first.id) && open.includes(second.id))
+  const one = (await api.transactions({ month: '2026-11', limit: 1 })).items[0]
+  assert.deepEqual(await api.transaction(one.id), one)
+})
+
+test('previous month: whole for a past month', async () => {
+  const api = new FakeApi()
+  const october = await api.summary('2026-10')
+  const november = await api.summary('2026-11')
+  assert.equal(november.previous.month, '2026-10')
+  assert.ok(november.previous.whole || november.previous.spent_paise <= october.spent_paise)
+  assert.deepEqual((await api.summary('2026-12')).previous.spent_paise, november.spent_paise)
+})
+
 test('demo states', async () => {
   const api = new FakeApi()
   api.setState('error')
-  await assert.rejects(api.summary('2026-11'), /did not answer/)
+  await assert.rejects(api.summary('2026-11'), /not ready/)
   api.setState('stale')
   assert.equal((await api.summary('2026-11')).stale, true)
   api.setState('empty')

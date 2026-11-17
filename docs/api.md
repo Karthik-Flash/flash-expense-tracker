@@ -28,14 +28,16 @@ owner's transaction, label or sender is "404 not found".
 
 | Method | Path | What |
 | ------ | ---- | ---- |
-| GET | `/api/v1/summary?month=YYYY-MM` | The month in IST: Spent, Paid back (owner-confirmed only), To confirm, Net, Income, Spent by category, counts, stale flag |
+| GET | `/api/v1/summary?month=YYYY-MM` | The month in IST: Spent, Paid back (owner-confirmed only), To confirm, Net, Income, Spent by category, counts, stale flag, and `previous` (below) |
 | GET | `/api/v1/transactions?month=&category=&label=&cursor=&limit=` | Newest first, `limit` 1 to 200 (default 50); `next_cursor` for the next page |
+| GET | `/api/v1/transactions/{id}` | One transaction, the same item as in the list |
 | GET | `/api/v1/categories` | The fixed list: `slug`, `name` |
-| GET | `/api/v1/labels` | `id`, `name`, number of transactions |
-| POST | `/api/v1/labels` | `{"name"}`: 201 created, or 200 with the existing label of that name |
-| GET | `/api/v1/labels/{id}` | The label view across all dates: Spent, Paid back, To confirm, Net, Spent by category |
-| GET | `/api/v1/senders?status=to_confirm\|confirmed\|all` | Senders of paybacks, uncertain credits and income, largest total first |
+| GET | `/api/v1/labels` | Every label with its totals across all dates: `id`, `name`, `transactions`, `spent_paise`, `paid_back_paise`, `to_confirm_paise`, `net_paise` |
+| POST | `/api/v1/labels` | `{"name"}`: 201 with `{"id", "name"}`; 409 when the owner has that name in any case; 422 when the name breaks the rules (below) |
+| GET | `/api/v1/labels/{id}` | The label view across all dates: the totals above and Spent by category |
+| GET | `/api/v1/senders?status=to_confirm\|confirmed\|ignored\|all` | Senders of paybacks, uncertain credits, income and ignored credits, largest total first |
 | PUT | `/api/v1/senders/{id}` | `{"answer": "friend"}`, `{"answer": "income", "label": "..."}` or `{"answer": "ignore"}` |
+| DELETE | `/api/v1/senders/{id}` | Forget the answer: the sender is to confirm again |
 | PUT | `/api/v1/transactions/{id}/category` | `{"category": slug, "scope": "merchant" \| "transaction"}` |
 | PUT | `/api/v1/transactions/{id}/label` | `{"label_id"}`: at most one label per transaction |
 | DELETE | `/api/v1/transactions/{id}/label` | Remove the label (also when there is none) |
@@ -45,7 +47,8 @@ recompute in the same database transaction, under the owner's lock: the
 answer and the derived rows are saved together or not at all. The response
 is `{"result": {...}, "recompute": {"status": "done" | "unchanged", "run": id}}`.
 Errors: 404 (not this owner's, or no such id), 422 (validation), 409 (owner
-data that cannot hold, or a recompute stopped by an engine change).
+data that cannot hold, a recompute stopped by an engine change, or a label
+name the owner already has).
 
 - `scope: merchant` sets the default on the merchant's party (made from the
   transaction's text if there is none): every past and future payment to it.
@@ -54,7 +57,47 @@ data that cannot hold, or a recompute stopped by an engine change).
 - `friend` makes the sender's party a person (a payback, confirmed);
   `income` makes it an income source with that label; `ignore` sets role
   `ignored` on its current credits. A sender with no text gets role
-  decisions instead of a party.
+  decisions instead of a party. An ignored sender can be answered again.
+- `DELETE /senders/{id}` removes the sender's role decisions. A party the app
+  made only for the answer is removed too. A party that also holds a default
+  category, or comes from the owner file, keeps it and becomes a business,
+  so its credits are to confirm (`CR_business`).
+- **Names** (a label, an income label): trimmed, inner runs of spaces joined
+  into one, then 1 to 30 characters. The client applies the same rules
+  (`frontend/src/screens/derive.ts`).
+
+## Transaction item (fake values)
+
+```json
+{
+  "id": 1042,
+  "time_utc": "2026-01-09T06:00:00Z",
+  "amount_paise": 10000000,
+  "direction": "debit",
+  "display_name": "Person_901",
+  "person_id": "s_3f9a0c1d2e4b5a6c7d8e",
+  "role": "spend",
+  "role_basis": "engine",
+  "category": "people",
+  "category_name": "People",
+  "category_basis": "engine",
+  "label": null
+}
+```
+
+- `role_basis`: `owner` when the owner decided the role (a confirmed payback,
+  income, ignored), else `engine`. A payback with basis `engine` is to confirm.
+- `person_id`: who the money went to or came from. `p_<n>` when the text
+  matches an owner party, else the sender id of the text (`s_...`, the same
+  id as in `/senders`), else `null` (no counterparty text, such as an ATM
+  withdrawal). One person seen under a name and a UPI ID gets one id only
+  once the owner lists both texts on one party (owner file); the app cannot
+  join them yet.
+
+A sender also carries `income_label`: the label of a confirmed income
+sender, else `null`. `status` is `to_confirm`, `confirmed` or `ignored`
+(every credit ignored). A new credit from an ignored sender makes it to
+confirm again.
 
 ## Summary response (fake values)
 
@@ -81,3 +124,15 @@ data that cannot hold, or a recompute stopped by an engine change).
 `categories` always adds up to `spent_paise`. `stale` is true when no
 recompute has run, the engine versions changed, or stored rows differ from
 a fresh derive; the owner runs `recompute` (D-066).
+
+`previous` is the month before, for "compared with last month", under the
+same rules as Spent:
+
+```json
+"previous": {"month": "2025-12", "whole": false, "spent_paise": 2101900, "categories": [...]}
+```
+
+When `month` is the current IST month, `previous` runs from the start of
+the month before up to the same IST day of the month, that day included
+(all of it when the month before is shorter); `whole` is false. For any
+other month it is the whole month before; `whole` is true.

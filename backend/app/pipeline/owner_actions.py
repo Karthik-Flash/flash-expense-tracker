@@ -8,11 +8,11 @@ Errors never hold a value from the data.
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.engine.categorise import CATEGORIES
-from app.engine.credits import CreditRow, Sender, credit_senders
+from app.engine.credits import SENDER_ROLES, CreditRow, Sender, credit_senders
 from app.models import (
     Label,
     OwnerCategory,
@@ -26,11 +26,12 @@ from app.models import (
 
 ANSWERS = ("friend", "income", "ignore")
 SCOPES = ("merchant", "transaction")
-MAX_NAME = 80
+MAX_NAME = 30  # a label or income label, after trimming and joining spaces (docs/ui-spec.md)
+ANSWER_ROLES = ("ignored", "payback", "income")  # the role decisions a sender answer writes
 
 
 class ActionError(Exception):
-    """kind: not_found or invalid."""
+    """kind: not_found, invalid or conflict."""
 
     def __init__(self, kind: str, message: str) -> None:
         super().__init__(message)
@@ -52,10 +53,11 @@ def stored_credit_rows(
             TxnDerived.display_name,
             TxnDerived.role,
             TxnDerived.role_basis,
+            TxnDerived.party_id,
         )
         .join(TxnDerived, TxnDerived.transaction_id == Transaction.id)
         .where(Transaction.owner_id == owner_id, Transaction.status == "active")
-        .where(TxnDerived.role.in_(("payback", "uncertain", "income")))
+        .where(Transaction.direction == "credit", TxnDerived.role.in_(SENDER_ROLES))
     )
     if start is not None:
         query = query.where(Transaction.txn_time_utc >= start, Transaction.txn_time_utc < end)
@@ -64,6 +66,21 @@ def stored_credit_rows(
 
 def senders(session: Session, owner_id: uuid.UUID, start=None, end=None) -> list[Sender]:
     return credit_senders(stored_credit_rows(session, owner_id, start, end), str(owner_id))
+
+
+def clean_name(name: str | None, what: str) -> str:
+    """Trimmed, inner spaces joined, 1 to MAX_NAME characters."""
+    name = " ".join((name or "").split())
+    if not name or len(name) > MAX_NAME:
+        raise ActionError("invalid", f"{what} has 1 to {MAX_NAME} characters")
+    return name
+
+
+def _sender(session: Session, owner_id: uuid.UUID, sender_id: str) -> Sender:
+    sender = next((s for s in senders(session, owner_id) if s.id == sender_id), None)
+    if sender is None:
+        raise ActionError("not_found", "no such sender")
+    return sender
 
 
 def _transaction(session: Session, owner_id: uuid.UUID, txn_id: int) -> Transaction:
@@ -130,12 +147,8 @@ def answer_sender(
     if answer not in ANSWERS:
         raise ActionError("invalid", "answer must be friend, income or ignore")
     if answer == "income":
-        income_label = (income_label or "").strip()
-        if not income_label or len(income_label) > MAX_NAME:
-            raise ActionError("invalid", f"income needs a label of 1 to {MAX_NAME} characters")
-    sender = next((s for s in senders(session, owner_id) if s.id == sender_id), None)
-    if sender is None:
-        raise ActionError("not_found", "no such sender")
+        income_label = clean_name(income_label, "an income label")
+    sender = _sender(session, owner_id, sender_id)
     if answer == "ignore":
         for txn_id in sender.txn_ids:
             _role(session, owner_id, txn_id, "ignored", source)
@@ -150,8 +163,35 @@ def answer_sender(
             party.income_label = income_label
         for txn_id in sender.txn_ids:  # an earlier "ignore" or role answer gives way
             row = session.get(OwnerRole, txn_id)
-            if row is not None and row.role in ("ignored", "payback", "income"):
+            if row is not None and row.role in ANSWER_ROLES:
                 session.delete(row)
+    session.flush()
+    return sender
+
+
+def reset_sender(session: Session, owner_id: uuid.UUID, sender_id: str) -> Sender:
+    """Forget the owner's answer, so the sender is "to confirm" again after the recompute.
+
+    Its role decisions go. A party the app made only to hold the answer goes too. A party
+    that also holds a default category, or comes from the owner file, keeps that and
+    becomes a business: its credits are then to confirm (CR_business).
+    """
+    sender = _sender(session, owner_id, sender_id)
+    for txn_id in sender.txn_ids:
+        row = session.get(OwnerRole, txn_id)
+        if row is not None and row.role in ANSWER_ROLES:
+            session.delete(row)
+    party = session.get(Party, sender.party_id) if sender.party_id is not None else None
+    if party is not None and party.source == "app" and party.category is None:
+        session.execute(delete(PartyText).where(PartyText.party_id == party.id))
+        session.execute(
+            TxnDerived.__table__.update()
+            .where(TxnDerived.party_id == party.id)
+            .values(party_id=None)
+        )
+        session.delete(party)
+    elif party is not None:
+        party.kind, party.income_label = "business", None
     session.flush()
     return sender
 
@@ -178,20 +218,16 @@ def set_category(
     session.flush()
 
 
-def create_label(
-    session: Session, owner_id: uuid.UUID, name: str, source: str
-) -> tuple[Label, bool]:
-    """The label with this name (case does not matter), made if missing. (label, created)."""
-    name = (name or "").strip()
-    if not name or len(name) > MAX_NAME:
-        raise ActionError("invalid", f"a label name has 1 to {MAX_NAME} characters")
+def create_label(session: Session, owner_id: uuid.UUID, name: str, source: str) -> Label:
+    """A new label. A name the owner already has, in any case, is a conflict."""
+    name = clean_name(name, "a label name")
     for label in session.scalars(select(Label).where(Label.owner_id == owner_id)):
-        if label.name.casefold() == name.casefold():
-            return label, False
+        if " ".join(label.name.split()).casefold() == name.casefold():
+            raise ActionError("conflict", "a label with this name already exists")
     label = Label(owner_id=owner_id, name=name, source=source)
     session.add(label)
     session.flush()
-    return label, True
+    return label
 
 
 def set_label(

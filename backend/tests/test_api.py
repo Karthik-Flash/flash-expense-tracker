@@ -4,6 +4,7 @@ import json
 import re
 import time
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import jwt
@@ -14,11 +15,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from app import cli
-from app.api import auth
+from app.api import auth, v1
 from app.config import settings
 from app.db import get_session
 from app.engine.categorise import CATEGORIES
 from app.engine.credits import CreditRow, credit_senders
+from app.engine.reconcile import COUNTED
 from app.main import allowed_origins, app
 from app.models import OwnerRole, Party, Transaction
 from app.pipeline.recompute import _LOCKS, owner_lock
@@ -123,7 +125,7 @@ def find(client, display_name: str) -> list[dict]:
 def test_every_data_route_needs_a_login(client) -> None:
     paths = app.openapi()["paths"]
     data_routes = [(m, p) for p, ops in paths.items() if p.startswith("/api/v1") for m in ops]
-    assert len(data_routes) == 11
+    assert len(data_routes) == 13
     for method, path in data_routes:
         url = re.sub(r"\{[^}]+\}", "1", path)
         response = client.request(method.upper(), url, json={})
@@ -251,8 +253,9 @@ def test_summary(client, data) -> None:
     s = response.json()
     assert set(s) == {
         "month", "spent_paise", "paid_back_paise", "to_confirm", "net_paise", "income_paise",
-        "categories", "counts", "stale", "last_recompute_utc",
+        "categories", "counts", "stale", "last_recompute_utc", "previous",
     }  # fmt: skip
+    assert s["previous"] == {"month": "2025-12", "whole": True, "spent_paise": 0, "categories": []}
     assert sum(c["amount_paise"] for c in s["categories"]) == s["spent_paise"] > 0
     assert s["net_paise"] == s["spent_paise"] - s["paid_back_paise"]
     assert s["paid_back_paise"] == 0  # nothing confirmed yet (D-076)
@@ -269,6 +272,41 @@ def test_summary(client, data) -> None:
     assert get(client, "/api/v1/summary").status_code == 422
 
 
+@pytest.mark.parametrize("day", [1, 10, 17, 28])
+def test_summary_previous_is_last_month_up_to_the_same_ist_day(
+    client, data, monkeypatch, day
+) -> None:
+    january = get(client, "/api/v1/summary", month="2026-01").json()
+    # 1 March 00:00 IST is 28 Feb 18:30 UTC: February is past, so January counts whole.
+    monkeypatch.setattr(v1, "_now", lambda: datetime(2026, 2, 28, 18, 30, tzinfo=UTC))
+    assert get(client, "/api/v1/summary", month="2026-02").json()["previous"] == {
+        "month": "2026-01",
+        "whole": True,
+        "spent_paise": january["spent_paise"],
+        "categories": january["categories"],
+    }
+    # Day `day` of February, 23:59 IST: January up to its day `day`, both included.
+    monkeypatch.setattr(v1, "_now", lambda: datetime(2026, 2, day, 18, 29, tzinfo=UTC))
+    cut = get(client, "/api/v1/summary", month="2026-02").json()["previous"]
+    expected = sum(
+        COUNTED[t["role"]][1] * t["amount_paise"]
+        for t in all_transactions(client, month="2026-01")
+        if COUNTED.get(t["role"], ("",))[0] == "spent" and ist_day(t["time_utc"]) <= day
+    )
+    assert (cut["month"], cut["whole"], cut["spent_paise"]) == ("2026-01", False, expected)
+    assert sum(c["amount_paise"] for c in cut["categories"]) == expected
+    if day == 10:
+        assert 0 < expected < january["spent_paise"]
+    # 31 March: February has 28 days, so all of it.
+    monkeypatch.setattr(v1, "_now", lambda: datetime(2026, 3, 31, 6, tzinfo=UTC))
+    march = get(client, "/api/v1/summary", month="2026-03").json()["previous"]
+    assert (march["month"], march["whole"]) == ("2026-02", False)
+
+
+def ist_day(time_utc: str) -> int:
+    return (datetime.fromisoformat(time_utc) + timedelta(hours=5, minutes=30)).day
+
+
 def test_transactions_pages_filters_and_never_shows_message_text(client, data, db_engine) -> None:
     items = all_transactions(client)
     with sessionmaker(db_engine)() as s:
@@ -281,9 +319,17 @@ def test_transactions_pages_filters_and_never_shows_message_text(client, data, d
     times = [(t["time_utc"], t["id"]) for t in items]
     assert times == sorted(times, reverse=True)
     assert set(items[0]) == {
-        "id", "time_utc", "amount_paise", "direction", "display_name", "role", "category",
-        "category_name", "category_basis", "label",
+        "id", "time_utc", "amount_paise", "direction", "display_name", "person_id", "role",
+        "role_basis", "category", "category_name", "category_basis", "label",
     }  # fmt: skip
+    for t in items[:5]:  # one transaction by id: the same item
+        assert get(client, f"/api/v1/transactions/{t['id']}").json() == t
+    assert get(client, "/api/v1/transactions/999999").status_code == 404
+    theirs = all_transactions(client, SUB_B)[0]["id"]
+    assert get(client, f"/api/v1/transactions/{theirs}").status_code == 404
+    person = {t["person_id"] for t in items if t["display_name"] == "Person_901"}
+    assert len(person) == 1 and None not in person  # two payments, one person
+    assert {t["person_id"] for t in items if t["category"] == "cash"} == {None}  # no text
     text = json.dumps(items)
     for fx in FIXTURES:
         assert not [v for v in (fx["expected"].get("reference"),) if v and v in text]
@@ -407,26 +453,88 @@ def test_senders_confirm_and_net_follows(client, data) -> None:
     others = get(client, "/api/v1/senders").json()
     income = others[0]
     assert put(client, f"/api/v1/senders/{income['id']}", {"answer": "income"}).status_code == 422
+    for bad in ("  ", "S" * 31):
+        body = {"answer": "income", "label": bad}
+        assert put(client, f"/api/v1/senders/{income['id']}", body).status_code == 422
     good = put(
-        client, f"/api/v1/senders/{income['id']}", {"answer": "income", "label": "Test Stipend"}
+        client, f"/api/v1/senders/{income['id']}", {"answer": "income", "label": " Test  Stipend"}
     )
     assert good.status_code == 200
     now = get(client, "/api/v1/summary", month="2026-01").json()
     assert now["income_paise"] == after["income_paise"] + income["total_paise"]
+    confirmed = {s["id"]: s for s in get(client, "/api/v1/senders", status="confirmed").json()}
+    assert confirmed[income["id"]]["income_label"] == "Test Stipend"
+    assert confirmed[payback["id"]]["income_label"] is None
     rest = get(client, "/api/v1/senders").json()
     for s in rest:
         assert put(client, f"/api/v1/senders/{s['id']}", {"answer": "ignore"}).status_code == 200
     assert get(client, "/api/v1/senders").json() == []
+    ignored = get(client, "/api/v1/senders", status="ignored").json()
+    assert {s["id"] for s in ignored} == {s["id"] for s in rest}
+    assert {(s["status"], s["role"]) for s in ignored} == {("ignored", "ignored")}
     assert put(client, "/api/v1/senders/s_unknown", {"answer": "ignore"}).status_code == 404
     assert put(client, f"/api/v1/senders/{income['id']}", {"answer": "maybe"}).status_code == 422
 
+    # An ignored sender can be answered again.
+    back = ignored[0]
+    assert put(client, f"/api/v1/senders/{back['id']}", {"answer": "friend"}).status_code == 200
+    assert back["id"] in {
+        s["id"] for s in get(client, "/api/v1/senders", status="confirmed").json()
+    }
+
+
+def test_reset_sender_returns_it_to_confirm(client, data, db_engine) -> None:
+    listed = get(client, "/api/v1/senders").json()
+    start = get(client, "/api/v1/summary", month="2026-01").json()
+    payback = next(s for s in listed if s["role"] == "payback")
+    other = next(s for s in listed if s["id"] != payback["id"])
+    put(client, f"/api/v1/senders/{payback['id']}", {"answer": "friend"})
+    put(client, f"/api/v1/senders/{other['id']}", {"answer": "ignore"})
+    assert get(client, "/api/v1/senders").json() != listed
+    for s in (payback, other):
+        response = client.delete(f"/api/v1/senders/{s['id']}", headers=bearer(token()))
+        assert response.status_code == 200, response.text
+        assert response.json()["recompute"]["status"] == "done"
+    assert get(client, "/api/v1/senders").json() == listed
+    end = get(client, "/api/v1/summary", month="2026-01").json()
+    assert {k: v for k, v in end.items() if k != "last_recompute_utc"} == {
+        k: v for k, v in start.items() if k != "last_recompute_utc"
+    }
+    with sessionmaker(db_engine)() as s:  # the party made for the answer is gone
+        assert not list(s.scalars(select(OwnerRole))) and not list(s.scalars(select(Party)))
+    again = client.delete(f"/api/v1/senders/{payback['id']}", headers=bearer(token()))
+    assert again.json()["recompute"]["status"] == "unchanged"  # idempotent
+    gone = client.delete("/api/v1/senders/s_unknown", headers=bearer(token()))
+    assert gone.status_code == 404
+    theirs = client.delete(f"/api/v1/senders/{payback['id']}", headers=bearer(token(SUB_B)))
+    assert theirs.status_code == 404
+
+
+def test_reset_sender_keeps_a_category_default(client, data) -> None:
+    """A party that also holds the owner's category keeps it; its credits are to confirm."""
+    payback = next(s for s in get(client, "/api/v1/senders").json() if s["role"] == "payback")
+    credit = next(t for t in all_transactions(client) if t["role"] == "payback")
+    body = {"category": "gifts_donations", "scope": "merchant"}
+    assert put(client, f"/api/v1/transactions/{credit['id']}/category", body).status_code == 200
+    put(client, f"/api/v1/senders/{payback['id']}", {"answer": "friend"})
+    client.delete(f"/api/v1/senders/{payback['id']}", headers=bearer(token()))
+    after = get(client, f"/api/v1/transactions/{credit['id']}").json()
+    assert (after["role"], after["role_basis"]) == ("uncertain", "owner")
+    assert payback["id"] in {s["id"] for s in get(client, "/api/v1/senders").json()}
+
 
 def test_labels(client, data) -> None:
-    created = client.post("/api/v1/labels", headers=bearer(token()), json={"name": "Test Trip"})
-    assert created.status_code == 201 and created.json()["created"] is True
-    again = client.post("/api/v1/labels", headers=bearer(token()), json={"name": "test trip"})
-    assert again.status_code == 200 and again.json()["id"] == created.json()["id"]
-    for bad in ({"name": ""}, {"name": "T" * 81}, {}, {"name": "x", "y": 1}):
+    def post(name) -> object:
+        return client.post("/api/v1/labels", headers=bearer(token()), json={"name": name})
+
+    created = post("  Test   Trip ")  # trimmed, inner spaces joined (as the client does)
+    assert created.status_code == 201 and created.json()["name"] == "Test Trip"
+    for same in ("test trip", "TEST  TRIP", " Test Trip"):  # any case: 409
+        assert post(same).status_code == 409
+    assert post("T" * 30).status_code == 201 and post("₹" * 30).status_code == 201
+    for bad in ("", "   ", "T" * 31, "₹" * 31):
+        assert post(bad).status_code == 422, bad
+    for bad in ({}, {"name": "x", "y": 1}):
         assert client.post("/api/v1/labels", headers=bearer(token()), json=bad).status_code == 422
     label = created.json()["id"]
     spends = [t for t in all_transactions(client) if t["role"] == "spend"][:3]
@@ -447,12 +555,12 @@ def test_labels(client, data) -> None:
         ).status_code
         == 404
     )
-    assert get(client, "/api/v1/labels").json() == [
-        {"id": label, "name": "Test Trip", "transactions": 3}
-    ]
     view = get(client, f"/api/v1/labels/{label}").json()
     assert view["spent_paise"] == sum(t["amount_paise"] for t in spends)
     assert sum(c["amount_paise"] for c in view["categories"]) == view["spent_paise"]
+    listed = {x["name"]: x for x in get(client, "/api/v1/labels").json()}
+    assert listed["Test Trip"] == {k: v for k, v in view.items() if k != "categories"}
+    assert listed["T" * 30]["transactions"] == listed["T" * 30]["spent_paise"] == 0
     labelled = all_transactions(client, label=label)
     assert {t["id"] for t in labelled} == {t["id"] for t in spends}
     assert {t["label"]["name"] for t in labelled} == {"Test Trip"}
@@ -461,7 +569,10 @@ def test_labels(client, data) -> None:
             f"/api/v1/transactions/{spends[0]['id']}/label", headers=bearer(token())
         )
         assert response.status_code == 200
-    assert get(client, "/api/v1/labels").json()[0]["transactions"] == 2
+    assert (
+        next(x for x in get(client, "/api/v1/labels").json() if x["id"] == label)["transactions"]
+        == 2
+    )
     assert get(client, "/api/v1/labels/99999").status_code == 404
 
 
@@ -492,6 +603,16 @@ def test_credit_senders_group_sort_and_hide_the_key() -> None:
     assert all("test" not in s.id and s.id.startswith("s_") for s in found)
     assert [s.id for s in credit_senders(reversed(rows), "salt-a")] == [s.id for s in found]
     assert not {s.id for s in credit_senders(rows, "salt-b")} & {s.id for s in found}
+    ignored = [
+        CreditRow(7, 300, when, "vpa:test.b@okaxis", "test.b@okaxis", "ignored", "owner"),
+        CreditRow(8, 300, when, "vpa:test.b@okaxis", "test.b@okaxis", "ignored", "owner"),
+        CreditRow(9, 300, when, "vpa:test.c@okaxis", "test.c@okaxis", "ignored", "owner"),
+        CreditRow(10, 50, when, "vpa:test.c@okaxis", "test.c@okaxis", "uncertain", "engine"),
+    ]
+    assert [(s.total_paise, s.role, s.status) for s in credit_senders(ignored, "salt-a")] == [
+        (600, "ignored", "ignored"),
+        (350, "uncertain", "to_confirm"),  # a new credit after "ignore": to confirm again
+    ]
 
 
 def test_owner_lock_is_one_lock_per_owner(db_engine) -> None:

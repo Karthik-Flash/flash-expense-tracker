@@ -3,14 +3,14 @@ import { useState } from 'react'
 import { allTransactions } from '../api/client.ts'
 import { percentOf, rupees } from '../lib/money.ts'
 import { joinLoads, useApp, useLoad, useNav } from '../state.tsx'
-import { Bar, Button, Empty, Figure, Header, Icon, Loaded, Money, RowButton, Section } from '../ui.tsx'
+import { Bar, Button, CategoryTile, Empty, Figure, Header, Icon, Loaded, Money, RowButton, Section } from '../ui.tsx'
 import { labelName } from './derive.ts'
 import { TxnList } from './Transactions.tsx'
 
 export function Labels() {
   const { api, changed } = useApp()
   const { open } = useNav()
-  const [load, retry] = useLoad(async () => Promise.all((await api.labels()).map((l) => api.label(l.id))), ['label-views'])
+  const [load, retry] = useLoad(() => api.labels(), ['labels'])
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const rule = labelName(name, load.status === 'ready' ? load.data.map((v) => v.name) : [])
@@ -109,14 +109,17 @@ export function LabelDetail({ id }: { id: number }) {
               {parts.length > 0 && (
                 <Section title="By category">
                   {parts.map((p) => (
-                    <div key={p.slug} className="px-4 py-3">
+                    <div key={p.slug} className="flex items-center gap-3 px-4 py-3">
+                      <CategoryTile slug={p.slug} />
+                      <span className="min-w-0 flex-1">
                       <span className="flex items-baseline gap-3">
                         <span className="min-w-0 flex-1 truncate">{p.name}</span>
                         <Money paise={p.amount_paise} />
                         <span className="w-9 shrink-0 text-right text-sm text-muted tabular-nums">{percentOf(p.amount_paise, v.spent_paise)}</span>
                       </span>
                       <span className="mt-1.5 flex">
-                        <Bar share={v.spent_paise > 0 ? p.amount_paise / v.spent_paise : 0} />
+                        <Bar slug={p.slug} share={v.spent_paise > 0 ? p.amount_paise / v.spent_paise : 0} />
+                      </span>
                       </span>
                     </div>
                   ))}
