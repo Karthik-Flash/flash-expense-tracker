@@ -56,6 +56,19 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Line icons: 20 px at the default text size, 2/24 stroke (about 1.7 px). */
+.icon {
+  display: inline-flex;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.icon > svg {
+  width: 100%;
+  height: 100%;
+}
+
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;

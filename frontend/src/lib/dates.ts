@@ -65,6 +65,11 @@ export function currentMonth(now: number = Date.now()): string {
   return monthOf(new Date(now).toISOString())
 }
 
+/** The IST day of a moment (now by default): "2026-11-17". */
+export function today(now: number = Date.now()): string {
+  return dayKey(new Date(now).toISOString())
+}
+
 /** UTC ISO string of an IST wall-clock time: for building data. */
 export function istToIso(year: number, month: number, day: number, hour = 0, minute = 0): string {
   return new Date(Date.UTC(year, month - 1, day, hour, minute) - IST_OFFSET_MS).toISOString()

@@ -1,10 +1,18 @@
-// Shared pieces: rows, money, month switcher, bottom sheet, states. Calm and plain.
+// Shared pieces: rows, money, icons, month switcher, bottom sheet, states. Calm and plain.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { moneyIn, rupees, rupeesExact } from './lib/money.ts'
 import { monthLabel, shiftMonth } from './lib/dates.ts'
 import type { Load } from './state.tsx'
+
+// Lucide icons (ISC, src/icons/LICENSE), copied as files: no icon package at runtime.
+const SVGS = import.meta.glob('./icons/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+
+/** A 20 px line icon in the current text colour. Decorative: the text next to it names it. */
+export function Icon({ name, className = '' }: { name: string; className?: string }) {
+  return <span aria-hidden="true" className={`icon ${className}`} dangerouslySetInnerHTML={{ __html: SVGS[`./icons/${name}.svg`] ?? '' }} />
+}
 
 export function Money({ paise, credit = false, exact = false, className = '' }: {
   paise: number
@@ -13,44 +21,49 @@ export function Money({ paise, credit = false, exact = false, className = '' }: 
   className?: string
 }) {
   const text = credit ? moneyIn(paise, exact) : exact ? rupeesExact(paise) : rupees(paise)
-  return <span className={`tabular-nums ${credit ? 'text-positive' : ''} ${className}`}>{text}</span>
+  return <span className={`shrink-0 whitespace-nowrap tabular-nums ${credit ? 'text-positive' : ''} ${className}`}>{text}</span>
 }
 
 export function Header({ title, back, children }: { title: string; back?: () => void; children?: ReactNode }) {
   return (
     <header className="flex min-h-14 items-center gap-2 px-4 pt-2">
       {back && (
-        <button type="button" onClick={back} className="-ml-2 flex size-11 items-center justify-center rounded-lg text-accent" aria-label="Back">
-          <span aria-hidden="true" className="text-2xl leading-none">‹</span>
+        <button type="button" onClick={back} className="-ml-3 flex size-11 shrink-0 items-center justify-center rounded-lg text-accent" aria-label="Back">
+          <Icon name="chevron-left" />
         </button>
       )}
-      <h1 className="flex-1 truncate text-lg font-semibold">{title}</h1>
+      <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{title}</h1>
       {children}
     </header>
   )
 }
 
 export function MonthSwitcher({ month, setMonth, latest }: { month: string; setMonth: (m: string) => void; latest: string }) {
-  const button = 'flex size-11 items-center justify-center rounded-lg text-xl text-accent disabled:text-faint'
+  const button = 'flex size-11 items-center justify-center rounded-lg text-accent disabled:text-faint'
   return (
     <div className="flex items-center justify-center gap-2" role="group" aria-label="Month">
-      <button type="button" className={button} onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month">‹</button>
-      <span className="min-w-28 text-center font-medium tabular-nums" aria-live="polite">{monthLabel(month)}</span>
-      <button type="button" className={button} onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= latest} aria-label="Next month">›</button>
+      <button type="button" className={button} onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month">
+        <Icon name="chevron-left" />
+      </button>
+      <span className="min-w-28 text-center font-medium whitespace-nowrap tabular-nums" aria-live="polite">{monthLabel(month)}</span>
+      <button type="button" className={button} onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= latest} aria-label="Next month">
+        <Icon name="chevron-right" />
+      </button>
     </div>
   )
 }
 
-export function Section({ title, children, aside }: { title?: string; children: ReactNode; aside?: ReactNode }) {
+/** A titled card of rows. A sticky title stays at the top while its rows scroll by. */
+export function Section({ title, children, aside, sticky = false }: { title?: string; children: ReactNode; aside?: ReactNode; sticky?: boolean }) {
   return (
-    <section className="mt-6 px-4">
+    <section className="mt-4 px-4">
       {title && (
-        <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-sm font-medium text-muted">{title}</h2>
+        <div className={`flex items-baseline justify-between gap-3 py-2 ${sticky ? 'sticky top-0 z-10 -mx-4 bg-bg px-4' : ''}`}>
+          <h2 className="truncate text-sm font-medium text-muted">{title}</h2>
           {aside}
         </div>
       )}
-      <div className="overflow-hidden rounded-lg border border-line bg-surface">{children}</div>
+      <div className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">{children}</div>
     </section>
   )
 }
@@ -58,35 +71,40 @@ export function Section({ title, children, aside }: { title?: string; children: 
 export function RowButton({ onClick, children, label }: { onClick?: () => void; children: ReactNode; label?: string }) {
   const body = <div className="flex min-h-14 items-center gap-3 px-4 py-2.5">{children}</div>
   return onClick ? (
-    <button type="button" onClick={onClick} aria-label={label} className="block w-full border-b border-line text-left last:border-b-0 active:bg-press">
+    <button type="button" onClick={onClick} aria-label={label} className="block w-full text-left active:bg-press">
       {body}
     </button>
   ) : (
-    <div className="border-b border-line last:border-b-0">{body}</div>
+    body
   )
 }
 
+/** A thin neutral bar: `share` of the whole (0.37 fills 37%). */
 export function Bar({ share }: { share: number }) {
+  const width = Number.isFinite(share) ? Math.max(0, Math.min(1, share)) * 100 : 0
   return (
-    <div className="mt-1.5 h-1 w-full rounded-full bg-track" aria-hidden="true">
-      <div className="h-1 rounded-full bg-bar" style={{ width: `${Math.max(0, Math.min(100, share * 100))}%` }} />
-    </div>
+    <span className="block h-1 min-w-0 flex-1 rounded-full bg-track" aria-hidden="true">
+      <span className="block h-1 rounded-full bg-bar" style={{ width: `${width}%` }} />
+    </span>
   )
 }
 
-export function Button({ children, onClick, kind = 'plain', disabled, type = 'button' }: {
+export function Button({ children, onClick, kind = 'plain', disabled, type = 'button', className = '' }: {
   children: ReactNode
   onClick?: () => void
   kind?: 'primary' | 'plain'
   disabled?: boolean
   type?: 'button' | 'submit'
+  className?: string
 }) {
-  const style =
-    kind === 'primary'
-      ? 'bg-accent text-on-accent border-accent'
-      : 'bg-surface text-ink border-line'
+  const style = kind === 'primary' ? 'bg-accent text-on-accent border-accent' : 'bg-surface text-ink border-line'
   return (
-    <button type={type} onClick={onClick} disabled={disabled} className={`min-h-11 rounded-lg border px-4 text-sm font-medium disabled:opacity-50 ${style}`}>
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`min-h-11 rounded-lg border px-3 text-sm font-medium wrap-break-word disabled:opacity-50 ${style} ${className}`}
+    >
       {children}
     </button>
   )
@@ -94,12 +112,16 @@ export function Button({ children, onClick, kind = 'plain', disabled, type = 'bu
 
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const panel = useRef<HTMLDivElement>(null)
+  const close = useRef(onClose)
+  useEffect(() => {
+    close.current = onClose
+  })
   useEffect(() => {
     panel.current?.focus()
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [])
   return (
     <div className="fixed inset-0 z-30 flex items-end justify-center">
       <button type="button" aria-label="Close" className="absolute inset-0 bg-scrim" onClick={onClose} />
@@ -111,9 +133,9 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
         tabIndex={-1}
         className="relative max-h-[85dvh] w-full max-w-[480px] overflow-y-auto rounded-t-lg border border-line bg-surface pb-[max(1rem,env(safe-area-inset-bottom))] outline-none"
       >
-        <div className="sticky top-0 flex items-center justify-between border-b border-line bg-surface px-4 py-2">
-          <h2 className="font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} className="min-h-11 px-2 text-sm text-accent">Done</button>
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-2">
+          <h2 className="min-w-0 truncate font-semibold">{title}</h2>
+          <button type="button" onClick={onClose} className="min-h-11 shrink-0 px-2 text-sm text-accent">Done</button>
         </div>
         {children}
       </div>
@@ -171,4 +193,14 @@ export function Empty({ children }: { children: ReactNode }) {
 
 export function Notice({ children }: { children: ReactNode }) {
   return <p className="mx-4 mt-3 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-muted" role="status">{children}</p>
+}
+
+/** A small labelled amount: "Spent" over "₹1,240". */
+export function Figure({ term, paise, credit = false }: { term: string; paise: number; credit?: boolean }) {
+  return (
+    <span className="block">
+      <span className="block text-xs text-muted">{term}</span>
+      <Money paise={paise} credit={credit} />
+    </span>
+  )
 }

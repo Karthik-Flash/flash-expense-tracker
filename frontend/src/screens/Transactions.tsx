@@ -1,104 +1,115 @@
 import { useState } from 'react'
 
-import type { Category, LabelSummary, Txn } from '../api/types.ts'
+import type { Txn } from '../api/types.ts'
 import { currentMonth, dayKey, dayLabel, fullLabel } from '../lib/dates.ts'
-import { useApp, useLoad } from '../state.tsx'
-import { Button, Empty, Loaded, Money, MonthSwitcher, RowButton, Section, Sheet } from '../ui.tsx'
+import { useApp, useLoad, useMonthTxns, useNav } from '../state.tsx'
+import { Button, Empty, Icon, Loaded, Money, MonthSwitcher, RowButton, Section, Sheet } from '../ui.tsx'
 import { isCredit, nameOf, roleText, subtitle } from './common.ts'
+import { labelName, matches } from './derive.ts'
 
 export function Transactions() {
-  const { api, month, setMonth } = useApp()
-  const [category, setCategory] = useState('')
-  const [label, setLabel] = useState('')
-  const [pages, setPages] = useState(1)
-  const [load, retry] = useLoad(async () => {
-    const items: Txn[] = []
-    let cursor: string | undefined
-    let more = false
-    for (let page = 0; page < pages; page++) {
-      const result = await api.transactions({
-        month,
-        category: category || undefined,
-        label: label ? Number(label) : undefined,
-        cursor,
-        limit: 40,
-      })
-      items.push(...result.items)
-      cursor = result.next_cursor ?? undefined
-      more = Boolean(cursor)
-      if (!cursor) break
-    }
-    return { items, more }
-  }, [month, category, label, pages])
-  const [options] = useLoad(() => Promise.all([api.categories(), api.labels()]), ['options'])
-  const [cats, labels]: [Category[], LabelSummary[]] = options.status === 'ready' ? options.data : [[], []]
-  const select = 'min-h-11 w-full rounded-lg border border-line bg-surface px-3 text-sm'
+  const { api } = useApp()
+  const { view, month, replace } = useNav()
+  const [load, retry] = useMonthTxns(month)
+  const [cats] = useLoad(() => api.categories(), ['categories'])
+  const [labels] = useLoad(() => api.labels(), ['labels'])
+  const field = 'min-h-11 w-full min-w-0 rounded-lg border border-line bg-surface px-3 text-sm text-ink'
   return (
     <>
       <div className="pt-2">
-        <MonthSwitcher month={month} setMonth={(m) => { setPages(1); setMonth(m) }} latest={currentMonth()} />
+        <MonthSwitcher month={month} setMonth={(m) => replace({ month: m })} latest={currentMonth()} />
       </div>
-      <div className="grid grid-cols-2 gap-2 px-4 pt-2">
-        <label className="text-xs text-muted">
-          Category
-          <select className={select} value={category} onChange={(e) => { setPages(1); setCategory(e.target.value) }}>
-            <option value="">All</option>
-            {cats.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-          </select>
+      <div className="space-y-2 px-4 pt-2">
+        <label className="relative block">
+          <span className="sr-only">Search names</span>
+          <Icon name="search" className="pointer-events-none absolute top-3 left-3 text-muted" />
+          <input
+            type="search"
+            value={view.q}
+            onChange={(e) => replace({ q: e.target.value })}
+            placeholder="Search names"
+            className={`${field} pl-10`}
+          />
         </label>
-        <label className="text-xs text-muted">
-          Label
-          <select className={select} value={label} onChange={(e) => { setPages(1); setLabel(e.target.value) }}>
-            <option value="">All</option>
-            {labels.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
-        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="min-w-0 text-xs text-muted">
+            Category
+            <select className={field} value={view.category ?? ''} onChange={(e) => replace({ category: e.target.value || null })}>
+              <option value="">All</option>
+              {cats.status === 'ready' && cats.data.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+            </select>
+          </label>
+          <label className="min-w-0 text-xs text-muted">
+            Label
+            <select
+              className={field}
+              value={view.label ?? ''}
+              onChange={(e) => replace({ label: e.target.value ? Number(e.target.value) : null })}
+            >
+              <option value="">All</option>
+              {labels.status === 'ready' && labels.data.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </label>
+        </div>
       </div>
       <Loaded load={load} retry={retry}>
-        {({ items, more }) => (
-          <>
-            <TxnList txns={items} />
-            {more && (
-              <div className="px-4 pt-4 text-center">
-                <Button onClick={() => setPages((n) => n + 1)}>Show more</Button>
-              </div>
+        {(txns) => (
+          <TxnList
+            txns={txns.filter(
+              (t) =>
+                (!view.category || t.category === view.category) &&
+                (view.label === null || t.label?.id === view.label) &&
+                matches(t, view.q),
             )}
-          </>
+            empty={view.q.trim() ? `No names match "${view.q.trim()}".` : undefined}
+          />
         )}
       </Loaded>
     </>
   )
 }
 
-/** Transactions grouped by IST day; a row opens its detail sheet. */
-export function TxnList({ txns }: { txns: Txn[] }) {
-  const [open, setOpen] = useState<Txn | null>(null)
-  if (!txns.length) return <Empty>No transactions.</Empty>
+/**
+ * Transactions grouped by IST day under sticky day headers, or one titled list (`title`).
+ * A row opens its sheet; the open sheet is in the URL (?txn=).
+ */
+export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn[]; title?: string; empty?: string }) {
+  const { view, open, back } = useNav()
+  const current = view.txn === null ? undefined : txns.find((t) => t.id === view.txn)
+  if (!txns.length) return <Empty>{empty}</Empty>
   const days: [string, Txn[]][] = []
-  for (const t of txns) {
-    const key = dayKey(t.time_utc)
-    if (days.at(-1)?.[0] === key) days.at(-1)![1].push(t)
-    else days.push([key, [t]])
+  if (title) days.push([title, txns])
+  else {
+    for (const t of txns) {
+      const key = dayKey(t.time_utc)
+      if (days.at(-1)?.[0] === key) days.at(-1)![1].push(t)
+      else days.push([key, [t]])
+    }
   }
   return (
     <>
       {days.map(([key, rows]) => (
-        <Section key={key} title={dayLabel(rows[0].time_utc)}>
+        <Section key={key} title={title ?? dayLabel(rows[0].time_utc)} sticky={!title}>
           {rows.map((t) => (
-            <RowButton key={t.id} onClick={() => setOpen(t)}>
+            <RowButton key={t.id} onClick={() => open({ txn: t.id })}>
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{nameOf(t)}</span>
                 <span className="block truncate text-xs text-muted">
+                  {title && `${dayLabel(t.time_utc)} · `}
                   {subtitle(t)}
                   {t.label && ` · ${t.label.name}`}
                 </span>
               </span>
-              <Money paise={t.amount_paise} credit={isCredit(t)} className={t.role === 'duplicate' || t.role === 'ignored' ? 'text-muted line-through' : ''} />
+              <Money
+                paise={t.amount_paise}
+                credit={isCredit(t)}
+                className={t.role === 'duplicate' || t.role === 'ignored' ? 'text-muted line-through' : ''}
+              />
             </RowButton>
           ))}
         </Section>
       ))}
-      {open && <TxnSheet txn={open} onClose={() => setOpen(null)} />}
+      {current && <TxnSheet txn={current} onClose={back} />}
     </>
   )
 }
@@ -111,8 +122,11 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [newLabel, setNewLabel] = useState('')
-  const [options] = useLoad(() => Promise.all([api.categories(), api.labels()]), ['options'])
-  const [cats, labels]: [Category[], LabelSummary[]] = options.status === 'ready' ? options.data : [[], []]
+  const [catsLoad] = useLoad(() => api.categories(), ['categories'])
+  const [labelsLoad] = useLoad(() => api.labels(), ['labels'])
+  const cats = catsLoad.status === 'ready' ? catsLoad.data : []
+  const labels = labelsLoad.status === 'ready' ? labelsLoad.data : []
+  const rule = labelName(newLabel, labels.map((l) => l.name))
   const counts = txn.role === 'spend' || txn.role === 'card_bill_counted' || txn.role === 'refund'
 
   const run = async (write: () => Promise<unknown>) => {
@@ -127,7 +141,7 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
       setBusy(false)
     }
   }
-  const choice = 'flex min-h-12 w-full items-center justify-between border-b border-line px-4 text-left last:border-b-0 active:bg-press'
+  const choice = 'flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2 text-left active:bg-press'
 
   return (
     <Sheet title={nameOf(txn)} onClose={onClose}>
@@ -150,12 +164,12 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
         </div>
       )}
       {step.kind === 'category' && (
-        <ul aria-label="Categories">
+        <ul aria-label="Categories" className="divide-y divide-line">
           {cats.map((c) => (
             <li key={c.slug}>
               <button type="button" className={choice} onClick={() => setStep({ kind: 'scope', slug: c.slug })}>
-                {c.name}
-                {c.slug === txn.category && <span className="text-sm text-muted">current</span>}
+                <span className="min-w-0 truncate">{c.name}</span>
+                {c.slug === txn.category && <span className="shrink-0 text-sm text-muted">current</span>}
               </button>
             </li>
           ))}
@@ -177,7 +191,7 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
       )}
       {step.kind === 'label' && (
         <div>
-          <ul aria-label="Labels">
+          <ul aria-label="Labels" className="divide-y divide-line">
             {txn.label && (
               <li>
                 <button type="button" className={choice} disabled={busy} onClick={() => run(() => api.clearLabel(txn.id))}>No label</button>
@@ -186,18 +200,19 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
             {labels.map((l) => (
               <li key={l.id}>
                 <button type="button" className={choice} disabled={busy} onClick={() => run(() => api.setLabel(txn.id, l.id))}>
-                  {l.name}
-                  {txn.label?.id === l.id && <span className="text-sm text-muted">current</span>}
+                  <span className="min-w-0 truncate">{l.name}</span>
+                  {txn.label?.id === l.id && <span className="shrink-0 text-sm text-muted">current</span>}
                 </button>
               </li>
             ))}
           </ul>
           <form
-            className="flex gap-2 px-4 pt-3"
+            className="flex gap-2 border-t border-line px-4 pt-3"
             onSubmit={(e) => {
               e.preventDefault()
+              if (rule.error) return
               void run(async () => {
-                const made = await api.createLabel(newLabel)
+                const made = await api.createLabel(rule.name)
                 await api.setLabel(txn.id, made.id)
               })
             }}
@@ -207,11 +222,13 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
               onChange={(e) => setNewLabel(e.target.value)}
               placeholder="New label"
               aria-label="New label"
-              maxLength={80}
+              aria-invalid={Boolean(newLabel && rule.error)}
+              aria-describedby="new-label-rule"
               className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3"
             />
-            <Button type="submit" kind="primary" disabled={busy || !newLabel.trim()}>Add</Button>
+            <Button type="submit" kind="primary" disabled={busy || Boolean(rule.error)}>Add</Button>
           </form>
+          <p id="new-label-rule" className="px-4 pt-1 text-xs text-danger" aria-live="polite">{newLabel && rule.error}</p>
         </div>
       )}
       {error && <p className="px-4 pb-2 text-sm text-danger" role="alert">{error}</p>}
@@ -222,9 +239,8 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
 function Item({ term, value }: { term: string; value: string }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-muted">{term}</dt>
-      <dd className="text-right">{value}</dd>
+      <dt className="shrink-0 text-muted">{term}</dt>
+      <dd className="min-w-0 text-right wrap-anywhere">{value}</dd>
     </div>
   )
 }
-

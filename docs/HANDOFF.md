@@ -75,7 +75,7 @@ backend/            Render root
   app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals | category-stats | category-review | credit-review
   alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
-frontend/           Vercel root; every screen on demo data (docs/ui-spec.md): src/api (Api interface, fake adapter), src/screens, src/lib (money, IST dates)
+frontend/           Vercel root; every screen on demo data (docs/ui-spec.md): src/api (Api interface, fake adapter), src/screens, src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs)
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
 docs/               PLAN, DECISIONS (D-001..D-078), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
@@ -174,8 +174,11 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
   (`docs/api.md`), confirmed-only paybacks (D-076), inferred own accounts
   (D-077). The owner file is a developer tool (D-075). Render needs
   `SUPABASE_URL` and `AUTH_USERS`; without them data routes answer 503.
-- 3F-1 is built: every screen on demo data, for the owner's approval. 3F-2
-  swaps the demo adapter (`frontend/src/api/index.ts`) for an HTTP adapter.
+- 3F-1 and 3F-2 are built: every screen on demo data, the view in the URL
+  hash (`frontend/src/view.ts`), Back by layers, icons, and the design pass.
+  The owner picks a logo on `#/dev/logos`. 3F-3 swaps the demo adapter
+  (`frontend/src/api/index.ts`) for an HTTP adapter; docs/ui-spec.md lists
+  the API gaps it should close first.
 - Foreign currency is deferred: 44 messages (D-035).
 - Only HDFC has a parser: 153 messages from SBI, ICICI, India Post, Kotak
   and PhonePe sit as `no_parser_for_bank`. Add a parser (docs/engine.md,
