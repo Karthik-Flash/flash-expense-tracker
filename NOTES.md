@@ -20,9 +20,9 @@ Quick reference and progress log. Updated after every task.
 **Phase 0-2 complete** (12-14 Nov 2026): scaffold and deploy, redaction,
 HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
 Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
-`phase-1-done`, `phase-2-done`. **Phase 3** (3A-3F) is built, not pushed
-(17 Nov 2026, 3F-3 last); open: the push, your deploy settings (Vercel,
-Supabase Auth, Render) and the "Done when" check on real months.
+`phase-1-done`, `phase-2-done`. **Phase 3 done** (18 Nov 2026). Next: Phase 4,
+starting with the bank statement check. A one-page tour:
+[docs/OVERVIEW.md](docs/OVERVIEW.md).
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 - [x] Monorepo, Python 3.12 venv, exact pins, lockfile, LF endings, CI green
@@ -647,6 +647,12 @@ gh repo view --web                                # open the repo in the browser
     Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-18: Phase 3 closed
+
+- docs/OVERVIEW.md (one-page tour, linked from README and HANDOFF); PLAN
+  Phase 3 done with the bank statement check carried to Phase 4; HANDOFF
+  current state and open items; CHANGELOG entry. Docs only. Not pushed.
 
 ### 2026-11-17: Phase 3F-3, real login and data, colours, chart, logo, backup
 

@@ -66,7 +66,16 @@ Phase 1 is parsing, Phase 2 is the database and import.
   (D-072): a mandate ID and a payment reference are different kinds.
   Duplicate primary confirmed (D-071).
 
-## Phase 3F: screens (17 Nov 2026, in progress, tag `phase-3f-done` when done)
+## Phase 3 complete (18 Nov 2026)
+
+- Steps 3A to 3F done: merchant engine, Reconcile and the derived-data
+  backbone, categories and labels, login and the data API, and the app on
+  real data. Verified by the owner: login and saving on the phone, owner
+  corrections kept through reparse and recompute, a backup.
+- Open, carried to Phase 4 as its first item: the bank statement check.
+- [docs/OVERVIEW.md](docs/OVERVIEW.md): a one-page tour for new readers.
+
+## Phase 3F: screens (17 Nov 2026)
 
 - 3F-1: every screen on demo data ([docs/ui-spec.md](docs/ui-spec.md)): login, Home
   (Net, Spent, Paid back, To confirm, Spent by category), category detail,
