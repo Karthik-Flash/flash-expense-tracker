@@ -4,8 +4,8 @@ Summary of phases 0 to 6. Draft from Phase 0; the planner owns this file and
 refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
-**Status (18 Nov 2026):** Phases 0 to 3 done. **Next: Phase 4**, starting
-with the bank statement check carried from Phase 3.
+**Status (19 Nov 2026):** Phases 0 to 3 done. **Phase 4 in progress**: 4C
+done; next 4B.
 
 Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
@@ -76,8 +76,10 @@ Goal: the owner logs in on their phone and sees their real spending,
 correctly counted and categorised, on a minimal dashboard. Scope and order:
 D-054. What counts as spend: D-055.
 
-Steps, in this order. Each ends with tests green, a counts-only check on real
-data run by the owner, and a tag (`phase-3a-done` ... `phase-3f-done`).
+Steps, in this order. Each ends with tests green and a counts-only check on
+real data run by the owner. The plan named a tag per step (`phase-3a-done`
+... `phase-3f-done`); the tags actually made are `phase-3b-done` and
+`phase-3-done`. No tags are made after the fact.
 
 - [x] 3A Groundwork: docs alignment; a one-page UI design spec and a clickable
   dashboard mockup with fake numbers, both approved by the owner before any
@@ -129,19 +131,34 @@ is a calendar month in IST, computed from a from/to date range so salary
 cycles can replace it later. The server can take about a minute to wake
 until Phase 4.
 
-## Phase 4: Full deploy and installable offline-first PWA
+## Phase 4: Installable offline-first PWA, owner fixes, second bank
 
-First item, carried from Phase 3: the bank statement check (one normal, one
-messy month). No detail yet.
+Order: 4C, 4B, 4E, 4F, 4D. 4A (carried from Phase 3) must finish before 4D.
+
+- [x] 4C Install and update prompt (19 Nov 2026): manifest and icons, the
+  update bar instead of silent updates, app-shell-only service worker, the
+  build id on Home (D-085 to D-087).
+- [ ] 4B Offline-first: a copy of the data on the phone, refreshed in the
+  background, with "Updated X ago"; taps made offline are queued as
+  "Waiting to sync", and totals do not change until the server confirms;
+  the copy is wiped on sign-out; timings measured on the phone. Targets:
+  usable in 2 s from the phone copy, fresh data in 5 s when the server is
+  awake, and a cold server never blocks the screen.
+- [ ] 4E Owner fixes: join one person seen under a name and a UPI ID; a
+  faster To-do; the label length mismatch (column 80, API 30).
+- [ ] 4F Second bank: a counts-only survey of the 153 other-bank messages;
+  pick the bank with the most money messages; vocabulary survey, parser,
+  sender-registry entry, reparse.
+- [ ] 4A Statement check: a PRIVATE CLI that reads a NetBanking statement
+  file from `D:\FlashPrivate` and prints only count and rupee differences
+  per IST month, with likely causes. The owner runs it on one normal and one
+  messy month.
+- [ ] 4D Multi-month analysis.
 
 ## Phase 5: Android shell and live SMS
 
-No detail yet.
+Capacitor Android shell that reads bank SMS on the phone; no detail yet.
 
 ## Phase 6: Statements, Gmail, insights, differentiators
 
-Budget cycles, P2P tagging, roommate splits, subscription tracker,
-first-salary mode. No detail yet.
-
-Revisit D-026 (investment, broker and exchange senders): decide whether to
-include them.
+Budget cycles, P2P tagging, roommate splits, subscriptions, first-salary mode, and D-026 (investment senders); no detail yet.

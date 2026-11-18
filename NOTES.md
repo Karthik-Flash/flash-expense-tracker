@@ -20,8 +20,8 @@ Quick reference and progress log. Updated after every task.
 **Phase 0-2 complete** (12-14 Nov 2026): scaffold and deploy, redaction,
 HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
 Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
-`phase-1-done`, `phase-2-done`. **Phase 3 done** (18 Nov 2026). Next: Phase 4,
-starting with the bank statement check. A one-page tour:
+`phase-1-done`, `phase-2-done`. **Phase 3 done** (18 Nov 2026). **Phase 4 in
+progress**: 4C (install and update prompt) done 19 Nov; next 4B. A one-page tour:
 [docs/OVERVIEW.md](docs/OVERVIEW.md).
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
@@ -36,12 +36,12 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Migration `0003`: `keepalive.ping()` for the Data API, RLS on `heartbeat`
 - [x] Keep-alive switch-over verified (15 Nov): security check 8/8 blocked
       (public 406, keepalive 404), cron test run 200, `last_seen` moved
-- [ ] Overnight check of the new keep-alive (first scheduled run 03:30 IST)
+- [x] Overnight check of the new keep-alive (16 Nov 03:30 IST run returned 200)
 - [x] Phase 3A-1: PLAN aligned with Phase 3 (D-054), spend definition (D-055)
-- [ ] Phase 3A: one-page UI design spec and clickable mockup, approved by you
+- [x] Phase 3A: one-page UI design spec and clickable mockup, approved by you
 - [x] Phase 3B-1: merchant engine `merchant-1.0.0` and `merchant-stats` (D-057)
 - [x] Phase 3B-2: `merchant-1.1.0` (D-058), wider survey, `merchant-review`
-- [ ] Phase 3B: your `merchant-stats` run on the real data (counts only),
+- [x] Phase 3B: your `merchant-stats` run on the real data (counts only),
       and your own look with `merchant-review` (never pasted)
 - [x] Phase 3C-1: design of the derived-data backbone and Reconcile
       ([docs/design/phase-3-backbone.md](docs/design/phase-3-backbone.md));
@@ -52,40 +52,40 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 - [x] Phase 3C-3 and 3C-5: duplicates and pair linking in memory
       (`reconcile-1.1.0`); `reconcile-stats` shows links, candidates and the
       existing candidates
-- [ ] Your `reconcile-stats` run on the real data (counts only, safe to
-      paste). It now answers: how many of the 18 pairs link, the AutoPay +
+- [x] Your `reconcile-stats` run on the real data (counts only, safe to
+      paste). It answers: how many of the 18 pairs link, the AutoPay +
       card time gaps, and which message carries the brand
 - [ ] Private look at the merged refund's two source messages (cheat sheet,
       "Merged refund"); tell the planner "one event" or "two events" only
 - [x] Phase 3C-4 and 3C-6: `reconcile-1.2.0` (D-069), owner tables and
       `owner-load` (migration `0004`, D-070), derived tables and `recompute`
-      (`0005`); not pushed, the planner reviews first
-- [ ] After the push: your owner file, `owner-load`, `recompute`,
+      (`0005`)
+- [x] After the push: your owner file, `owner-load`, `recompute`,
       `reconcile-stats` on the real data (to-do list)
 - [x] Phase 3C-7, 3C-8: `reconcile-review`, `owner-export`, `totals`;
       `reconcile-1.2.1` (D-072), duplicate primary (D-071)
 - [ ] The card bill pair rule, when credit card SMS appear
 - [x] Phase 3E: login, `/api/v1`, confirmed-only paybacks, inferred own
-      accounts (D-075 to D-078); not pushed
-- [ ] Render: add `SUPABASE_URL` and `AUTH_USERS`, then the smoke test
-- [x] Phase 3F-1: every screen on demo data ([docs/ui-spec.md](docs/ui-spec.md)); not pushed
+      accounts (D-075 to D-078)
+- [x] Render: add `SUPABASE_URL` and `AUTH_USERS`, then the smoke test
+- [x] Phase 3F-1: every screen on demo data ([docs/ui-spec.md](docs/ui-spec.md))
 - [x] Phase 3F-2: URL state and Back by layers, icons, design pass, logo
-      options; not pushed
+      options
 - [x] Phase 3F-3: API gaps closed (D-079), real login and data (D-080),
       category colours, ring chart, FLA$H logo and icons (D-081 to D-083),
-      `scripts/backup_db.ps1` (D-084); not pushed
-- [ ] Vercel: set `VITE_API_URL`, `VITE_SUPABASE_URL`,
+      `scripts/backup_db.ps1` (D-084)
+- [x] Vercel: set `VITE_API_URL`, `VITE_SUPABASE_URL`,
       `VITE_SUPABASE_PUBLISHABLE_KEY`; Supabase Auth settings and Render
       `SUPABASE_URL`, `AUTH_USERS` (infra/README.md section 5)
-- [ ] Your look at the app on your phone after the deploy, then approve or
-      list changes
-- [ ] Your first backup (cheat sheet, "Back up and restore"), after the push
-- [ ] Phase 3 "Done when": one normal and one messy month against the bank
-      statement (docs/PLAN.md)
+- [x] Your look at the app on your phone after the deploy (login and saving
+      verified)
+- [x] Your first backup (cheat sheet, "Back up and restore")
+- [ ] Bank statement check, one normal and one messy month: carried from
+      Phase 3 to Phase 4 as 4A (docs/PLAN.md)
 - [x] Phase 3D: `categorise-1.0.0`, migration `0006`, `category-stats`,
-      `category-review`, labels (D-073, D-074); not pushed
-- [ ] Your `category-stats` run (safe to paste) and `category-review`
-      (private) on the real data, after the push
+      `category-review`, labels (D-073, D-074)
+- [x] Your `category-stats` run (safe to paste) and `category-review`
+      (private) on the real data
 - [x] Redaction run on the real backup; `data/sample/redacted_sample.json` exists
 - [x] HDFC template survey: 15 shapes, all 135 HDFC messages matched
       ([docs/templates/hdfc.md](docs/templates/hdfc.md)), 49 fake fixtures
@@ -109,15 +109,18 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Your to-do list
 
-1. The morning after the switch-over: the job history shows a 200 at 03:30
-   and `heartbeat.last_seen` moved (D-053).
-2. If `data\sample\redacted_full.json` exists from an earlier run, delete it.
+1. If `data\sample\redacted_full.json` exists from an earlier run, delete it.
    The full file now lives in `D:\FlashPrivate\private\` (D-051).
-3. After the planner's go and the push (cheat sheet, "Owner data and
-   recompute"): write `D:\FlashPrivate\private\owner.json` from
-   `docs\owner.example.json`, check that `alembic current` says `0005`,
+2. When the owner file changes (cheat sheet, "Owner data and recompute"):
+   edit `D:\FlashPrivate\private\owner.json` (shape in
+   `docs\owner.example.json`), check that `alembic current` says `0006`,
    run `owner-load`, then paste the `reconcile-stats` output.
-4. Optional: refresh the sample with the newer redaction rules (STANDARD
+3. Vercel: `VITE_API_URL` is saved as a Secret. Change it to a plain
+   variable with the same value, then redeploy with the build cache off.
+4. After the 4C deploy: close the app on the phone completely once (swipe it
+   out of recent apps) and open it again; check the version line (cheat
+   sheet, "Which build is on the phone").
+5. Optional: refresh the sample with the newer redaction rules (STANDARD
    sample command under "SMS redaction"; must end with `Leaks: 0`).
 
 ## Architecture
@@ -133,10 +136,12 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
   | Vercel  (global CDN)                                |
   | https://flash-expense-tracker.vercel.app            |
   | Static PWA built from frontend/                     |
-  | VITE_API_URL baked in at build time                 |
+  | VITE_API_URL, VITE_SUPABASE_URL and                 |
+  | VITE_SUPABASE_PUBLISHABLE_KEY baked in at build     |
   +-----------------------------------------------------+
                                    |
-                                   | 2. fetch(VITE_API_URL + "/health")
+                                   | 2. fetch(VITE_API_URL + "/api/v1/...")
+                                   |    with the Supabase Auth token,
                                    |    from your browser, cross-origin
                                    v
   +-----------------------------------------------------+
@@ -144,8 +149,10 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
   | https://flash-expense-tracker.onrender.com          |
   | Cloudflare edge -> uvicorn -> FastAPI (backend/)    |
   | Env: DATABASE_URL, PING_TOKEN, CORS_ORIGINS,        |
-  |      PYTHON_VERSION                                 |
+  |      SUPABASE_URL, AUTH_USERS, PYTHON_VERSION       |
   | Sleeps after 15 min idle; cold start ~50 s          |
+  | Kept awake 07:00-00:50 IST by cron-job.org          |
+  | GET /health every 10 min (no database)              |
   +-----------------------------------------------------+
                                    |
                                    | 3. Postgres over TLS (sslmode=require)
@@ -156,9 +163,14 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
   | heartbeat, alembic_version, import_batches,         |        +--------------------------------+
   | raw_messages, parse_results, transactions,          |        | cron-job.org                   |
   | transaction_sources, duplicate_candidates           |        | "Flash DB heartbeat"           |
-  | schema keepalive: ping() (SECURITY DEFINER)         |        | daily 03:30 IST                |
-  | RLS on heartbeat and the pipeline tables            |        | alerts: fails, disabled        |
-  | Data API on: exposes schema keepalive ONLY          |        +--------------------------------+
+  | owner: own_accounts, own_identifiers, parties,      |        | daily 03:30 IST                |
+  |   party_texts, owner_link_decisions, owner_roles,   |        | alerts: fails, disabled        |
+  |   owner_categories, labels, txn_labels              |        +--------------------------------+
+  | derived: derive_runs, txn_derived, txn_links        |
+  | schema keepalive: ping() (SECURITY DEFINER)         |
+  | RLS on every app table                              |
+  | Data API on: exposes schema keepalive ONLY          |
+  | Auth: the owner's login (email, sign-ups off)       |
   | Pauses after 7 days idle (warning email first)      |
   +-----------------------------------------------------+
          ^
@@ -175,18 +187,22 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ### Flow 1: you open the app
 
-1. Browser loads `https://flash-expense-tracker.vercel.app`. Vercel serves the
-   static files from its CDN. Render is not involved yet.
-2. The page runs `fetch("https://flash-expense-tracker.onrender.com/health")`.
-   The URL is whatever `VITE_API_URL` was when Vercel last built the frontend.
-3. The request reaches Render (Cloudflare in front, then uvicorn). If the
-   service is asleep, Render holds the request while it boots (~50 s). The
-   page shows "Server is waking up (attempt n/24)" and retries every 5 s.
-4. FastAPI answers `{"status":"ok","version":"0.1.0"}`. Because the page's
-   origin is in `CORS_ORIGINS`, the response carries
-   `access-control-allow-origin`, and the browser lets the page read it.
-5. The page shows "Backend online · v0.1.0". `/health` never touches the
-   database.
+1. The phone opens `https://flash-expense-tracker.vercel.app` (or the
+   installed app). The service worker serves the app shell from its cache;
+   otherwise Vercel serves it from its CDN. Render is not involved yet.
+2. Signed out: the login screen. `@supabase/supabase-js` signs in with email
+   and password against Supabase Auth and keeps the session in
+   localStorage, refreshing the token itself (D-080).
+3. Signed in: Home asks `GET /api/v1/summary?month=...` and the month's
+   transactions from `VITE_API_URL` (baked in when Vercel last built the
+   frontend), with `Authorization: Bearer <access token>`.
+4. Render checks the token against Supabase's keys (ES256, JWKS) and maps the
+   user to the owner (`AUTH_USERS`, D-078), then reads Postgres. If the
+   service is asleep, Render holds the request while it boots (~50 s); after
+   3 s the page shows "Starting up, this can take about a minute".
+5. Because the page's origin is in `CORS_ORIGINS`, the browser lets it read
+   the answer. Home shows Net, Spent, Paid back and the categories. A 401
+   signs out, a 403 shows "This account has no access" (D-080).
 
 ### Flow 2: nightly keep-alive (all times IST, D-053)
 
@@ -210,19 +226,30 @@ Until 15 Nov 2026 the job called Render's `/health/db` (D-052). Asleep,
 Render served its browser loading page to cron-job.org ("output too large")
 and never woke, so every run failed.
 
+A second cron-job.org job, "Flash API warm 07-01 IST", keeps Render awake in
+the hours the owner uses the app: `GET https://flash-expense-tracker.onrender.com/health`
+every 10 minutes from 07:00 to 00:50 IST (hours 07 to 23 and 00). `/health`
+never touches the database (`backend/app/api/health.py`). It uses about 560
+of Render's 750 free hours a month. The 03:30 IST Supabase heartbeat above
+is unchanged and still the only thing that keeps Supabase from pausing.
+
 ### Flow 3: you push code
 
 1. `git push` to `main` on GitHub.
 2. GitHub Actions CI runs three jobs: backend (ruff, backend and scripts
    pytest on SQLite), backend on Postgres 17 (`alembic upgrade head`,
-   `alembic check`, pytest), frontend (typecheck, build).
+   `alembic check`, pytest), frontend (lint, typecheck, test, build).
 3. Render waits for CI ("After CI Checks Pass", D-050). Then it runs
    `pip install -r requirements.txt && alembic upgrade head` (migrations hit
    Supabase during the build) and starts `uvicorn app.main:app`. If the
    build or migration fails, the old version keeps serving.
 4. Vercel does not wait for CI: `npm install` and `npm run build` in
-   `frontend/`, with `VITE_API_URL` baked in, then publish to the CDN.
-5. Check CI with `gh run watch`. Keep `main` green.
+   `frontend/`, with the `VITE_*` values and the commit's build id baked
+   in, then publish to the CDN. Phones get the new version through the
+   update bar (D-085).
+5. Check CI with `gh run watch`. Keep `main` green. Claude Code commits and
+   merges locally and never pushes; the owner pushes after the planner
+   reviews.
 
 ### Flow 4: real data to a shareable sample (you run it, agents never do)
 
@@ -258,7 +285,11 @@ Values are never written in git or chat. Keep them in your password manager.
 | `PING_TOKEN`   | `/health/db`     | Render env; password manager (manual checks only)         |
 | Supabase publishable key | cron-job.org `apikey` header | cron-job.org job header; password manager. Never in git |
 | `CORS_ORIGINS` | FastAPI CORS     | Render env: `http://localhost:5173,https://flash-expense-tracker.vercel.app` |
+| `SUPABASE_URL` | FastAPI login check (JWKS, issuer) | Render env: `https://<ref>.supabase.co` |
+| `AUTH_USERS`   | FastAPI login -> owner | Render env: `"<auth user id>:<owner_id>"`; password manager |
 | `VITE_API_URL` | Frontend build   | Vercel env: `https://flash-expense-tracker.onrender.com`; `frontend/.env` for local |
+| `VITE_SUPABASE_URL` | Frontend login | Vercel env: `https://<ref>.supabase.co`; `frontend/.env` for local |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Frontend login | Vercel env (safe in the browser); `frontend/.env` for local |
 | `PYTHON_VERSION` | Render build   | Render env: `3.12.12`                                     |
 | DB password    | Supabase         | Supabase dashboard; password manager (letters + digits only) |
 | GitHub login   | `git push`, `gh` | Windows credential store (`gh auth status`)               |
@@ -271,7 +302,8 @@ Values are never written in git or chat. Keep them in your password manager.
   test commands). `https://...onrender.com//health` returns 404.
 - Opening `/health/db` in a browser returns 401 by design: a browser cannot
   send the `X-Ping-Token` header.
-- `GET /` on Render returns 404 by design. Only `/health` and `/health/db` exist.
+- `GET /` on Render returns 404 by design. Only `/health`, `/health/db` and
+  `/api/v1/...` (login needed) exist.
 - Run only one Vite dev server at a time. If it starts on port 5174, CORS
   blocks it because only 5173 is allowed.
 - DB password: letters and digits only. `#` and `%` broke `DATABASE_URL`
@@ -339,8 +371,21 @@ The frontend uses the real API and Supabase login from `frontend\.env`
 backend\.venv\Scripts\ruff.exe check . ; backend\.venv\Scripts\ruff.exe format --check .
 cd backend; .\.venv\Scripts\python.exe -m pytest -q; cd ..
 backend\.venv\Scripts\python.exe -m pytest -q scripts
-cd frontend; npm run typecheck; npm run build; cd ..
+cd frontend; npm run lint; npm run typecheck; npm test; npm run build; cd ..
 ```
+
+### Which build is on the phone
+
+Home shows one muted line next to Sign out: `Version 0.1.0 · build 1a2b3c4`.
+The build id is the first 7 characters of the commit Vercel built
+(`dev` on a local build). Compare it with `git log --oneline -1` on `main`
+after the push, or with the commit on the Vercel deployment.
+
+- A new deploy shows "New version available" at the bottom of the app
+  (on launch, on return to the app, or within the hour). Reload switches to
+  it; Later hides the bar until the next launch (D-085).
+- The line still shows the old id: close the app completely (swipe it out of
+  recent apps) and open it again. No need to clear site data.
 
 ### Dependencies
 
@@ -623,30 +668,65 @@ gh repo view --web                                # open the repo in the browser
 
 ## Open items
 
-1. Keep-alive: switch-over verified 15 Nov; first scheduled 03:30 run still
-   to check (D-053, to-do list).
-2. Reconcile (3C): built up to storage, not pushed. Still open: the push
-   after the planner's review; your owner file and `reconcile-stats` run;
-   the merged refund check (D-064); the duplicate primary (Q9); the review
-   and export (3C-7, 3C-8); the Postgres CI run of the new tests.
-3. 44 foreign-currency messages deferred (D-035).
-4. 153 messages from banks without a parser (SBI, ICICI, India Post, Kotak,
-   PhonePe): a parser plus `reparse`, no re-import needed.
-5. HDFC H09 word slot: the word is still mapped in the private name map; the
-   template accepts any word, so parsing is unaffected.
-6. Import speed: ~6 min for 917 messages (about 8 round trips each over the
-   pooler). Batch the lookups if a much larger source arrives.
-7. Starlette warns `httpx` with `TestClient` is deprecated (suggests `httpx2`).
-   Kept `httpx` until the replacement is verified (D-010).
-8. Name detection in redaction covers the usual bank positions only; skim
-   new samples. Bank vocabulary covers HDFC wording only: each new bank's
-   survey adds its fixed phrases to `BANK_VOCABULARY`.
-9. PWA icons replaced with the $ mark (D-083). The logo was not checked
-   against a trademark register.
-10. GitHub cannot enforce required checks on a private repo on the free plan;
-    Render deploying only after CI passes is the gate (D-050).
+1. Bank statement check: one normal and one messy month against the
+   statement, "match" or the difference in rupees (Phase 4, step 4A).
+2. Joining one person seen under a name and a UPI ID, in the app. Today only
+   the owner file can list both texts on one party (D-079; step 4E).
+3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
+4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
+   Post, Kotak, PhonePe; add a parser, then reparse; step 4F) and 44
+   foreign-currency messages (D-035).
+5. Close category colour pairs (OKLab distance about 4 to 5, such as card
+   bill and uncategorised); icons and names carry identity (D-081).
+6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.
+   The 4C update bar and version line were checked at 360 px, light, dark
+   and 200 % in headless Edge only, not on a phone.
+7. npm audit: 4 moderate findings, build-time only: glob 11.1.0
+   (GHSA-3g3m-2fjr-6pw4) and minimatch 10.2.6 and 5.1.9
+   (GHSA-g3hv-75wg-m249), via vite-plugin-pwa 2.0.0 and workbox-build 7.4.1,
+   both the newest releases. No patched glob or minimatch exists in the same
+   major, so no override; `npm audit fix --force` would downgrade the plugin.
+8. The labels column allows 80 characters, the API 30; owner-file labels
+   may be longer than the app allows (step 4E).
+9. The Supabase free plan has no backups; the owner runs
+   `scripts/backup_db.ps1` (D-084).
+10. The owner's To-do backlog (about 100 items) to work through on the
+    phone (a faster To-do is step 4E).
+11. The owner doubts the October People total: verify it person by person.
+12. Vercel: `VITE_API_URL` is saved as a Secret. The owner changes it to a
+    plain variable and redeploys with the build cache off.
+
+Known limits: HDFC and INR only; the card bill pair rule waits for credit
+card SMS; the server sleeps when idle (about a minute to wake; kept awake
+07:00 to 00:50 IST by the warm job); import takes about 6 minutes for 917
+messages; Starlette's httpx warning is accepted (D-010).
+
+Also on record (NOTES only):
+
+- HDFC H09 word slot: the word is still mapped in the private name map; the
+  template accepts any word, so parsing is unaffected.
+- Name detection in redaction covers the usual bank positions only; skim new
+  samples. Bank vocabulary covers HDFC wording only: each new bank's survey
+  adds its fixed phrases to `BANK_VOCABULARY`.
+- The logo was not checked against a trademark register (D-083).
+- GitHub cannot enforce required checks on a private repo on the free plan;
+  Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-19: Phase 4C, install and update prompt
+
+- Update bar instead of silent updates (D-085): `registerType: "prompt"`,
+  Reload and Later, checks on launch, on return to the app and hourly.
+  App-shell-only service worker, no runtime caching (D-086). Manifest name,
+  `id` and `scope`, light splash colour. Build id on Home (D-087). Config in
+  `frontend/src/pwa.ts`, bar in `frontend/src/update.ts`.
+- npm audit unchanged: 4 moderate via workbox-build 7.4.1 (newest), no
+  patched glob or minimatch in the same major, so no override.
+- Docs cleanup: Status ticks, Open items equal to HANDOFF, Architecture
+  (env, tables, Flow 1, warm job), HANDOFF stack and workflow, PLAN Phase 4.
+- Tests: frontend 32 (8 new), lint, typecheck, build; backend and scripts
+  unchanged. Not on a real phone yet.
 
 ### 2026-11-18: Phase 3 closed
 

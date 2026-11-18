@@ -4,6 +4,20 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 4C: install and update prompt (19 Nov 2026)
+
+- Updates wait for the owner: "New version available" with Reload and
+  Later; checks on launch, on return to the app and hourly; the app never
+  reloads by itself (D-085).
+- The service worker precaches the app shell only; no API or auth response
+  is cached (D-086).
+- Manifest: name "Flash Expense Tracker", `id` and `scope` `/`, splash and
+  theme colours equal to the light page colour. Icons unchanged.
+- Home shows "Version 0.1.0 · build <commit>" next to Sign out (D-087).
+- Docs: NOTES, HANDOFF and PLAN brought up to date; Phase 4 steps in PLAN;
+  the Render warm job recorded. npm audit unchanged (4 moderate, build-time
+  only, no fix in the same major).
+
 ## Phase 3A: groundwork (15 Nov 2026, in progress, tag `phase-3a-done` when done)
 
 - Plan aligned with Phase 3 steps 3A-3F (D-054) and the spend definition

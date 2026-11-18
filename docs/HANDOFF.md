@@ -5,19 +5,22 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
 [PLAN.md](PLAN.md).
 
-## Current state (end of Phase 3, 18 Nov 2026)
+## Current state (Phase 4, 19 Nov 2026)
 
-- Phases 0 to 3 are done. Phase 3 left one check open, now the first item
-  of Phase 4: the bank statement check.
+- Phases 0 to 3 are done. Phase 4 runs as 4C, 4B, 4E, 4F, 4D, with 4A (the
+  bank statement check carried from Phase 3) done before 4D
+  ([PLAN.md](PLAN.md)). 4C (install and update prompt) is done.
 - Engine versions: parser `hdfc-1.1.1`, `merchant-1.1.1`,
   `reconcile-1.3.0`, `categorise-1.0.0`.
 - Alembic head: `0006` (categories and labels).
-- Decisions: D-001 to D-084 ([DECISIONS.md](DECISIONS.md)).
+- Decisions: D-001 to D-087 ([DECISIONS.md](DECISIONS.md)).
 - Live: app https://flash-expense-tracker.vercel.app, API
   https://flash-expense-tracker.onrender.com (more under "Live URLs").
 - The app: real login (Supabase Auth) and data (`/api/v1`), every screen,
   category colours, the ring chart and the FLA$H logo
-  ([ui-spec.md](ui-spec.md), [api.md](api.md)).
+  ([ui-spec.md](ui-spec.md), [api.md](api.md)). Installable; a new deploy
+  shows "New version available" and Home shows the build id (D-085 to
+  D-087).
 
 ### Owner commands
 
@@ -46,11 +49,11 @@ Monorepo.
 
 | Part | Stack (exact pins) | Hosting |
 | ---- | ------------------ | ------- |
-| Backend | Python 3.12.12, FastAPI 0.162.5, SQLAlchemy 2.1.8, Alembic 1.20.1, psycopg 3.3.9, pydantic-settings 2.16.2 | Render free, Singapore |
+| Backend | Python 3.12.12, FastAPI 0.162.5, SQLAlchemy 2.1.8, Alembic 1.20.1, psycopg 3.3.9, pydantic-settings 2.16.2, PyJWT 2.15.1, cryptography 50.0.2 | Render free, Singapore |
 | Database | Postgres (Supabase free, Singapore, Session pooler; Data API exposes only `keepalive`, D-053); SQLite for local and tests | Supabase |
-| Frontend | Vite 8, React 19, TypeScript 7, Tailwind 4, vite-plugin-pwa | Vercel |
+| Frontend | Vite 8, React 19, TypeScript 7, Tailwind 4, vite-plugin-pwa 2.0.0, @supabase/supabase-js 2.119.0 | Vercel |
 | Tools | pytest 9.2.0, ruff 0.17.4, httpx 0.28.1 | GitHub Actions |
-| Keep-alive | cron-job.org calls `keepalive.ping()` via the Data API (D-053) | |
+| Keep-alive | cron-job.org calls `keepalive.ping()` via the Data API (D-053); a second job keeps Render warm | |
 
 The stack is locked. Never install a package you cannot verify (PyPI owner,
 source repo); ask first (D-010).
@@ -105,10 +108,10 @@ backend/            Render root
   app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals | category-stats | category-review | credit-review
   alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
-frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs)
+frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar)
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests); backup_db.ps1 (owner: pg_dump via Docker)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-084), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-087), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```
@@ -136,7 +139,7 @@ npm ci; npm run dev; npm run lint; npm run typecheck; npm test; npm run build
   `postgres:17` on a free port such as 15432 (Windows reserves some ports).
 - CI (`.github/workflows/ci.yml`), three jobs: backend (ruff, backend and
   scripts pytest), backend on Postgres 17 (`alembic upgrade head`,
-  `alembic check`, pytest), frontend (typecheck, build).
+  `alembic check`, pytest), frontend (lint, typecheck, test, build).
 - Deploy: push to `main`. Render deploys after CI passes and runs
   `alembic upgrade head` in its build (D-018, D-050). Vercel deploys the
   frontend on every push. A new migration therefore reaches Supabase on the
@@ -156,6 +159,13 @@ use Render: cron-job.org "Flash DB heartbeat" sends
 `keepalive.ping()`, which writes the heartbeat row so Supabase does not
 pause. The Data API exposes only the `keepalive` schema; never add `public`
 (D-053). `/health/db` with `X-Ping-Token` stays for manual checks.
+
+A second job, "Flash API warm 07-01 IST", sends `GET
+https://flash-expense-tracker.onrender.com/health` every 10 minutes in hours
+07 to 23 and 00 IST (last ping 00:50), so the API is awake when the owner
+uses the app. `/health` never touches the database
+(`backend/app/api/health.py`). It uses about 560 of Render's 750 free hours a
+month. The daily 03:30 IST Supabase keepalive job is unchanged.
 
 ## Data pipeline as built
 
@@ -189,29 +199,37 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 ## Open items
 
 1. Bank statement check: one normal and one messy month against the
-   statement, "match" or the difference in rupees (Phase 4, first item).
+   statement, "match" or the difference in rupees (Phase 4, step 4A).
 2. Joining one person seen under a name and a UPI ID, in the app. Today only
-   the owner file can list both texts on one party (D-079).
+   the owner file can list both texts on one party (D-079; step 4E).
 3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
 4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
-   Post, Kotak, PhonePe; add a parser, then reparse) and 44 foreign-currency
-   messages (D-035).
+   Post, Kotak, PhonePe; add a parser, then reparse; step 4F) and 44
+   foreign-currency messages (D-035).
 5. Close category colour pairs (OKLab distance about 4 to 5, such as card
    bill and uncategorised); icons and names carry identity (D-081).
 6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.
-7. npm audit: 4 moderate findings via vite-plugin-pwa (glob, minimatch in
-   workbox-build); build-time only.
+   The 4C update bar and version line were checked at 360 px, light, dark
+   and 200 % in headless Edge only, not on a phone.
+7. npm audit: 4 moderate findings, build-time only: glob 11.1.0
+   (GHSA-3g3m-2fjr-6pw4) and minimatch 10.2.6 and 5.1.9
+   (GHSA-g3hv-75wg-m249), via vite-plugin-pwa 2.0.0 and workbox-build 7.4.1,
+   both the newest releases. No patched glob or minimatch exists in the same
+   major, so no override; `npm audit fix --force` would downgrade the plugin.
 8. The labels column allows 80 characters, the API 30; owner-file labels
-   may be longer than the app allows.
+   may be longer than the app allows (step 4E).
 9. The Supabase free plan has no backups; the owner runs
    `scripts/backup_db.ps1` (D-084).
 10. The owner's To-do backlog (about 100 items) to work through on the
-    phone.
+    phone (a faster To-do is step 4E).
+11. The owner doubts the October People total: verify it person by person.
+12. Vercel: `VITE_API_URL` is saved as a Secret. The owner changes it to a
+    plain variable and redeploys with the build cache off.
 
 Known limits: HDFC and INR only; the card bill pair rule waits for credit
-card SMS; the server sleeps when idle (about a minute to wake); import takes
-about 6 minutes for 917 messages; Starlette's httpx warning is accepted
-(D-010).
+card SMS; the server sleeps when idle (about a minute to wake; kept awake
+07:00 to 00:50 IST by the warm job); import takes about 6 minutes for 917
+messages; Starlette's httpx warning is accepted (D-010).
 
 ## Where decisions live
 
@@ -228,8 +246,9 @@ about 6 minutes for 917 messages; Starlette's httpx warning is accepted
   implement them in order and stop when a block needs the user (real data,
   dashboards, secrets).
 - Each task: a short branch (`feat/`, `fix/`, `docs/`, `chore/`), small
-  Conventional Commits, `git merge --no-ff` into `main`, delete the branch,
-  push, confirm CI green on all jobs.
+  Conventional Commits, `git merge --no-ff` into `main`, delete the branch.
+  Claude Code commits and merges locally and never pushes; the owner pushes
+  after the planner reviews, then confirms CI.
 - Commit identity: `Karthik-Flash <karthikeyareddy1905@gmail.com>`; check
   `git var GIT_AUTHOR_IDENT` first.
 - Update NOTES.md after every task: status, cheat sheet, open items, log.
