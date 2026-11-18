@@ -23,9 +23,12 @@ export function Home() {
         <h1>
           <Wordmark height={22} />
         </h1>
-        <button type="button" onClick={signOut} className="-mr-3 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted" aria-label="Sign out">
-          <Icon name="log-out" />
-        </button>
+        <div className="flex min-w-0 items-center gap-1">
+          <span className="min-w-0 text-right text-xs text-muted">{__VERSION_LINE__}</span>
+          <button type="button" onClick={signOut} className="-mr-3 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted" aria-label="Sign out">
+            <Icon name="log-out" />
+          </button>
+        </div>
       </header>
       <MonthSwitcher month={month} setMonth={(m) => replace({ month: m })} latest={currentMonth()} />
       <Loaded
