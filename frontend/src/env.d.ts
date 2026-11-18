@@ -12,3 +12,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+/** "Version 0.1.0 · build 1a2b3c4", set in vite.config.ts (D-087). */
+declare const __VERSION_LINE__: string

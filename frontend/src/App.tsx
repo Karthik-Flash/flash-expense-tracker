@@ -12,6 +12,7 @@ import { TodoScreen } from './screens/Todo.tsx'
 import { loadTodo } from './screens/todo-data.ts'
 import { Transactions } from './screens/Transactions.tsx'
 import { Button, Icon } from './ui.tsx'
+import { UpdateBar } from './update.ts'
 import { HOME, type Tab, type View } from './view.ts'
 
 const SIGNED_IN = 'flash-demo-signed-in'
@@ -72,6 +73,7 @@ export default function App() {
             }}
           />
         )}
+        <UpdateBar aboveNav={status === 'in'} />
       </div>
     </AppContext.Provider>
   )

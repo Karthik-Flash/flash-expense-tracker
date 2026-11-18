@@ -917,3 +917,33 @@ The PWA icons, favicon and apple-touch-icon are made from it. The three
 environment variable, never prints it, and drops pg_dump's messages (they
 can name the host and user). Only the owner runs it. Restore is a manual
 step in NOTES.md, into an empty database first.
+
+## D-085 Updates wait for the owner (2026-11-19)
+
+The service worker uses vite-plugin-pwa `registerType: "prompt"`. A new
+worker installs and waits; the app never reloads by itself. A bar at the
+bottom says "New version available" with Reload and Later. Reload tells the
+waiting worker to take over and the page reloads once; Later hides the bar
+until the next launch. The app checks for a new worker on launch, when it
+returns to the foreground (`visibilitychange`) and every 60 minutes while
+open; a failed check (offline, server asleep) is dropped and the next one
+tries again. There is no "ready to work offline" message. Replaces the
+silent `autoUpdate` of Phase 0 to 3, which could swap the app under the
+owner's finger.
+
+## D-086 The service worker caches the app shell only (2026-11-19)
+
+The service worker precaches the built app shell (HTML, JS, CSS, icons,
+manifest) and answers navigations with `index.html`. It has no
+`runtimeCaching`: requests to the API and to Supabase (login, token refresh)
+always go to the network and are never stored by it. A test checks that no
+runtime rule matches the API or Supabase. Keeping data on the phone is step
+4B, with its own rules.
+
+## D-087 The build id is shown in the app (2026-11-19)
+
+At build time `vite.config.ts` reads `VERCEL_GIT_COMMIT_SHA` (first 7
+characters, `dev` when unset) and the package version. Home shows them as
+one muted line next to Sign out, "Version 0.1.0 · build 1a2b3c4", so the
+owner can see which version a phone runs and compare it with the commit on
+`main`.

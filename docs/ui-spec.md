@@ -186,7 +186,7 @@ link on every row, ads, promo cards.
    screen says "Your session ended. Sign in again." A login the API does not
    know (403) shows "This account has no access" with Sign out. In demo mode
    any input continues.
-2. **Home**, in this order: the wordmark and a Sign out button; month
+2. **Home**, in this order: the wordmark, the version line and a Sign out button; month
    switcher (‹ Nov 2026 ›); Net as the
    headline; "Spent ₹X · Paid back ₹Y"; one plain line comparing Spent with
    last month ("Spent ₹7,580 more than this time last month": the current
@@ -243,6 +243,20 @@ rules (a duplicate is a 409), so a name the app lets through is saved as
 shown. The reason shows under the
 field as the owner types ("A label with this name already exists.", "Use at
 most 30 characters."); Create stays disabled until the name is fine.
+
+## Update bar and version line
+
+- **Update bar** (D-085): when a new version has installed and waits, a
+  bordered surface card at the bottom, 8 px above the navigation (above the
+  safe area when there is no navigation): "New version available", then
+  Later (plain button) and Reload (primary button), the same 44 px buttons
+  as elsewhere. It wraps at large text sizes. Reload switches to the new
+  version and reloads once; Later hides it until the next launch. It sits in
+  a `role="status"` region, so a screen reader announces it, and it never
+  appears or reloads on its own beyond that. No animation.
+- **Version line** (D-087): Home's header, left of Sign out, one line of
+  `text-xs` muted text: "Version 0.1.0 · build 1a2b3c4" (`dev` on a local
+  build). It wraps under 360 px or at large text sizes.
 
 ## States
 

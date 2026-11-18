@@ -37,8 +37,8 @@ first**, then [NOTES.md](NOTES.md) for current status and
 - Exact dependency pins only (`==` in requirements, exact versions in
   `package.json`, `frontend/.npmrc` has `save-exact=true`); commit lockfiles.
 - Never skip tests or loosen lint to get CI green. If stuck, stop and report.
-- UI: minimalist and professional; it must not look AI-generated. The detailed
-  design spec arrives in Phase 3.
+- UI: minimalist and professional; it must not look AI-generated. Follow
+  [docs/ui-spec.md](docs/ui-spec.md).
 
 ## Layout
 
