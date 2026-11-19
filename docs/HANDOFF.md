@@ -9,18 +9,21 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 
 - Phases 0 to 3 are done. Phase 4 runs as 4C, 4B, 4E, 4F, 4D, with 4A (the
   bank statement check carried from Phase 3) done before 4D
-  ([PLAN.md](PLAN.md)). 4C (install and update prompt) is done.
+  ([PLAN.md](PLAN.md)). 4C (install and update prompt) and 4B-1 (phone
+  copy and instant open) are done; next 4B-2 (queued taps).
 - Engine versions: parser `hdfc-1.1.1`, `merchant-1.1.1`,
   `reconcile-1.3.0`, `categorise-1.0.0`.
 - Alembic head: `0006` (categories and labels).
-- Decisions: D-001 to D-087 ([DECISIONS.md](DECISIONS.md)).
+- Decisions: D-001 to D-090 ([DECISIONS.md](DECISIONS.md)).
 - Live: app https://flash-expense-tracker.vercel.app, API
   https://flash-expense-tracker.onrender.com (more under "Live URLs").
 - The app: real login (Supabase Auth) and data (`/api/v1`), every screen,
   category colours, the ring chart and the FLA$H logo
   ([ui-spec.md](ui-spec.md), [api.md](api.md)). Installable; a new deploy
   shows "New version available" and Home shows the build id (D-085 to
-  D-087).
+  D-087). Screens read one snapshot (`/api/v1/sync/snapshot`) kept on the
+  phone in IndexedDB and open from it at once; every money figure comes
+  from the server (D-088 to D-090).
 
 ### Owner commands
 
@@ -51,7 +54,7 @@ Monorepo.
 | ---- | ------------------ | ------- |
 | Backend | Python 3.12.12, FastAPI 0.162.5, SQLAlchemy 2.1.8, Alembic 1.20.1, psycopg 3.3.9, pydantic-settings 2.16.2, PyJWT 2.15.1, cryptography 50.0.2 | Render free, Singapore |
 | Database | Postgres (Supabase free, Singapore, Session pooler; Data API exposes only `keepalive`, D-053); SQLite for local and tests | Supabase |
-| Frontend | Vite 8, React 19, TypeScript 7, Tailwind 4, vite-plugin-pwa 2.0.0, @supabase/supabase-js 2.119.0 | Vercel |
+| Frontend | Vite 8, React 19, TypeScript 7, Tailwind 4, vite-plugin-pwa 2.0.0, @supabase/supabase-js 2.119.0, idb 8.0.4 (fake-indexeddb 6.2.8 in tests) | Vercel |
 | Tools | pytest 9.2.0, ruff 0.17.4, httpx 0.28.1 | GitHub Actions |
 | Keep-alive | cron-job.org calls `keepalive.ping()` via the Data API (D-053); a second job keeps Render warm | |
 
@@ -99,6 +102,7 @@ backend/            Render root
   app/api/health.py   /health (no DB), /health/db (X-Ping-Token, heartbeat upsert)
   app/api/auth.py     Supabase login (ES256 JWT via JWKS), AUTH_USERS -> owner
   app/api/v1.py       data API /api/v1 (docs/api.md)
+  app/api/snapshot.py GET /api/v1/sync/snapshot: the app's one read, ETag and 304 (D-088)
   app/config.py       settings from env / backend/.env (DATABASE_URL, PING_TOKEN, CORS_ORIGINS, OWNER_ID)
   app/db.py           engine, SessionLocal, Base
   app/models.py       ORM models; UtcDateTime column type
@@ -108,10 +112,10 @@ backend/            Render root
   app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals | category-stats | category-review | credit-review
   alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
-frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar)
+frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar), src/data (local.ts: the IndexedDB phone copy; store.ts: snapshot, refresh, freshness, timings), src/screens/Speed.tsx (Speed sheet)
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests); backup_db.ps1 (owner: pg_dump via Docker)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-087), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-090), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```
@@ -161,7 +165,8 @@ pause. The Data API exposes only the `keepalive` schema; never add `public`
 (D-053). `/health/db` with `X-Ping-Token` stays for manual checks.
 
 A second job, "Flash API warm 07-01 IST", sends `GET
-https://flash-expense-tracker.onrender.com/health` every 10 minutes in hours
+https://flash-expense-tracker.onrender.com/health` with the header `Accept:
+application/json` every 10 minutes in hours
 07 to 23 and 00 IST (last ping 00:50), so the API is awake when the owner
 uses the app. `/health` never touches the database
 (`backend/app/api/health.py`). It uses about 560 of Render's 750 free hours a
@@ -198,10 +203,13 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 
 ## Open items
 
-1. Bank statement check: one normal and one messy month against the
-   statement, "match" or the difference in rupees (Phase 4, step 4A).
-2. Joining one person seen under a name and a UPI ID, in the app. Today only
-   the owner file can list both texts on one party (D-079; step 4E).
+1. Bank statement check (step 4A): one normal and one messy month against
+   the statement, "match" or the difference in rupees. 4A also settles the
+   unticked "merged refund" check in NOTES (one event or two, D-064).
+2. Joining one person seen under a name and a UPI ID, in the app (step 4E).
+   Today only the owner file can list both texts on one party (D-079). 4E
+   gives each To-do sender card "See payments", "Name this person" and
+   "Same as…" (the person join).
 3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
 4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
    Post, Kotak, PhonePe; add a parser, then reparse; step 4F) and 44
@@ -210,12 +218,13 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
    bill and uncategorised); icons and names carry identity (D-081).
 6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.
    The 4C update bar and version line were checked at 360 px, light, dark
-   and 200 % in headless Edge only, not on a phone.
-7. npm audit: 4 moderate findings, build-time only: glob 11.1.0
-   (GHSA-3g3m-2fjr-6pw4) and minimatch 10.2.6 and 5.1.9
+   and 200 % in headless Edge only; the 4B-1 screens in headless Edge at
+   390 px on demo data. Speed sheet timings on a real phone are still to come.
+7. Accepted risk: npm audit, 4 moderate findings, build-time only: glob
+   11.1.0 (GHSA-3g3m-2fjr-6pw4) and minimatch 10.2.6 and 5.1.9
    (GHSA-g3hv-75wg-m249), via vite-plugin-pwa 2.0.0 and workbox-build 7.4.1,
-   both the newest releases. No patched glob or minimatch exists in the same
-   major, so no override; `npm audit fix --force` would downgrade the plugin.
+   the newest releases. No patched release in the same major, so no
+   override. Recheck when Workbox ships a fix; never `npm audit fix --force`.
 8. The labels column allows 80 characters, the API 30; owner-file labels
    may be longer than the app allows (step 4E).
 9. The Supabase free plan has no backups; the owner runs
@@ -225,6 +234,9 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 11. The owner doubts the October People total: verify it person by person.
 12. Vercel: `VITE_API_URL` is saved as a Secret. The owner changes it to a
     plain variable and redeploys with the build cache off.
+13. Offline taps are not queued yet: owner actions need a connection
+    (step 4B-2).
+14. Later list: a friendlier Home, still minimal; revisit with 4D.
 
 Known limits: HDFC and INR only; the card bill pair rule waits for credit
 card SMS; the server sleeps when idle (about a minute to wake; kept awake

@@ -947,3 +947,45 @@ characters, `dev` when unset) and the package version. Home shows them as
 one muted line next to Sign out, "Version 0.1.0 · build 1a2b3c4", so the
 owner can see which version a phone runs and compare it with the commit on
 `main`.
+
+## D-088 The snapshot is the one read model; every money figure comes from the server (2026-11-19)
+
+The app reads one document, `GET /api/v1/sync/snapshot` (`docs/api.md`):
+every IST month with data (the `/summary` answer, the changes against last
+month, the ring, the merchants of each category, the People ledger), every
+transaction, the To-do lists, the labels with their breakdowns, the
+categories. It is built from the same functions as the other routes, and a
+test checks that every month and label equals them. The app filters, sorts,
+searches and pages it, and works out shares and percentages, but never adds
+or subtracts money: the sums the screens made before (merchant groups, the
+People ledger, the ring's "Other", the changes against last month, the
+To-do merchants) moved to the server. The other routes stay. The ETag is the
+SHA-256 of the canonical JSON without `generated_at`, so the same data has
+the same ETag; If-None-Match on it is a 304. Starlette's GZipMiddleware
+compresses answers of 1,000 bytes or more.
+
+## D-089 A copy on the phone, wiped on sign-out, another login or another schema (2026-11-19)
+
+The phone keeps the last snapshot in IndexedDB (database `flash`, version 1:
+`snapshot`, `meta`, `timings`), through `frontend/src/data/local.ts` only,
+with `idb` 8.0.4. On launch it shows that copy at once and refreshes in the
+background with If-None-Match and a 90 s timeout: on launch, on return to
+the app, after an owner action, every 5 minutes while visible, and when the
+network comes back; one refresh at a time. A failed refresh keeps what is
+shown and says "Offline · showing data from …". With no copy (first launch)
+the screen waits as before ("Starting up" after 3 s). The copy belongs to
+the login that fetched it (`meta.user_id`) and to its owner
+(`meta.owner_id`): sign-out deletes the database before the login screen
+shows, another login never sees it, a snapshot of another owner replaces it
+after a wipe, and a copy of another schema version is discarded. Offline
+with an expired token the copy still shows; the next refresh works once the
+token can be refreshed. Owner actions stay online; offline they say "You're
+offline. Try again when connected." Queued taps are 4B-2.
+
+## D-090 Launch timings stay on the device (2026-11-19)
+
+Each launch records, in IndexedDB only, the time from navigation start to
+Home drawn from the copy, to the fresh snapshot (or 304) applied, the
+request time, result, size, and whether the server was cold (over 10 s).
+The last 20 are kept; the Speed sheet (tap the version line) shows the
+targets, the last launch and the last 10. They are never sent anywhere.

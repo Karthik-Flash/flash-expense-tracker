@@ -4,6 +4,27 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 4B-1: phone copy and instant open (19 Nov 2026)
+
+- `GET /api/v1/sync/snapshot`: one document with every figure the app
+  shows, built from the same functions as the other routes; ETag (SHA-256
+  of the canonical JSON without `generated_at`), 304 on If-None-Match,
+  gzip (D-088). 704 FAKE transactions over 11 months: 230,686 bytes raw,
+  11,918 gzipped, built in 0.13 s on SQLite.
+- The server now works out what the app used to add up itself: merchants
+  per category, the People ledger, the ring, the changes against last
+  month, the To-do merchants (D-088).
+- The phone keeps the snapshot in IndexedDB (`idb` 8.0.4) and opens from
+  it at once, then refreshes in the background: on launch, on return to
+  the app, after an owner action, every 5 minutes while open, when the
+  network comes back. "Updated 5 min ago" or "Offline · showing data
+  from …" under the month. Wiped on sign-out, another login or another
+  schema (D-089).
+- Owner actions offline say "You're offline. Try again when connected.";
+  nothing is queued yet (4B-2).
+- The version line opens a Speed sheet: the last launches measured on the
+  phone, kept only there (D-090).
+
 ## Phase 4C: install and update prompt (19 Nov 2026)
 
 - Updates wait for the owner: "New version available" with Reload and
@@ -18,14 +39,14 @@ Phase 1 is parsing, Phase 2 is the database and import.
   the Render warm job recorded. npm audit unchanged (4 moderate, build-time
   only, no fix in the same major).
 
-## Phase 3A: groundwork (15 Nov 2026, in progress, tag `phase-3a-done` when done)
+## Phase 3A: groundwork (15 Nov 2026)
 
 - Plan aligned with Phase 3 steps 3A-3F (D-054) and the spend definition
   (D-055); doc fixes in HANDOFF and NOTES. No code.
 - D-015 garbled line removed; PLAN.md Phases 1 and 2 renumbered to match the
   tags; owner labels next to categories (D-056). No code.
 
-## Phase 3B: merchant normalisation (15 Nov 2026, in progress, tag `phase-3b-done` when done)
+## Phase 3B: merchant normalisation (15 Nov 2026, tag `phase-3b-done`)
 
 - Pure merchant engine `merchant-1.0.0`: business, person, unsure or none,
   a stable merchant key, and a dictionary of 74 national brands (D-057).
@@ -37,7 +58,7 @@ Phase 1 is parsing, Phase 2 is the database and import.
 - `merchant-1.1.1` (D-068): a name beside a UPI ID is the display name;
   the UPI ID stays the key.
 
-## Phase 3C: Reconcile and the derived-data backbone (15 Nov 2026, in progress, tag `phase-3c-done` when done)
+## Phase 3C: Reconcile and the derived-data backbone (15-16 Nov 2026)
 
 - Design of the derived-data backbone and Reconcile
   ([docs/design/phase-3-backbone.md](docs/design/phase-3-backbone.md)),
@@ -124,7 +145,7 @@ Phase 1 is parsing, Phase 2 is the database and import.
   in Docker, custom format, to `D:\FlashPrivate\backups`); restore note in
   NOTES.md.
 
-## Phase 3E: login and API (16 Nov 2026, in progress, tag `phase-3e-done` when done)
+## Phase 3E: login and API (16 Nov 2026)
 
 - Login: Supabase Auth ES256 tokens checked against the project's JWKS;
   `AUTH_USERS` maps users to owners (D-078). PyJWT 2.15.1, cryptography 50.0.2.
@@ -134,7 +155,7 @@ Phase 1 is parsing, Phase 2 is the database and import.
   confirm (D-076); own accounts inferred from the messages (D-077).
 - `credit-review` (owner only). No feature needs the owner file (D-075).
 
-## Phase 3D: categorise (16 Nov 2026, in progress, tag `phase-3d-done` when done)
+## Phase 3D: categorise (16 Nov 2026)
 
 - Pure engine `categorise-1.0.0` (D-073, D-074): one category per
   transaction from a fixed list of 20; owner decision, party default, role

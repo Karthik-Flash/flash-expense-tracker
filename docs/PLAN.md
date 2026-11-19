@@ -5,7 +5,7 @@ refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
 **Status (19 Nov 2026):** Phases 0 to 3 done. **Phase 4 in progress**: 4C
-done; next 4B.
+and 4B-1 done; next 4B-2.
 
 Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
@@ -144,6 +144,9 @@ Order: 4C, 4B, 4E, 4F, 4D. 4A (carried from Phase 3) must finish before 4D.
   the copy is wiped on sign-out; timings measured on the phone. Targets:
   usable in 2 s from the phone copy, fresh data in 5 s when the server is
   awake, and a cold server never blocks the screen.
+  4B-1 (19 Nov 2026, D-088 to D-090): the snapshot, the phone copy, the
+  freshness line and the Speed sheet. 4B-2: taps queued as "Waiting to
+  sync".
 - [ ] 4E Owner fixes: join one person seen under a name and a UPI ID; a
   faster To-do; the label length mismatch (column 80, API 30).
 - [ ] 4F Second bank: a counts-only survey of the 153 other-bank messages;

@@ -244,6 +244,23 @@ shown. The reason shows under the
 field as the owner types ("A label with this name already exists.", "Use at
 most 30 characters."); Create stays disabled until the name is fine.
 
+## Freshness, offline and Speed (4B-1)
+
+- **Freshness line** under the month switcher on Home and Transactions,
+  one line of muted `text-xs`, IST: "Updated just now", "Updated 5 min
+  ago", "Updated 2 h ago", "Updated yesterday 21:40", older "Updated Mon 16
+  Nov 21:40"; while a refresh runs "Updating…"; after a failed refresh
+  "Offline · showing data from 5 min ago". No spinner over the numbers, no
+  banner. The screens show the phone copy at once (D-089).
+- **Offline owner actions**: "You're offline. Try again when connected."
+  in the usual error place. Nothing is queued.
+- **Speed sheet**: tap the version line on Home. The usual sheet: the two
+  targets ("Open from phone copy: 2 s or less", "Fresh data, server awake:
+  5 s or less"), the last launch (phone copy ms, fresh data s, request ms,
+  size, result) and a plain table of the last 10 launches (time IST, local
+  ms, fresh s, result; "cold" when the request took over 10 s). Measured on
+  the phone and kept there (D-090). It is not in the URL: Back leaves Home.
+
 ## Update bar and version line
 
 - **Update bar** (D-085): when a new version has installed and waits, a
@@ -256,7 +273,8 @@ most 30 characters."); Create stays disabled until the name is fine.
   appears or reloads on its own beyond that. No animation.
 - **Version line** (D-087): Home's header, left of Sign out, one line of
   `text-xs` muted text: "Version 0.1.0 · build 1a2b3c4" (`dev` on a local
-  build). It wraps under 360 px or at large text sizes.
+  build). It wraps under 360 px or at large text sizes. It is a button: it
+  opens the Speed sheet.
 
 ## States
 
