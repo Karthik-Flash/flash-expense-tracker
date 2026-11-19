@@ -1,11 +1,13 @@
 // Spent by category as a thin ring: at most 6 slices plus "Other", gaps between slices, Spent
 // in the centre. Hand-drawn SVG, no chart package. Each slice and legend row opens its category.
 
-import type { CategoryAmount } from '../api/types.ts'
+import type { ChartSlice, MonthData } from '../api/types.ts'
 import { percentOf, rupees } from '../lib/money.ts'
 import { CategoryTile, Icon, Money, RowButton, Section } from '../ui.tsx'
 import { catColor } from './common.ts'
-import { ringSlices, type Slice } from './derive.ts'
+
+/** A slice from the server, with its share of the ring (the server's total of the slices). */
+type Slice = ChartSlice & { share: number }
 
 const R = 50
 const WIDTH = 7
@@ -23,16 +25,16 @@ function arcs(slices: Slice[]) {
   })
 }
 
-export function Ring({ parts, spent, onOpen, onOther }: {
-  parts: CategoryAmount[]
+export function Ring({ chart, spent, onOpen, onOther }: {
+  chart: MonthData['chart']
   spent: number
   onOpen: (slug: string) => void
   onOther: () => void
 }) {
-  const slices = ringSlices(parts)
-  const total = slices.reduce((sum, s) => sum + s.amount, 0)
+  const total = chart.total_paise
+  const slices: Slice[] = total > 0 ? chart.slices.map((s) => ({ ...s, share: s.amount_paise / total })) : []
   const drawn = arcs(slices)
-  const label = (s: Slice) => `${s.name}, ${rupees(s.amount)}, ${percentOf(s.amount, total)}`
+  const label = (s: Slice) => `${s.name}, ${rupees(s.amount_paise)}, ${percentOf(s.amount_paise, total)}`
   const go = (slug: string | null) => (slug ? onOpen(slug) : onOther())
   return (
     <>
@@ -66,8 +68,8 @@ export function Ring({ parts, spent, onOpen, onOther }: {
               </span>
             )}
             <span className="min-w-0 flex-1 truncate">{s.name}</span>
-            <Money paise={s.amount} />
-            <span className="w-9 shrink-0 text-right text-sm text-muted tabular-nums">{percentOf(s.amount, total)}</span>
+            <Money paise={s.amount_paise} />
+            <span className="w-9 shrink-0 text-right text-sm text-muted tabular-nums">{percentOf(s.amount_paise, total)}</span>
           </RowButton>
         ))}
       </Section>

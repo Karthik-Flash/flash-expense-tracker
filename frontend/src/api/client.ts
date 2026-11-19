@@ -1,29 +1,13 @@
-// The one interface every screen uses: the HTTP adapter (http.ts) for /api/v1, or the
-// demo adapter (fake.ts) in local dev with VITE_DEMO=1.
+// The one interface the app uses: the HTTP adapter (http.ts) for /api/v1, or the demo
+// adapter (fake.ts) in local dev with VITE_DEMO=1. Screens read the snapshot (data/store.ts);
+// they write through the methods below.
 
-import type {
-  Category,
-  LabelSummary,
-  LabelView,
-  Page,
-  Sender,
-  SenderAnswer,
-  SenderStatus,
-  Summary,
-  Txn,
-  TxnQuery,
-  WriteResult,
-} from './types.ts'
+import type { SenderAnswer, SnapshotAnswer, WriteResult } from './types.ts'
 
 export interface Api {
   readonly demo: boolean
-  summary(month: string): Promise<Summary>
-  transactions(query: TxnQuery): Promise<Page<Txn>>
-  transaction(id: number): Promise<Txn>
-  categories(): Promise<Category[]>
-  labels(): Promise<LabelSummary[]>
-  label(id: number): Promise<LabelView>
-  senders(status?: SenderStatus | 'all'): Promise<Sender[]>
+  /** The snapshot; 304 when `etag` is still current. */
+  snapshot(etag: string | null, signal: AbortSignal): Promise<SnapshotAnswer>
   answerSender(id: string, answer: SenderAnswer): Promise<WriteResult<{ id: string; credits: number }>>
   /** Forget the answer: the sender is to confirm again. */
   resetSender(id: string): Promise<WriteResult<{ id: string; credits: number }>>
@@ -45,23 +29,4 @@ export class ApiError extends Error {
     super(message)
     this.status = status
   }
-}
-
-/** Every page of a transaction query. */
-export async function allTransactions(api: Api, query: Omit<TxnQuery, 'cursor'>): Promise<Txn[]> {
-  const items: Txn[] = []
-  let cursor: string | undefined
-  do {
-    const page = await api.transactions({ ...query, cursor, limit: 200 })
-    items.push(...page.items)
-    cursor = page.next_cursor ?? undefined
-  } while (cursor)
-  return items
-}
-
-/** Signed effect on Spent: a refund lowers it. Used to total a group of rows. */
-export function spentEffect(t: Txn): number {
-  if (t.role === 'spend' || t.role === 'card_bill_counted') return t.amount_paise
-  if (t.role === 'refund') return -t.amount_paise
-  return 0
 }

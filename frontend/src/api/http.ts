@@ -1,22 +1,14 @@
-// HTTP adapter for /api/v1 (docs/api.md). Every request carries the Supabase access token;
-// the screens never talk to Supabase. 401 and 403 also tell the login layer (auth.ts).
+// HTTP adapter for /api/v1 (docs/api.md). Every request carries the Supabase access token
+// and Accept: application/json (a waking Render answers browser-like requests with an HTML
+// page). 401 and 403 also tell the login layer (auth.ts).
 
 import { ApiError, type Api } from './client.ts'
-import type {
-  Category,
-  LabelSummary,
-  LabelView,
-  Page,
-  Sender,
-  SenderAnswer,
-  SenderStatus,
-  Summary,
-  Txn,
-  TxnQuery,
-  WriteResult,
-} from './types.ts'
+import type { SenderAnswer, Snapshot, SnapshotAnswer, WriteResult } from './types.ts'
 
 type Lost = (status: 401 | 403) => void
+
+/** What an owner action says when it cannot reach the server. Nothing is queued (4B-1). */
+export const OFFLINE = "You're offline. Try again when connected."
 
 /** What a failed request says to the owner. The server's own words for 404, 409 and 422. */
 export function errorText(status: number, detail: unknown): string {
@@ -32,6 +24,8 @@ export function errorText(status: number, detail: unknown): string {
   return 'The server did not accept this.'
 }
 
+const offline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+
 export class HttpApi implements Api {
   readonly demo = false
   private readonly base: string
@@ -44,8 +38,16 @@ export class HttpApi implements Api {
     this.lost = lost
   }
 
-  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const token = await this.token()
+  /** The response, or an ApiError. A failed write says OFFLINE. */
+  private async request(method: string, path: string, init: { body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {}) {
+    const unreachable = new ApiError(0, method === 'GET' ? errorText(0, null) : OFFLINE)
+    if (method !== 'GET' && offline()) throw unreachable
+    let token: string | null
+    try {
+      token = await this.token()
+    } catch {
+      throw unreachable // offline with an expired token: the library could not refresh it
+    }
     if (!token) {
       this.lost(401)
       throw new ApiError(401, errorText(401, null))
@@ -54,46 +56,41 @@ export class HttpApi implements Api {
     try {
       response = await fetch(this.base + path, {
         method,
-        headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        cache: 'no-store',
+        signal: init.signal,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          ...(init.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          ...init.headers,
+        },
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
       })
-    } catch {
-      throw new ApiError(0, errorText(0, null))
+    } catch (e) {
+      if (init.signal?.aborted) throw e
+      throw unreachable
     }
-    if (response.ok) return (await response.json()) as T
+    if (response.ok || response.status === 304) return response
     if (response.status === 401 || response.status === 403) this.lost(response.status)
     const detail = await response.json().then((b: unknown) => (b as { detail?: unknown } | null)?.detail, () => null)
     throw new ApiError(response.status, errorText(response.status, detail))
   }
 
-  summary(month: string) {
-    return this.call<Summary>('GET', `/summary?month=${month}`)
+  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
+    return (await (await this.request(method, path, { body })).json()) as T
   }
 
-  transactions(query: TxnQuery) {
-    const params = new URLSearchParams()
-    for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value))
-    return this.call<Page<Txn>>('GET', `/transactions?${params}`)
-  }
-
-  transaction(id: number) {
-    return this.call<Txn>('GET', `/transactions/${id}`)
-  }
-
-  categories() {
-    return this.call<Category[]>('GET', '/categories')
-  }
-
-  labels() {
-    return this.call<LabelSummary[]>('GET', '/labels')
-  }
-
-  label(id: number) {
-    return this.call<LabelView>('GET', `/labels/${id}`)
-  }
-
-  senders(status: SenderStatus | 'all' = 'to_confirm') {
-    return this.call<Sender[]>('GET', `/senders?status=${status}`)
+  async snapshot(etag: string | null, signal: AbortSignal): Promise<SnapshotAnswer> {
+    const response = await this.request('GET', '/sync/snapshot', { signal, headers: etag ? { 'If-None-Match': etag } : {} })
+    if (response.status === 304) return { status: 304 }
+    const text = await response.text()
+    let snapshot: Snapshot
+    try {
+      snapshot = JSON.parse(text) as Snapshot
+    } catch {
+      throw new ApiError(502, errorText(502, null)) // not JSON: a waking server's page
+    }
+    return { status: 200, etag: response.headers.get('ETag') ?? '', snapshot, bytes: new TextEncoder().encode(text).length }
   }
 
   answerSender(id: string, answer: SenderAnswer) {

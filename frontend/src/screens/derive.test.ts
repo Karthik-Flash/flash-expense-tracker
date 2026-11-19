@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import type { Txn } from '../api/types.ts'
-import { labelName, ledger, matches, ringSlices } from './derive.ts'
+import type { Snapshot, Txn } from '../api/types.ts'
+import { isPersonTxn, labelName, matches, monthData, monthTxns, personKey } from './derive.ts'
 
 const txn = (over: Partial<Txn>): Txn => ({
   id: 1,
@@ -31,33 +31,30 @@ test('label names: trimmed, 1 to 30 characters, no duplicates in any case', () =
   assert.equal(labelName('Goa trip 2', ['Goa trip']).error, '')
 })
 
-test('people ledger: one row per person id, confirmed got back, biggest sent first', () => {
-  const credit = { direction: 'credit', role: 'payback', category: 'people' } as const
-  const rows = ledger([
-    txn({ display_name: 'Rohit V', person_id: 'p_1', category: 'people', amount_paise: 600000 }),
-    txn({ ...credit, display_name: 'rohit.v@okaxis', person_id: 'p_1', amount_paise: 125000, role_basis: 'owner' }),
-    txn({ ...credit, display_name: 'Rohit V', person_id: 'p_1', amount_paise: 5000 }),
-    txn({ display_name: 'Meera S', person_id: 's_2', category: 'people', amount_paise: 120000 }),
-    txn({ display_name: 'Meera S', person_id: 's_2', category: 'gifts_donations', amount_paise: 75000 }),
-    txn({ ...credit, display_name: 'ramesh.k@okaxis', person_id: 's_3', amount_paise: 1000000 }),
-    txn({ display_name: 'Pay Co', direction: 'credit', role: 'income', category: 'other', amount_paise: 500000 }),
-  ])
-  assert.deepEqual(rows, [
-    { key: 'p_1', name: 'Rohit V', sent: 600000, got: 125000, toConfirm: 5000 },
-    { key: 's_2', name: 'Meera S', sent: 120000, got: 0, toConfirm: 0 },
-    { key: 's_3', name: 'ramesh.k@okaxis', sent: 0, got: 0, toConfirm: 1000000 },
-  ])
+test('person rows: People spending and paybacks, keyed by person id', () => {
+  const people = txn({ category: 'people', person_id: 'p_1' })
+  assert.ok(isPersonTxn(people))
+  assert.ok(isPersonTxn(txn({ direction: 'credit', role: 'payback', category: 'people' })))
+  assert.ok(!isPersonTxn(txn({ category: 'gifts_donations' })))
+  assert.ok(!isPersonTxn(txn({ category: 'people', role: 'duplicate' })))
+  assert.ok(!isPersonTxn(txn({ direction: 'credit', role: 'income', category: 'other' })))
+  assert.equal(personKey(people), 'p_1')
+  assert.equal(personKey(txn({ display_name: null, category: 'people' })), 'name:Bank transfer')
 })
 
-test('ring: six biggest, the rest as Other, shares fill the ring', () => {
-  const part = (slug: string, amount_paise: number) => ({ slug, name: slug, amount_paise })
-  const nine = [1, 9, 2, 8, 3, 7, 4, 6, 5].map((n) => part(`c${n}`, n * 100))
-  const slices = ringSlices([...nine, part('refunded', -300), part('zero', 0)])
-  assert.deepEqual(slices.map((s) => s.slug), ['c9', 'c8', 'c7', 'c6', 'c5', 'c4', null])
-  assert.deepEqual(slices.at(-1), { slug: null, name: 'Other (3)', amount: 600, share: 600 / 4500 })
-  assert.ok(Math.abs(slices.reduce((sum, s) => sum + s.share, 0) - 1) < 1e-9)
-  assert.equal(ringSlices(nine.slice(0, 7)).length, 7) // seven fit: no Other of one
-  assert.deepEqual(ringSlices([part('refunded', -300)]), [])
+test('a month of the snapshot: its figures and its rows, newest first', () => {
+  const s = {
+    months: [{ month: '2026-10' }, { month: '2026-11' }],
+    transactions: [
+      txn({ id: 3, time_utc: '2026-11-01T10:00:00Z' }),
+      txn({ id: 2, time_utc: '2026-10-31T19:00:00Z' }), // 1 Nov 00:30 IST
+      txn({ id: 1, time_utc: '2026-10-31T18:00:00Z' }), // 31 Oct 23:30 IST
+    ],
+  } as unknown as Snapshot
+  assert.equal(monthData(s, '2026-11')?.month, '2026-11')
+  assert.equal(monthData(s, '2026-09'), undefined)
+  assert.deepEqual(monthTxns(s, '2026-11').map((t) => t.id), [3, 2])
+  assert.deepEqual(monthTxns(s, '2026-10').map((t) => t.id), [1])
 })
 
 test('name search', () => {

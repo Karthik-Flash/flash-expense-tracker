@@ -3,19 +3,26 @@
 // screen can be tried. A dev switch picks a state: normal, waking, empty, error, stale.
 
 import { ApiError, type Api } from './client.ts'
-import type {
-  Basis,
-  Category,
-  CategoryAmount,
-  LabelSummary,
-  LabelView,
-  Role,
-  Sender,
-  SenderStatus,
-  Summary,
-  Txn,
-  TxnQuery,
+import {
+  SCHEMA_VERSION,
+  type Basis,
+  type Category,
+  type CategoryAmount,
+  type ChartSlice,
+  type LabelView,
+  type Merchant,
+  type MonthData,
+  type PersonRow,
+  type Role,
+  type Sender,
+  type SenderStatus,
+  type Snapshot,
+  type SnapshotAnswer,
+  type Summary,
+  type Txn,
 } from './types.ts'
+import { nameOf } from '../screens/common.ts'
+import { isPersonTxn, personKey } from '../screens/derive.ts'
 import { currentMonth, dayKey, istToIso, monthOf, shiftMonth, today } from '../lib/dates.ts'
 
 export type DemoState = 'normal' | 'waking' | 'empty' | 'error' | 'stale'
@@ -275,31 +282,29 @@ export class FakeApi implements Api {
       .sort((a, b) => b.total_paise - a.total_paise || a.id.localeCompare(b.id))
   }
 
-  summary(month: string): Promise<Summary> {
-    return this.respond(() => {
-      const rows = this.visible().filter((r) => monthOf(r.time) === month)
-      const t = this.totals(rows)
-      const open = this.sendersOf(rows).filter((s) => s.status === 'to_confirm')
-      return {
-        month,
-        spent_paise: t.spent,
-        paid_back_paise: t.paidBack,
-        to_confirm: { amount_paise: t.toConfirm, senders: open.length },
-        net_paise: t.spent - t.paidBack,
-        income_paise: t.income,
-        categories: t.categories,
-        counts: {
-          uncategorised_spend: rows.filter(
-            (r) => SPENDING.includes(this.role(r).role) && this.category(r).category === 'uncategorised',
-          ).length,
-          senders_to_confirm: open.length,
-          not_counted_yet: rows.length ? (month === '2026-11' ? 3 : 5) : 0,
-        },
-        stale: this.state === 'stale',
-        last_recompute_utc: rows.length ? '2026-11-17T03:00:00Z' : null,
-        previous: this.previous(month),
-      }
-    })
+  private summary(month: string): Summary {
+    const rows = this.visible().filter((r) => monthOf(r.time) === month)
+    const t = this.totals(rows)
+    const open = this.sendersOf(rows).filter((s) => s.status === 'to_confirm')
+    return {
+      month,
+      spent_paise: t.spent,
+      paid_back_paise: t.paidBack,
+      to_confirm: { amount_paise: t.toConfirm, senders: open.length },
+      net_paise: t.spent - t.paidBack,
+      income_paise: t.income,
+      categories: t.categories,
+      counts: {
+        uncategorised_spend: rows.filter(
+          (r) => SPENDING.includes(this.role(r).role) && this.category(r).category === 'uncategorised',
+        ).length,
+        senders_to_confirm: open.length,
+        not_counted_yet: rows.length ? (month === '2026-11' ? 3 : 5) : 0,
+      },
+      stale: this.state === 'stale',
+      last_recompute_utc: rows.length ? '2026-11-17T03:00:00Z' : null,
+      previous: this.previous(month),
+    }
   }
 
   /** As the API: up to the same IST day when the month is the current one, else whole. */
@@ -310,46 +315,6 @@ export class FakeApi implements Api {
     const rows = this.visible().filter((r) => monthOf(r.time) === before && (whole || dayKey(r.time).slice(8) <= day))
     const t = this.totals(rows)
     return { month: before, whole, spent_paise: t.spent, categories: t.categories }
-  }
-
-  transaction(id: number) {
-    return this.respond(() => {
-      const row = this.visible().find((r) => r.id === id)
-      if (!row) throw new ApiError(404, 'No such transaction.')
-      return this.txn(row)
-    })
-  }
-
-  transactions(query: TxnQuery) {
-    return this.respond(() => {
-      const limit = query.limit ?? 50
-      let items = this.visible()
-        .map((row) => this.txn(row))
-        .filter(
-          (t) =>
-            (!query.month || monthOf(t.time_utc) === query.month) &&
-            (!query.category || t.category === query.category) &&
-            (query.label === undefined || t.label?.id === query.label),
-        )
-        .sort((a, b) => b.time_utc.localeCompare(a.time_utc) || b.id - a.id)
-      if (query.cursor) {
-        const [ms, id] = query.cursor.split('_').map(Number)
-        items = items.filter((t) => {
-          const at = Date.parse(t.time_utc)
-          return at < ms || (at === ms && t.id < id)
-        })
-      }
-      const page = items.slice(0, limit)
-      const last = page[page.length - 1]
-      return {
-        items: page,
-        next_cursor: items.length > limit && last ? `${Date.parse(last.time_utc)}_${last.id}` : null,
-      }
-    })
-  }
-
-  categories() {
-    return this.respond(() => CATEGORIES)
   }
 
   private labelView(id: number, name: string): LabelView {
@@ -367,30 +332,46 @@ export class FakeApi implements Api {
     }
   }
 
-  labels() {
-    return this.respond(() =>
-      [...this.labelNames.entries()]
-        .map(([id, name]): LabelSummary => {
-          const { categories, ...totals } = this.labelView(id, name)
-          void categories
-          return totals
-        })
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    )
-  }
-
-  label(id: number): Promise<LabelView> {
-    return this.respond(() => {
-      const name = this.labelNames.get(id)
-      if (!name) throw new ApiError(404, 'No such label.')
-      return this.labelView(id, name)
+  /** The demo's stand-in for GET /sync/snapshot, with the server's rules (app/api/snapshot.py). */
+  snapshot(etag: string | null, signal: AbortSignal): Promise<SnapshotAnswer> {
+    void signal
+    return this.respond((): SnapshotAnswer => {
+      const transactions = this.visible()
+        .map((row) => this.txn(row))
+        .sort((a, b) => b.time_utc.localeCompare(a.time_utc) || b.id - a.id)
+      const months = [...new Set(transactions.map((t) => monthOf(t.time_utc)))].sort().map((month): MonthData => {
+        const summary = this.summary(month)
+        const mine = transactions.filter((t) => monthOf(t.time_utc) === month)
+        const before = new Map(summary.previous.categories.map((c) => [c.slug, c.amount_paise]))
+        return {
+          month,
+          summary,
+          changes: {
+            spent_paise: summary.spent_paise - summary.previous.spent_paise,
+            categories: Object.fromEntries(summary.categories.map((c) => [c.slug, c.amount_paise - (before.get(c.slug) ?? 0)])),
+          },
+          chart: chart(summary.categories),
+          merchants: merchants(mine),
+          people: people(mine),
+        }
+      })
+      const senders = this.sendersOf(this.visible())
+      const labels = [...this.labelNames.entries()].map(([id, name]) => this.labelView(id, name)).sort((a, b) => a.name.localeCompare(b.name))
+      const document: Omit<Snapshot, 'generated_at'> = {
+        schema_version: SCHEMA_VERSION,
+        owner_id: 'demo',
+        engine_versions: { demo: '1' },
+        months,
+        transactions,
+        todo: { senders: senders.filter((s) => s.status === 'to_confirm'), answered: senders.filter((s) => s.status !== 'to_confirm'), ...todo(transactions) },
+        labels,
+        categories: CATEGORIES,
+      }
+      const text = JSON.stringify(document)
+      const tag = `"${senderId(text, 0)}"`
+      if (etag === tag) return { status: 304 }
+      return { status: 200, etag: tag, snapshot: { ...document, generated_at: new Date().toISOString() }, bytes: text.length }
     })
-  }
-
-  senders(status: SenderStatus | 'all' = 'to_confirm') {
-    return this.respond(() =>
-      this.sendersOf(this.visible()).filter((s) => status === 'all' || s.status === status),
-    )
   }
 
   answerSender(id: string, answer: Parameters<Api['answerSender']>[1]) {
@@ -462,4 +443,61 @@ export class FakeApi implements Api {
       return { result: { id: txnId, label_id: null }, recompute: { status: 'unchanged', run: null } }
     })
   }
+}
+
+// The server's figures, for the demo only (app/api/snapshot.py does this for real data). The
+// screens never add up money; this file stands in for the server.
+
+const effect = (t: Txn) => (t.role === 'spend' || t.role === 'card_bill_counted' ? t.amount_paise : t.role === 'refund' ? -t.amount_paise : 0)
+
+function merchants(txns: Txn[]): Record<string, Merchant[]> {
+  const groups = new Map<string, Map<string, Merchant>>()
+  for (const t of txns) {
+    const names = groups.get(t.category) ?? new Map<string, Merchant>()
+    const g = names.get(nameOf(t)) ?? { name: nameOf(t), total_paise: 0, count: 0 }
+    names.set(g.name, { ...g, total_paise: g.total_paise + effect(t), count: g.count + 1 })
+    groups.set(t.category, names)
+  }
+  return Object.fromEntries(
+    [...groups].map(([slug, names]) => [slug, [...names.values()].sort((a, b) => b.total_paise - a.total_paise || a.name.localeCompare(b.name))]),
+  )
+}
+
+function people(txns: Txn[]): PersonRow[] {
+  const rows = new Map<string, PersonRow>()
+  for (const t of txns.filter(isPersonTxn)) {
+    const key = personKey(t)
+    const p = rows.get(key) ?? { key, name: nameOf(t), sent_paise: 0, got_back_paise: 0, to_confirm_paise: 0, net_paise: 0 }
+    if (t.role !== 'payback') p.sent_paise += effect(t)
+    else if (t.role_basis === 'owner') p.got_back_paise += t.amount_paise
+    else p.to_confirm_paise += t.amount_paise
+    p.net_paise = p.sent_paise - p.got_back_paise
+    rows.set(key, p)
+  }
+  return [...rows.values()].sort((a, b) => b.sent_paise - a.sent_paise || b.got_back_paise - a.got_back_paise || a.name.localeCompare(b.name))
+}
+
+function chart(parts: CategoryAmount[]): MonthData['chart'] {
+  const positive = parts.filter((p) => p.amount_paise > 0).sort((a, b) => b.amount_paise - a.amount_paise)
+  const shown = positive.length > 7 ? positive.slice(0, 6) : positive
+  const slices: ChartSlice[] = shown.map((p) => ({ slug: p.slug, name: p.name, amount_paise: p.amount_paise }))
+  const rest = positive.slice(shown.length)
+  const sum = (list: CategoryAmount[]) => list.reduce((total, p) => total + p.amount_paise, 0)
+  if (rest.length) slices.push({ slug: null, name: `Other (${rest.length})`, amount_paise: sum(rest) })
+  return { total_paise: sum(positive), slices }
+}
+
+function todo(txns: Txn[]): Pick<Snapshot['todo'], 'merchants' | 'unnamed'> {
+  const groups = new Map<string, Merchant & { txn_id: number }>()
+  let unnamed = 0
+  for (const t of txns) {
+    if (t.category !== 'uncategorised' || (t.role !== 'spend' && t.role !== 'card_bill_counted')) continue
+    if (!t.display_name) {
+      unnamed++
+      continue
+    }
+    const g = groups.get(t.display_name) ?? { name: t.display_name, total_paise: 0, count: 0, txn_id: t.id }
+    groups.set(t.display_name, { ...g, total_paise: g.total_paise + t.amount_paise, count: g.count + 1 })
+  }
+  return { merchants: [...groups.values()].sort((a, b) => b.total_paise - a.total_paise), unnamed }
 }

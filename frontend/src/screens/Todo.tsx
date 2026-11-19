@@ -1,29 +1,19 @@
 import { useState, type ReactNode } from 'react'
 
-import type { Category, Sender } from '../api/types.ts'
+import type { Category, Sender, Snapshot } from '../api/types.ts'
+import { useSnapshot } from '../data/store.ts'
 import { dayLabel } from '../lib/dates.ts'
-import { joinLoads, useApp, useLoad } from '../state.tsx'
+import { useApp } from '../state.tsx'
 import { Button, Empty, Header, Loaded, Money, Section } from '../ui.tsx'
 import { labelName } from './derive.ts'
-import { loadTodo, type Todo } from './todo-data.ts'
 
 export function TodoScreen() {
-  const { api } = useApp()
-  const [todo, retryTodo] = useLoad(() => loadTodo(api), ['todo'])
-  const [cats, retryCats] = useLoad(() => api.categories(), ['categories'])
-  const [done, retryDone] = useLoad(async () => (await api.senders('all')).filter((s) => s.status !== 'to_confirm'), ['senders', 'answered'])
+  const [load, retry] = useSnapshot()
   return (
     <>
       <Header title="To-do" />
-      <Loaded
-        load={joinLoads(todo, cats, done)}
-        retry={() => {
-          retryTodo()
-          retryCats()
-          retryDone()
-        }}
-      >
-        {([t, categories, answered]) => (
+      <Loaded load={load} retry={retry}>
+        {({ todo: t, categories }) => (
           <>
             {t.senders.length === 0 && t.merchants.length === 0 && <Empty>Nothing to do.</Empty>}
             {t.senders.length > 0 && (
@@ -41,9 +31,9 @@ export function TodoScreen() {
                 {t.unnamed} uncategorised {t.unnamed === 1 ? 'payment has' : 'payments have'} no name. Set them in Transactions.
               </p>
             )}
-            {answered.length > 0 && (
+            {t.answered.length > 0 && (
               <Section title="Answered">
-                {answered.map((s) => <SenderRow key={s.id} s={s} answered />)}
+                {t.answered.map((s) => <SenderRow key={s.id} s={s} answered />)}
               </Section>
             )}
           </>
@@ -168,20 +158,20 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
   )
 }
 
-function MerchantRow({ m, cats }: { m: Todo['merchants'][number]; cats: Category[] }) {
+function MerchantRow({ m, cats }: { m: Snapshot['todo']['merchants'][number]; cats: Category[] }) {
   const { api } = useApp()
   const { busy, error, left, run } = useWrite()
   return (
     <Leaving left={left}>
       <div className="flex items-baseline gap-3">
         <span className="min-w-0 flex-1 truncate">{m.name}</span>
-        <Money paise={m.total} />
+        <Money paise={m.total_paise} />
       </div>
       <select
         aria-label={`Category for ${m.name}, ${m.count} ${m.count === 1 ? 'payment' : 'payments'}`}
         disabled={busy}
         value=""
-        onChange={(e) => e.target.value && run(() => api.setCategory(m.txnId, e.target.value, 'merchant'))}
+        onChange={(e) => e.target.value && run(() => api.setCategory(m.txn_id, e.target.value, 'merchant'))}
         className="mt-1.5 min-h-11 w-full rounded-lg border border-line bg-surface px-3 text-sm"
       >
         <option value="">Pick a category ({m.count} {m.count === 1 ? 'payment' : 'payments'})</option>

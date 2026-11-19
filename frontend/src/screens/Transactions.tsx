@@ -1,23 +1,24 @@
 import { useState } from 'react'
 
 import type { Txn } from '../api/types.ts'
+import { useSnapshot } from '../data/store.ts'
 import { currentMonth, dayKey, dayLabel, fullLabel } from '../lib/dates.ts'
-import { useApp, useLoad, useMonthTxns, useNav } from '../state.tsx'
-import { Button, CategoryTile, Empty, Icon, Loaded, Money, MonthSwitcher, RowButton, Section, Sheet } from '../ui.tsx'
+import { useApp, useNav } from '../state.tsx'
+import { Button, CategoryTile, Empty, Freshness, Icon, Loaded, Money, MonthSwitcher, RowButton, Section, Sheet } from '../ui.tsx'
+import { countsInSpent, labelName, matches, monthTxns } from './derive.ts'
 import { isCredit, nameOf, roleText, subtitle } from './common.ts'
-import { labelName, matches } from './derive.ts'
 
 export function Transactions() {
-  const { api } = useApp()
   const { view, month, replace } = useNav()
-  const [load, retry] = useMonthTxns(month)
-  const [cats] = useLoad(() => api.categories(), ['categories'])
-  const [labels] = useLoad(() => api.labels(), ['labels'])
+  const [load, retry] = useSnapshot()
+  const cats = load.status === 'ready' ? load.data.categories : []
+  const labels = load.status === 'ready' ? load.data.labels : []
   const field = 'min-h-11 w-full min-w-0 rounded-lg border border-line bg-surface px-3 text-sm text-ink'
   return (
     <>
       <div className="pt-2">
         <MonthSwitcher month={month} setMonth={(m) => replace({ month: m })} latest={currentMonth()} />
+        <Freshness />
       </div>
       <div className="space-y-2 px-4 pt-2">
         <label className="relative block">
@@ -36,7 +37,7 @@ export function Transactions() {
             Category
             <select className={field} value={view.category ?? ''} onChange={(e) => replace({ category: e.target.value || null })}>
               <option value="">All</option>
-              {cats.status === 'ready' && cats.data.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+              {cats.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
             </select>
           </label>
           <label className="min-w-0 text-xs text-muted">
@@ -47,15 +48,15 @@ export function Transactions() {
               onChange={(e) => replace({ label: e.target.value ? Number(e.target.value) : null })}
             >
               <option value="">All</option>
-              {labels.status === 'ready' && labels.data.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {labels.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </label>
         </div>
       </div>
       <Loaded load={load} retry={retry}>
-        {(txns) => (
+        {(s) => (
           <TxnList
-            txns={txns.filter(
+            txns={monthTxns(s, month).filter(
               (t) =>
                 (!view.category || t.category === view.category) &&
                 (view.label === null || t.label?.id === view.label) &&
@@ -75,9 +76,19 @@ export function Transactions() {
  */
 export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn[]; title?: string; empty?: string }) {
   const { view, open, back } = useNav()
-  const current = view.txn === null ? undefined : txns.find((t) => t.id === view.txn)
-  // A deep link to a transaction that is not in this list loads it by id.
-  const sheet = view.txn !== null && (current ? <TxnSheet txn={current} onClose={back} /> : <LoadedSheet id={view.txn} onClose={back} />)
+  const [load] = useSnapshot()
+  // A deep link to a transaction that is not in this list finds it in the whole snapshot.
+  const all = load.status === 'ready' ? load.data.transactions : []
+  const current = view.txn === null ? undefined : (txns.find((t) => t.id === view.txn) ?? all.find((t) => t.id === view.txn))
+  const sheet =
+    view.txn !== null &&
+    (current ? (
+      <TxnSheet txn={current} onClose={back} />
+    ) : (
+      <Sheet title="Transaction" onClose={back}>
+        <Empty>This transaction is not in your data.</Empty>
+      </Sheet>
+    ))
   if (!txns.length) {
     return (
       <>
@@ -124,19 +135,6 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
   )
 }
 
-function LoadedSheet({ id, onClose }: { id: number; onClose: () => void }) {
-  const { api } = useApp()
-  const [load, retry] = useLoad(() => api.transaction(id), ['txn', id])
-  if (load.status === 'ready') return <TxnSheet txn={load.data} onClose={onClose} />
-  return (
-    <Sheet title="Transaction" onClose={onClose}>
-      <Loaded load={load} retry={retry}>
-        {() => null}
-      </Loaded>
-    </Sheet>
-  )
-}
-
 type Step = { kind: 'detail' } | { kind: 'category' } | { kind: 'scope'; slug: string } | { kind: 'label' }
 
 function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
@@ -145,12 +143,11 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [newLabel, setNewLabel] = useState('')
-  const [catsLoad] = useLoad(() => api.categories(), ['categories'])
-  const [labelsLoad] = useLoad(() => api.labels(), ['labels'])
-  const cats = catsLoad.status === 'ready' ? catsLoad.data : []
-  const labels = labelsLoad.status === 'ready' ? labelsLoad.data : []
+  const [load] = useSnapshot()
+  const cats = load.status === 'ready' ? load.data.categories : []
+  const labels = load.status === 'ready' ? load.data.labels : []
   const rule = labelName(newLabel, labels.map((l) => l.name))
-  const counts = txn.role === 'spend' || txn.role === 'card_bill_counted' || txn.role === 'refund'
+  const counts = countsInSpent(txn)
 
   const run = async (write: () => Promise<unknown>) => {
     setBusy(true)
