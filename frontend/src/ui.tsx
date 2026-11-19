@@ -5,7 +5,23 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { moneyIn, rupees, rupeesExact } from './lib/money.ts'
 import { monthLabel, shiftMonth } from './lib/dates.ts'
 import { catColor, categoryIcon } from './screens/common.ts'
-import type { Load } from './state.tsx'
+import { freshnessLine, useData, type Load } from './data/store.ts'
+
+/** Under the month: "Updated 5 min ago", "Updating…", or "Offline · showing data from …". */
+export function Freshness() {
+  const data = useData()
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const line = data.snapshot ? freshnessLine(data, now) : ''
+  return (
+    <p className="min-h-5 px-4 text-center text-xs text-muted" role="status">
+      {line}
+    </p>
+  )
+}
 
 // Lucide icons (ISC, src/icons/LICENSE), copied as files: no icon package at runtime.
 const SVGS = import.meta.glob('./icons/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>

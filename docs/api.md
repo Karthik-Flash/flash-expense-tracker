@@ -28,6 +28,7 @@ owner's transaction, label or sender is "404 not found".
 
 | Method | Path | What |
 | ------ | ---- | ---- |
+| GET | `/api/v1/sync/snapshot` | Everything the app shows, in one document (below). ETag; 304 on If-None-Match |
 | GET | `/api/v1/summary?month=YYYY-MM` | The month in IST: Spent, Paid back (owner-confirmed only), To confirm, Net, Income, Spent by category, counts, stale flag, and `previous` (below) |
 | GET | `/api/v1/transactions?month=&category=&label=&cursor=&limit=` | Newest first, `limit` 1 to 200 (default 50); `next_cursor` for the next page |
 | GET | `/api/v1/transactions/{id}` | One transaction, the same item as in the list |
@@ -65,6 +66,34 @@ name the owner already has).
 - **Names** (a label, an income label): trimmed, inner runs of spaces joined
   into one, then 1 to 30 characters. The client applies the same rules
   (`frontend/src/screens/derive.ts`).
+
+## Snapshot (D-088)
+
+`GET /api/v1/sync/snapshot`, the app's only read. Send `Accept:
+application/json` (a waking Render answers browser-like requests with an
+HTML page) and, after the first answer, `If-None-Match: <ETag>`.
+
+| Field | What |
+| ----- | ---- |
+| `schema_version` | `1`. The app discards a copy of another version |
+| `generated_at` | UTC time of this answer (not part of the ETag) |
+| `owner_id`, `engine_versions` | Whose data, made with which engines |
+| `months[]` | Every IST month with transactions, oldest first: `month`; `summary` (exactly the `/summary` answer); `changes` (`spent_paise` and per category slug, against `summary.previous`); `chart` (`total_paise` and at most 6 slices plus one `slug: null` "Other (n)"); `merchants` (per category slug, `name`, `total_paise`, `count`, biggest first); `people` (the People ledger: `key`, `name`, `sent_paise`, `got_back_paise`, `to_confirm_paise`, `net_paise`) |
+| `transactions[]` | Every transaction item (below), newest first |
+| `todo` | `senders` (to confirm), `answered` (confirmed or ignored), `merchants` (uncategorised spending by name: `name`, `total_paise`, `count`, `txn_id`), `unnamed` |
+| `labels[]` | `/labels/{id}` for every label, by name |
+| `categories[]` | `/categories` |
+
+- **ETag**: `"<sha256>"` of the canonical JSON (sorted keys, no spaces)
+  without `generated_at`. The same data always gives the same ETag. A
+  matching `If-None-Match` answers 304 with no body.
+- **Gzip**: every answer of 1,000 bytes or more is gzipped when the client
+  accepts it. FAKE data, 704 transactions over 11 months: 230,686 bytes
+  raw, 11,918 gzipped (real data compresses less).
+- CORS allows the `If-None-Match` header and exposes `ETag`.
+- The People ledger keys a person by `person_id`, else `name:<shown name>`;
+  a name the bank did not give is "Bank transfer", "Bank transfer in" or
+  "Cash withdrawal", as in the app.
 
 ## Transaction item (fake values)
 

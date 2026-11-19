@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app import __version__
-from app.api import health, v1
+from app.api import health, snapshot, v1
 from app.config import settings
 
 VERCEL_ORIGIN = "https://flash-expense-tracker.vercel.app"
@@ -19,7 +20,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins(settings.cors_origin_list),
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "If-None-Match"],
+    expose_headers=["ETag"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(health.router)
 app.include_router(v1.router)
+app.include_router(snapshot.router)

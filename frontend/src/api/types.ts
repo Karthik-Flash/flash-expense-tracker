@@ -53,11 +53,6 @@ export interface Txn {
   label: { id: number; name: string } | null
 }
 
-export interface Page<T> {
-  items: T[]
-  next_cursor: string | null
-}
-
 export interface Category {
   slug: string
   name: string
@@ -102,10 +97,62 @@ export type SenderAnswer =
   | { answer: 'income'; label: string }
   | { answer: 'ignore' }
 
-export interface TxnQuery {
-  month?: string
-  category?: string
-  label?: number
-  cursor?: string
-  limit?: number
+// The snapshot (GET /api/v1/sync/snapshot, D-088): every figure the app shows, worked out by
+// the server. The app filters, sorts and searches it; it never adds up money.
+
+export const SCHEMA_VERSION = 1
+
+export interface Merchant {
+  name: string
+  total_paise: number
+  count: number
 }
+
+/** One row of the People ledger. Net = Sent - Got back; To confirm never lowers it. */
+export interface PersonRow {
+  key: string
+  name: string
+  sent_paise: number
+  got_back_paise: number
+  to_confirm_paise: number
+  net_paise: number
+}
+
+/** A ring slice; slug null is "Other", the categories after the biggest ones. */
+export interface ChartSlice {
+  slug: string | null
+  name: string
+  amount_paise: number
+}
+
+export interface MonthData {
+  month: string
+  summary: Summary
+  /** Against summary.previous: Spent, and each category of this month. */
+  changes: { spent_paise: number; categories: Record<string, number> }
+  chart: { total_paise: number; slices: ChartSlice[] }
+  /** Per category: "Paid to", biggest first. */
+  merchants: Record<string, Merchant[]>
+  people: PersonRow[]
+}
+
+export interface Snapshot {
+  schema_version: number
+  generated_at: string
+  owner_id: string
+  engine_versions: Record<string, string>
+  /** Every IST month with transactions, oldest first. */
+  months: MonthData[]
+  /** Newest first. */
+  transactions: Txn[]
+  todo: {
+    senders: Sender[]
+    answered: Sender[]
+    merchants: (Merchant & { txn_id: number })[]
+    unnamed: number
+  }
+  labels: LabelView[]
+  categories: Category[]
+}
+
+export type SnapshotAnswer = { status: 200; etag: string; snapshot: Snapshot; bytes: number } | { status: 304 }

@@ -1,15 +1,15 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { api, DEMO, demoApi } from './api/index.ts'
 import { DEMO_STATES, type DemoState } from './api/fake.ts'
 import { signIn, signOut, useAuth } from './auth.ts'
-import { AppContext, navigate, newSession, useApp, useLoad, useScrollMemory, useView, type AppState } from './state.tsx'
+import { clearData, refresh, startData, useSnapshot } from './data/store.ts'
+import { AppContext, navigate, useScrollMemory, useView, type AppState } from './state.tsx'
 import { CategoryDetail, Home } from './screens/Home.tsx'
 import { LabelDetail, Labels } from './screens/Labels.tsx'
 import { Login } from './screens/Login.tsx'
 import { Logos } from './screens/Logos.tsx'
 import { TodoScreen } from './screens/Todo.tsx'
-import { loadTodo } from './screens/todo-data.ts'
 import { Transactions } from './screens/Transactions.tsx'
 import { Button, Icon } from './ui.tsx'
 import { UpdateBar } from './update.ts'
@@ -44,17 +44,21 @@ export default function App() {
   const view = useView()
   const auth = useAuth()
   const [demoIn, setDemoIn] = useState(demoSignedIn)
-  const [version, setVersion] = useState(0)
-  const changed = useCallback(() => setVersion((v) => v + 1), [])
+  const changed = useCallback(() => void refresh(), [])
   const leave = useCallback(() => {
     if (!DEMO) return void signOut()
     setDemoSignedIn(false)
-    newSession()
+    void clearData()
     setDemoIn(false)
   }, [])
-  const state: AppState = useMemo(() => ({ api, version, changed, signOut: leave }), [version, changed, leave])
-  if (DEMO && view.tab === 'dev') return <Logos />
+  const state: AppState = useMemo(() => ({ api, changed, signOut: leave }), [changed, leave])
   const status = DEMO ? (demoIn ? 'in' : 'out') : auth.status
+  const user = DEMO ? 'demo' : auth.status === 'in' ? auth.user : null
+  // The phone copy of this login at once, then the server (D-089).
+  useEffect(() => {
+    if (status === 'in' && user) void startData(api, user)
+  }, [status, user])
+  if (DEMO && view.tab === 'dev') return <Logos />
   if (status === 'starting') return null
   return (
     <AppContext.Provider value={state}>
@@ -147,10 +151,9 @@ function Nav({ view }: { view: View }) {
 }
 
 function TodoCount() {
-  const { api: client } = useApp()
-  const [load] = useLoad(() => loadTodo(client), ['todo'])
+  const [load] = useSnapshot()
   if (load.status !== 'ready') return null
-  const n = load.data.senders.length + load.data.merchants.length
+  const n = load.data.todo.senders.length + load.data.todo.merchants.length
   if (!n) return null
   return (
     <span
@@ -164,7 +167,6 @@ function TodoCount() {
 
 /** Local dev with VITE_DEMO=1 only: "Demo data" on every screen, and the demo state switch. */
 function DemoBanner() {
-  const { changed } = useApp()
   const [current, setCurrent] = useState<DemoState>(demoApi?.state ?? 'normal')
   return (
     <div className="border-b border-line bg-banner">
@@ -178,8 +180,8 @@ function DemoBanner() {
               const next = e.target.value as DemoState
               demoApi?.setState(next)
               setCurrent(next)
-              newSession()
-              changed()
+              // A new session: "waking" shows "Starting up" again.
+              void clearData().then(() => startData(api, 'demo'))
             }}
             className="min-h-9 rounded border border-line bg-surface px-1 text-xs text-ink"
           >

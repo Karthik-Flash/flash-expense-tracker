@@ -1,24 +1,13 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+import { createContext, useContext, useLayoutEffect, useMemo, useSyncExternalStore } from 'react'
 
-import { allTransactions, type Api } from './api/client.ts'
-import type { Txn } from './api/types.ts'
+import type { Api } from './api/client.ts'
 import { currentMonth } from './lib/dates.ts'
 import { parentOf, parseHash, stack, toHash, type View } from './view.ts'
 
 export interface AppState {
+  /** Writes. Reads come from the snapshot (data/store.ts). */
   api: Api
-  /** Bumped after every write, so screens load again. */
-  version: number
+  /** After a saved write: refresh the snapshot. */
   changed: () => void
   signOut: () => void
 }
@@ -113,81 +102,4 @@ export function useScrollMemory(view: View): void {
     if (lastMove === 'pop') window.scrollTo(0, scrolls.get(base) ?? 0)
     else if (lastMove !== 'replace') window.scrollTo(0, 0)
   }, [base])
-}
-
-// Loading. Answers are kept for the session, so moving around the app shows loaded data
-// at once. A write bumps `version`: the old data stays on screen until the new arrives.
-
-export type Load<T> =
-  | { status: 'loading'; slow: boolean }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; data: T }
-
-// Only the session's first request can meet a sleeping server: "Starting up" after this long.
-const SLOW_MS = 3000
-const cache = new Map<string, { version: number; data: unknown }>()
-let answered = false
-
-/** Forget every answer, as at the start of a session (the demo state switch). */
-export function newSession(): void {
-  cache.clear()
-  answered = false
-}
-
-/** Keys name the data: the same keys must always mean the same load. */
-export function useLoad<T>(load: () => Promise<T>, keys: (string | number)[]): [Load<T>, () => void] {
-  const { version } = useApp()
-  const key = keys.join('|')
-  const [attempt, setAttempt] = useState(0)
-  const [failed, setFailed] = useState<{ id: string; message: string } | null>(null)
-  const [slowFor, setSlowFor] = useState('')
-  const [, rerender] = useReducer((n: number) => n + 1, 0)
-  const latest = useRef(load)
-  useEffect(() => {
-    latest.current = load
-  })
-  const hit = cache.get(key)
-  const fresh = hit?.version === version
-  const id = `${key}#${version}#${attempt}`
-  useEffect(() => {
-    if (fresh) return
-    let live = true
-    const timer = answered ? 0 : window.setTimeout(() => live && setSlowFor(id), SLOW_MS)
-    latest.current().then(
-      (data) => {
-        answered = true
-        if ((cache.get(key)?.version ?? -1) <= version) cache.set(key, { version, data })
-        if (live) rerender()
-      },
-      (error: unknown) => {
-        answered = true
-        if (live) setFailed({ id, message: error instanceof Error ? error.message : 'Something went wrong.' })
-      },
-    )
-    return () => {
-      live = false
-      window.clearTimeout(timer)
-    }
-  }, [key, id, version, fresh])
-  const retry = () => setAttempt((n) => n + 1)
-  let value: Load<T> = { status: 'loading', slow: slowFor === id && !answered }
-  if (failed?.id === id) value = { status: 'error', message: failed.message }
-  else if (hit) value = { status: 'ready', data: hit.data as T }
-  return [value, retry]
-}
-
-/** Several loads as one: an error first, then loading, else every answer. */
-export function joinLoads<T extends unknown[]>(...loads: { [K in keyof T]: Load<T[K]> }): Load<T> {
-  const all = loads as Load<unknown>[]
-  const error = all.find((l) => l.status === 'error')
-  if (error) return error
-  const waiting = all.filter((l) => l.status === 'loading')
-  if (waiting.length) return { status: 'loading', slow: waiting.some((l) => l.slow) }
-  return { status: 'ready', data: all.map((l) => (l as { data: unknown }).data) as T }
-}
-
-/** Every transaction of a month, shared by Home, category detail and Transactions. */
-export function useMonthTxns(month: string): [Load<Txn[]>, () => void] {
-  const { api } = useApp()
-  return useLoad(() => allTransactions(api, { month }), ['txns', month])
 }

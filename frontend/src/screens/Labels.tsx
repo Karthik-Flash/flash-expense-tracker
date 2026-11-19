@@ -1,8 +1,8 @@
 import { useState } from 'react'
 
-import { allTransactions } from '../api/client.ts'
+import { useSnapshot } from '../data/store.ts'
 import { percentOf, rupees } from '../lib/money.ts'
-import { joinLoads, useApp, useLoad, useNav } from '../state.tsx'
+import { useApp, useNav } from '../state.tsx'
 import { Bar, Button, CategoryTile, Empty, Figure, Header, Icon, Loaded, Money, RowButton, Section } from '../ui.tsx'
 import { labelName } from './derive.ts'
 import { TxnList } from './Transactions.tsx'
@@ -10,10 +10,10 @@ import { TxnList } from './Transactions.tsx'
 export function Labels() {
   const { api, changed } = useApp()
   const { open } = useNav()
-  const [load, retry] = useLoad(() => api.labels(), ['labels'])
+  const [load, retry] = useSnapshot()
   const [name, setName] = useState('')
   const [error, setError] = useState('')
-  const rule = labelName(name, load.status === 'ready' ? load.data.map((v) => v.name) : [])
+  const rule = labelName(name, load.status === 'ready' ? load.data.labels.map((v) => v.name) : [])
   const create = async () => {
     setError('')
     try {
@@ -29,7 +29,7 @@ export function Labels() {
       <Header title="Labels" />
       <p className="px-4 text-sm text-muted">A label groups payments across months, like a trip. It never changes a category.</p>
       <Loaded load={load} retry={retry}>
-        {(views) =>
+        {({ labels: views }) =>
           views.length === 0 ? (
             <Empty>No labels yet.</Empty>
           ) : (
@@ -79,22 +79,17 @@ export function Labels() {
 }
 
 export function LabelDetail({ id }: { id: number }) {
-  const { api } = useApp()
   const { back } = useNav()
-  const [view, retryView] = useLoad(() => api.label(id), ['label', id])
-  const [txns, retryTxns] = useLoad(() => allTransactions(api, { label: id }), ['label-txns', id])
-  const title = view.status === 'ready' ? view.data.name : 'Label'
+  const [load, retry] = useSnapshot()
+  const found = load.status === 'ready' ? load.data.labels.find((l) => l.id === id) : undefined
   return (
     <>
-      <Header title={title} back={back} />
-      <Loaded
-        load={joinLoads(view, txns)}
-        retry={() => {
-          retryView()
-          retryTxns()
-        }}
-      >
-        {([v, rows]) => {
+      <Header title={found?.name ?? 'Label'} back={back} />
+      <Loaded load={load} retry={retry}>
+        {(s) => {
+          if (!found) return <Empty>This label is not in your data.</Empty>
+          const v = found
+          const rows = s.transactions.filter((t) => t.label?.id === id)
           const parts = [...v.categories].sort((a, b) => b.amount_paise - a.amount_paise)
           return (
             <>

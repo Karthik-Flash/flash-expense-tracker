@@ -19,6 +19,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 import app.models  # noqa: E402,F401  (registers tables)
 from app import cli  # noqa: E402
 from app.db import Base  # noqa: E402
+from tests.apiclient import client, data, jwks  # noqa: E402,F401  (API fixtures)
 from tests.smsdata import full_rows, write_backup  # noqa: E402
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")

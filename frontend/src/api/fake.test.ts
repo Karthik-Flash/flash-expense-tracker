@@ -1,89 +1,97 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { allTransactions, ApiError, spentEffect } from './client.ts'
+import { ApiError } from './client.ts'
 import { FakeApi } from './fake.ts'
+import type { Snapshot } from './types.ts'
 
-test('demo month: the breakdown adds up to Spent, Net = Spent - Paid back', async () => {
-  const api = new FakeApi()
-  for (const month of ['2026-10', '2026-11']) {
-    const s = await api.summary(month)
-    assert.equal(s.categories.reduce((sum, c) => sum + c.amount_paise, 0), s.spent_paise)
-    assert.equal(s.net_paise, s.spent_paise - s.paid_back_paise)
-    assert.ok(s.to_confirm.amount_paise > 0 && s.to_confirm.senders > 0)
-    const txns = await allTransactions(api, { month })
-    assert.equal(txns.reduce((sum, t) => sum + spentEffect(t), 0), s.spent_paise)
-    assert.ok(txns.every((t) => Number.isInteger(t.amount_paise) && t.time_utc.endsWith('Z')))
+const signal = new AbortController().signal
+
+async function read(api: FakeApi): Promise<Snapshot> {
+  const answer = await api.snapshot(null, signal)
+  assert.equal(answer.status, 200)
+  return (answer as { snapshot: Snapshot }).snapshot
+}
+
+const month = (s: Snapshot, m: string) => s.months.find((x) => x.month === m)!
+
+test('demo snapshot: the server figures add up like the real one', async () => {
+  const s = await read(new FakeApi())
+  assert.deepEqual(s.months.map((m) => m.month), ['2026-10', '2026-11'])
+  for (const m of s.months) {
+    const sum = m.summary
+    assert.equal(sum.categories.reduce((total, c) => total + c.amount_paise, 0), sum.spent_paise)
+    assert.equal(sum.net_paise, sum.spent_paise - sum.paid_back_paise)
+    assert.ok(sum.to_confirm.amount_paise > 0 && sum.to_confirm.senders > 0)
+    for (const c of sum.categories.filter((x) => x.slug !== 'people')) {
+      assert.equal(m.merchants[c.slug].reduce((total, g) => total + g.total_paise, 0), c.amount_paise)
+    }
+    assert.equal(m.people.reduce((total, p) => total + p.to_confirm_paise, 0), sum.to_confirm.amount_paise)
+    assert.equal(m.chart.slices.reduce((total, x) => total + x.amount_paise, 0), m.chart.total_paise)
   }
-  const empty = await api.summary('2026-12')
-  assert.deepEqual([empty.spent_paise, empty.categories.length], [0, 0])
+  assert.ok(s.transactions.every((t) => Number.isInteger(t.amount_paise) && t.time_utc.endsWith('Z')))
+  assert.ok(s.transactions.every((t, i, all) => i === 0 || all[i - 1].time_utc >= t.time_utc))
+  assert.ok(s.todo.merchants.length > 0 && s.todo.senders.length > 0)
 })
 
-test('pages follow the cursor without repeats', async () => {
+test('the same data gives 304', async () => {
   const api = new FakeApi()
-  const all = await allTransactions(api, { month: '2026-11' })
-  const first = await api.transactions({ month: '2026-11', limit: 10 })
-  assert.equal(first.items.length, 10)
-  const second = await api.transactions({ month: '2026-11', limit: 10, cursor: first.next_cursor ?? '' })
-  assert.deepEqual([...first.items, ...second.items].map((t) => t.id), all.slice(0, 20).map((t) => t.id))
+  const first = await api.snapshot(null, signal)
+  assert.equal(first.status, 200)
+  const etag = (first as { etag: string }).etag
+  assert.deepEqual(await api.snapshot(etag, signal), { status: 304 })
+  await api.createLabel('Test Fest')
+  assert.equal((await api.snapshot(etag, signal)).status, 200)
 })
 
-test('answers change the totals the way the API does', async () => {
+test('answers change the snapshot the way the API does', async () => {
   const api = new FakeApi()
-  const before = await api.summary('2026-11')
-  const open = await api.senders('to_confirm')
-  const friend = open.find((s) => s.display_name === 'Arjun K')!
+  const before = await read(api)
+  const friend = before.todo.senders.find((s) => s.display_name === 'Arjun K')!
   await api.answerSender(friend.id, { answer: 'friend' })
-  const after = await api.summary('2026-11')
-  assert.equal(after.paid_back_paise, before.paid_back_paise + 80000)
-  assert.equal(after.net_paise, before.net_paise - 80000)
+  const after = await read(api)
+  assert.equal(month(after, '2026-11').summary.paid_back_paise, month(before, '2026-11').summary.paid_back_paise + 80000)
 
-  const vending = (await allTransactions(api, { category: 'uncategorised' })).find(
-    (t) => t.display_name === 'Vendmart Block B',
-  )!
-  await api.setCategory(vending.id, 'food_drinks', 'merchant')
-  const left = await allTransactions(api, { category: 'uncategorised' })
-  assert.ok(!left.some((t) => t.display_name === 'Vendmart Block B'))
+  const vending = before.todo.merchants.find((m) => m.name === 'Vendmart Block B')!
+  await api.setCategory(vending.txn_id, 'food_drinks', 'merchant')
+  assert.ok(!(await read(api)).todo.merchants.some((m) => m.name === 'Vendmart Block B'))
 
   const made = await api.createLabel('Test Fest')
   await assert.rejects(api.createLabel(' test  FEST '), (e: ApiError) => e.status === 409)
-  await api.setLabel(vending.id, made.id)
-  assert.equal((await api.label(made.id)).transactions, 1)
-  await api.clearLabel(vending.id)
-  assert.equal((await api.label(made.id)).transactions, 0)
+  await api.setLabel(vending.txn_id, made.id)
+  assert.equal((await read(api)).labels.find((l) => l.id === made.id)?.transactions, 1)
+  await api.clearLabel(vending.txn_id)
+  assert.equal((await read(api)).labels.find((l) => l.id === made.id)?.transactions, 0)
 })
 
 test('ignored senders, a reset, and the income label', async () => {
   const api = new FakeApi()
-  const [first, second] = await api.senders('to_confirm')
+  const [first, second] = (await read(api)).todo.senders
   await api.answerSender(first.id, { answer: 'ignore' })
   await api.answerSender(second.id, { answer: 'income', label: ' Pocket   money ' })
-  assert.deepEqual((await api.senders('ignored')).map((s) => s.id), [first.id])
-  const income = (await api.senders('confirmed')).find((s) => s.id === second.id)!
-  assert.equal(income.income_label, 'Pocket money')
+  const answered = (await read(api)).todo.answered
+  assert.equal(answered.find((s) => s.id === first.id)?.status, 'ignored')
+  assert.equal(answered.find((s) => s.id === second.id)?.income_label, 'Pocket money')
   await api.resetSender(first.id)
   await api.resetSender(second.id)
-  const open = (await api.senders('to_confirm')).map((s) => s.id)
+  const open = (await read(api)).todo.senders.map((s) => s.id)
   assert.ok(open.includes(first.id) && open.includes(second.id))
-  const one = (await api.transactions({ month: '2026-11', limit: 1 })).items[0]
-  assert.deepEqual(await api.transaction(one.id), one)
 })
 
-test('previous month: whole for a past month', async () => {
-  const api = new FakeApi()
-  const october = await api.summary('2026-10')
-  const november = await api.summary('2026-11')
-  assert.equal(november.previous.month, '2026-10')
-  assert.ok(november.previous.whole || november.previous.spent_paise <= october.spent_paise)
-  assert.deepEqual((await api.summary('2026-12')).previous.spent_paise, november.spent_paise)
+test('previous month and changes', async () => {
+  const s = await read(new FakeApi())
+  const november = month(s, '2026-11')
+  assert.equal(november.summary.previous.month, '2026-10')
+  assert.equal(november.changes.spent_paise, november.summary.spent_paise - november.summary.previous.spent_paise)
 })
 
 test('demo states', async () => {
   const api = new FakeApi()
   api.setState('error')
-  await assert.rejects(api.summary('2026-11'), /not ready/)
+  await assert.rejects(api.snapshot(null, signal), /not ready/)
   api.setState('stale')
-  assert.equal((await api.summary('2026-11')).stale, true)
+  assert.equal(month(await read(api), '2026-11').summary.stale, true)
   api.setState('empty')
-  assert.equal((await api.summary('2026-11')).spent_paise, 0)
+  const empty = await read(api)
+  assert.deepEqual([empty.months.length, empty.transactions.length], [0, 0])
 })

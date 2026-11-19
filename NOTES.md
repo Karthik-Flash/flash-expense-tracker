@@ -21,7 +21,8 @@ Quick reference and progress log. Updated after every task.
 HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
 Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
 `phase-1-done`, `phase-2-done`. **Phase 3 done** (18 Nov 2026). **Phase 4 in
-progress**: 4C (install and update prompt) done 19 Nov; next 4B. A one-page tour:
+progress**: 4C (install and update prompt) and 4B-1 (phone copy) done
+19 Nov; next 4B-2. A one-page tour:
 [docs/OVERVIEW.md](docs/OVERVIEW.md).
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
@@ -152,7 +153,7 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
   |      SUPABASE_URL, AUTH_USERS, PYTHON_VERSION       |
   | Sleeps after 15 min idle; cold start ~50 s          |
   | Kept awake 07:00-00:50 IST by cron-job.org          |
-  | GET /health every 10 min (no database)              |
+  | GET /health every 10 min, Accept: application/json  |
   +-----------------------------------------------------+
                                    |
                                    | 3. Postgres over TLS (sslmode=require)
@@ -228,7 +229,8 @@ and never woke, so every run failed.
 
 A second cron-job.org job, "Flash API warm 07-01 IST", keeps Render awake in
 the hours the owner uses the app: `GET https://flash-expense-tracker.onrender.com/health`
-every 10 minutes from 07:00 to 00:50 IST (hours 07 to 23 and 00). `/health`
+every 10 minutes from 07:00 to 00:50 IST (hours 07 to 23 and 00), with the
+header `Accept: application/json`. `/health`
 never touches the database (`backend/app/api/health.py`). It uses about 560
 of Render's 750 free hours a month. The 03:30 IST Supabase heartbeat above
 is unchanged and still the only thing that keeps Supabase from pausing.
@@ -373,6 +375,20 @@ cd backend; .\.venv\Scripts\python.exe -m pytest -q; cd ..
 backend\.venv\Scripts\python.exe -m pytest -q scripts
 cd frontend; npm run lint; npm run typecheck; npm test; npm run build; cd ..
 ```
+
+### Phone copy and speed (4B-1)
+
+- The app opens from its copy on the phone and refreshes in the
+  background; the line under the month says how fresh it is ("Updated 5
+  min ago", "Offline · showing data from …").
+- Tap the version line on Home for the Speed sheet: the last launches,
+  measured on the phone (targets: 2 s from the phone copy, 5 s for fresh
+  data with the server awake). Paste only those numbers to the planner.
+- Sign out deletes the copy. Another login never sees it.
+- Check the snapshot by hand (needs a token, so normally the app does it):
+  `curl -H "Authorization: Bearer <token>" -H "Accept: application/json"
+  --compressed https://flash-expense-tracker.onrender.com/api/v1/sync/snapshot`
+  never paste its output (real data).
 
 ### Which build is on the phone
 
@@ -668,10 +684,13 @@ gh repo view --web                                # open the repo in the browser
 
 ## Open items
 
-1. Bank statement check: one normal and one messy month against the
-   statement, "match" or the difference in rupees (Phase 4, step 4A).
-2. Joining one person seen under a name and a UPI ID, in the app. Today only
-   the owner file can list both texts on one party (D-079; step 4E).
+1. Bank statement check (step 4A): one normal and one messy month against
+   the statement, "match" or the difference in rupees. 4A also settles the
+   unticked "merged refund" check in NOTES (one event or two, D-064).
+2. Joining one person seen under a name and a UPI ID, in the app (step 4E).
+   Today only the owner file can list both texts on one party (D-079). 4E
+   gives each To-do sender card "See payments", "Name this person" and
+   "Same as…" (the person join).
 3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
 4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
    Post, Kotak, PhonePe; add a parser, then reparse; step 4F) and 44
@@ -680,12 +699,13 @@ gh repo view --web                                # open the repo in the browser
    bill and uncategorised); icons and names carry identity (D-081).
 6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.
    The 4C update bar and version line were checked at 360 px, light, dark
-   and 200 % in headless Edge only, not on a phone.
-7. npm audit: 4 moderate findings, build-time only: glob 11.1.0
-   (GHSA-3g3m-2fjr-6pw4) and minimatch 10.2.6 and 5.1.9
+   and 200 % in headless Edge only; the 4B-1 screens in headless Edge at
+   390 px on demo data. Speed sheet timings on a real phone are still to come.
+7. Accepted risk: npm audit, 4 moderate findings, build-time only: glob
+   11.1.0 (GHSA-3g3m-2fjr-6pw4) and minimatch 10.2.6 and 5.1.9
    (GHSA-g3hv-75wg-m249), via vite-plugin-pwa 2.0.0 and workbox-build 7.4.1,
-   both the newest releases. No patched glob or minimatch exists in the same
-   major, so no override; `npm audit fix --force` would downgrade the plugin.
+   the newest releases. No patched release in the same major, so no
+   override. Recheck when Workbox ships a fix; never `npm audit fix --force`.
 8. The labels column allows 80 characters, the API 30; owner-file labels
    may be longer than the app allows (step 4E).
 9. The Supabase free plan has no backups; the owner runs
@@ -695,6 +715,9 @@ gh repo view --web                                # open the repo in the browser
 11. The owner doubts the October People total: verify it person by person.
 12. Vercel: `VITE_API_URL` is saved as a Secret. The owner changes it to a
     plain variable and redeploys with the build cache off.
+13. Offline taps are not queued yet: owner actions need a connection
+    (step 4B-2).
+14. Later list: a friendlier Home, still minimal; revisit with 4D.
 
 Known limits: HDFC and INR only; the card bill pair rule waits for credit
 card SMS; the server sleeps when idle (about a minute to wake; kept awake
@@ -713,6 +736,19 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-19: Phase 4B-1, phone copy and instant open
+
+- `GET /api/v1/sync/snapshot` (D-088): every figure from the same functions
+  as the other routes, ETag, 304, gzip. The server now also works out the
+  merchant groups, People ledger, ring, changes and To-do merchants that
+  the app used to add up. FAKE year: 704 transactions, 230,686 bytes raw,
+  11,918 gzipped, 0.13 s to build on SQLite.
+- Phone copy in IndexedDB (D-089, `idb` 8.0.4), freshness line, offline
+  message for owner actions, Speed sheet (D-090). API test helpers moved to
+  `backend/tests/apiclient.py`.
+- Tests: backend 696 on SQLite (3 Postgres-only skipped), frontend 46; demo checked in headless Edge
+  at 390 px (reload drew Home from the copy in 96 ms, then 304). Not pushed.
 
 ### 2026-11-19: Phase 4C, install and update prompt
 

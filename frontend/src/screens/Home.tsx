@@ -1,22 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import type { Summary, Txn } from '../api/types.ts'
+import type { Merchant, MonthData, PersonRow, Summary, Txn } from '../api/types.ts'
 import { Wordmark } from '../brand.tsx'
+import { noteHomeDrawn, useSnapshot } from '../data/store.ts'
 import { currentMonth, monthLabel } from '../lib/dates.ts'
 import { percentOf, rupees } from '../lib/money.ts'
 import { HOME } from '../view.ts'
-import { joinLoads, navigate, useApp, useLoad, useMonthTxns, useNav } from '../state.tsx'
-import { Bar, CategoryTile, Empty, Figure, Header, Icon, Loaded, Money, MonthSwitcher, Notice, RowButton, Section } from '../ui.tsx'
+import { navigate, useApp, useNav } from '../state.tsx'
+import { Bar, CategoryTile, Empty, Figure, Freshness, Header, Icon, Loaded, Money, MonthSwitcher, Notice, RowButton, Section } from '../ui.tsx'
 import { nameOf } from './common.ts'
-import { byName, isPersonTxn, ledger, personKey } from './derive.ts'
+import { isPersonTxn, monthData, monthTxns, personKey } from './derive.ts'
 import { Ring } from './Ring.tsx'
+import { SpeedSheet } from './Speed.tsx'
 import { TxnList } from './Transactions.tsx'
 
 export function Home() {
-  const { api, signOut } = useApp()
+  const { signOut } = useApp()
   const { month, replace } = useNav()
-  const [summary, retrySummary] = useLoad(() => api.summary(month), ['summary', month])
-  const [txns, retryTxns] = useMonthTxns(month)
+  const [load, retry] = useSnapshot()
+  const [speed, setSpeed] = useState(false)
   return (
     <>
       <header className="flex min-h-14 items-center justify-between gap-2 px-4 pt-2">
@@ -24,24 +26,32 @@ export function Home() {
           <Wordmark height={22} />
         </h1>
         <div className="flex min-w-0 items-center gap-1">
-          <span className="min-w-0 text-right text-xs text-muted">{__VERSION_LINE__}</span>
+          <button type="button" onClick={() => setSpeed(true)} className="min-h-11 min-w-0 text-right text-xs text-muted">
+            {__VERSION_LINE__}
+          </button>
           <button type="button" onClick={signOut} className="-mr-3 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted" aria-label="Sign out">
             <Icon name="log-out" />
           </button>
         </div>
       </header>
       <MonthSwitcher month={month} setMonth={(m) => replace({ month: m })} latest={currentMonth()} />
-      <Loaded
-        load={joinLoads(summary, txns)}
-        retry={() => {
-          retrySummary()
-          retryTxns()
+      <Freshness />
+      <Loaded load={load} retry={retry}>
+        {(s) => {
+          const m = monthData(s, month)
+          return m ? <SummaryView m={m} txns={monthTxns(s, month)} /> : <Empty>Nothing recorded in {monthLabel(month)}.</Empty>
         }}
-      >
-        {([s, mine]) => <SummaryView s={s} txns={mine} />}
       </Loaded>
+      {load.status === 'ready' && <Drawn />}
+      {speed && <SpeedSheet onClose={() => setSpeed(false)} />}
     </>
   )
+}
+
+/** Tells the launch timing that Home is on screen (D-090). */
+function Drawn() {
+  useEffect(noteHomeDrawn, [])
+  return null
 }
 
 /** "Spent ₹1,240 less than this time last month". Past months compare whole months. */
@@ -51,9 +61,9 @@ function comparison(diff: number, before: Summary['previous']): string {
   return `Spent ${rupees(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than ${than}`
 }
 
-function change(now: number, before: number): string {
+/** A category against last month: the server's difference, "new" when it had none then. */
+function change(diff: number, before: number): string {
   if (!before) return 'new'
-  const diff = now - before
   if (Math.abs(diff) < 50) return 'same'
   return `${rupees(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'}`
 }
@@ -88,7 +98,8 @@ function ViewSwitch({ value, onChange }: { value: Mode; onChange: (m: Mode) => v
   )
 }
 
-function SummaryView({ s, txns }: { s: Summary; txns: Txn[] }) {
+function SummaryView({ m, txns }: { m: MonthData; txns: Txn[] }) {
+  const s: Summary = m.summary
   const { view, open } = useNav()
   const [mode, pick] = useState<Mode>(savedMode)
   const setMode = (m: Mode) => {
@@ -114,7 +125,7 @@ function SummaryView({ s, txns }: { s: Summary; txns: Txn[] }) {
           <span className="whitespace-nowrap">Spent {rupees(s.spent_paise)}</span> ·{' '}
           <span className="whitespace-nowrap">Paid back {rupees(s.paid_back_paise)}</span>
         </p>
-        {compared && <p className="mt-1 text-sm text-muted">{comparison(s.spent_paise - s.previous.spent_paise, s.previous)}</p>}
+        {compared && <p className="mt-1 text-sm text-muted">{comparison(m.changes.spent_paise, s.previous)}</p>}
       </div>
       {s.to_confirm.amount_paise > 0 && (
         <Section>
@@ -133,7 +144,7 @@ function SummaryView({ s, txns }: { s: Summary; txns: Txn[] }) {
       </div>
       {parts.length === 0 && <Empty>No spending this month.</Empty>}
       {parts.length > 0 && mode === 'chart' && (
-        <Ring parts={parts} spent={s.spent_paise} onOpen={(slug) => open({ path: ['category', slug] })} onOther={() => setMode('list')} />
+        <Ring chart={m.chart} spent={s.spent_paise} onOpen={(slug) => open({ path: ['category', slug] })} onOther={() => setMode('list')} />
       )}
       {parts.length > 0 && mode === 'list' && (
         <>
@@ -151,7 +162,7 @@ function SummaryView({ s, txns }: { s: Summary; txns: Txn[] }) {
                   <span className="mt-1.5 flex items-center gap-3">
                     <Bar slug={p.slug} share={s.spent_paise > 0 ? p.amount_paise / s.spent_paise : 0} />
                     {compared && (
-                      <span className="shrink-0 text-xs whitespace-nowrap text-muted tabular-nums">{change(p.amount_paise, base.get(p.slug) ?? 0)}</span>
+                      <span className="shrink-0 text-xs whitespace-nowrap text-muted tabular-nums">{change(m.changes.categories[p.slug] ?? 0, base.get(p.slug) ?? 0)}</span>
                     )}
                   </span>
                 </span>
@@ -175,34 +186,35 @@ function SummaryView({ s, txns }: { s: Summary; txns: Txn[] }) {
  * a merchant name, or for People a person key (derive.ts personKey).
  */
 export function CategoryDetail({ slug, name }: { slug: string; name?: string }) {
-  const { api } = useApp()
   const { month, back } = useNav()
-  const [load, retry] = useMonthTxns(month)
-  const [cats] = useLoad(() => api.categories(), ['categories'])
-  const title = (cats.status === 'ready' && cats.data.find((c) => c.slug === slug)?.name) || 'Category'
+  const [load, retry] = useSnapshot()
+  const s = load.status === 'ready' ? load.data : null
+  const title = s?.categories.find((c) => c.slug === slug)?.name || 'Category'
   const people = slug === 'people'
-  const person = people && name !== undefined && load.status === 'ready' ? load.data.find((t) => personKey(t) === name) : undefined
-  const heading = name === undefined ? title : people ? (person ? nameOf(person) : 'Person') : name
+  const m = s ? monthData(s, month) : undefined
+  const person = people && name !== undefined ? m?.people.find((p) => p.key === name) : undefined
+  const heading = name === undefined ? title : people ? (person?.name ?? 'Person') : name
   return (
     <>
       <Header title={heading} back={back} lead={<CategoryTile slug={slug} />} />
       <p className="px-4 text-sm text-muted">{name !== undefined ? `${title} · ` : ''}{monthLabel(month)}</p>
       <Loaded load={load} retry={retry}>
-        {(txns) => {
-          if (people && name !== undefined) return <PersonView name={heading} txns={txns.filter((t) => isPersonTxn(t) && personKey(t) === name)} />
-          if (people) return <Ledger txns={txns} />
-          const mine = txns.filter((t) => t.category === slug)
-          if (name !== undefined) return <TxnList txns={mine.filter((t) => nameOf(t) === name)} />
-          return <Merchants txns={mine} slug={slug} />
+        {(snap) => {
+          const txns = monthTxns(snap, month)
+          if (people && name !== undefined) {
+            return <PersonView name={heading} row={person} txns={txns.filter((t) => isPersonTxn(t) && personKey(t) === name)} />
+          }
+          if (people) return <Ledger rows={m?.people ?? []} />
+          if (name !== undefined) return <TxnList txns={txns.filter((t) => t.category === slug && nameOf(t) === name)} />
+          return <Merchants rows={m?.merchants[slug] ?? []} slug={slug} />
         }}
       </Loaded>
     </>
   )
 }
 
-function Merchants({ txns, slug }: { txns: Txn[]; slug: string }) {
+function Merchants({ rows, slug }: { rows: Merchant[]; slug: string }) {
   const { open } = useNav()
-  const rows = byName(txns)
   if (!rows.length) return <Empty>Nothing in this category this month.</Empty>
   return (
     <Section title="Paid to">
@@ -212,7 +224,7 @@ function Merchants({ txns, slug }: { txns: Txn[]; slug: string }) {
             <span className="block truncate">{g.name}</span>
             <span className="text-xs text-muted">{g.count} {g.count === 1 ? 'payment' : 'payments'}</span>
           </span>
-          <Money paise={g.total} />
+          <Money paise={g.total_paise} />
         </RowButton>
       ))}
     </Section>
@@ -220,9 +232,8 @@ function Merchants({ txns, slug }: { txns: Txn[]; slug: string }) {
 }
 
 /** People: what went to each person and what came back. Money in is not part of Spent. */
-function Ledger({ txns }: { txns: Txn[] }) {
+function Ledger({ rows }: { rows: PersonRow[] }) {
   const { open } = useNav()
-  const rows = ledger(txns)
   if (!rows.length) return <Empty>No money to or from people this month.</Empty>
   return (
     <>
@@ -233,12 +244,12 @@ function Ledger({ txns }: { txns: Txn[] }) {
               <span className="flex items-baseline gap-3">
                 <span className="min-w-0 flex-1 truncate">{p.name}</span>
                 <span className="shrink-0 text-xs text-muted">Net</span>
-                <Money paise={p.sent - p.got} />
+                <Money paise={p.net_paise} />
               </span>
               <span className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted tabular-nums">
-                <span className="whitespace-nowrap">Sent {rupees(p.sent)}</span>
-                <span className="whitespace-nowrap">Got back {rupees(p.got)}</span>
-                {p.toConfirm > 0 && <span className="whitespace-nowrap">To confirm {rupees(p.toConfirm)}</span>}
+                <span className="whitespace-nowrap">Sent {rupees(p.sent_paise)}</span>
+                <span className="whitespace-nowrap">Got back {rupees(p.got_back_paise)}</span>
+                {p.to_confirm_paise > 0 && <span className="whitespace-nowrap">To confirm {rupees(p.to_confirm_paise)}</span>}
               </span>
             </span>
           </RowButton>
@@ -251,17 +262,17 @@ function Ledger({ txns }: { txns: Txn[] }) {
   )
 }
 
-function PersonView({ name, txns }: { name: string; txns: Txn[] }) {
-  const p = ledger(txns)[0] ?? { sent: 0, got: 0, toConfirm: 0 }
+function PersonView({ name, row, txns }: { name: string; row: PersonRow | undefined; txns: Txn[] }) {
+  const p = row ?? { sent_paise: 0, got_back_paise: 0, to_confirm_paise: 0, net_paise: 0 }
   return (
     <>
       <div className="mx-4 mt-3 flex flex-wrap gap-x-6 gap-y-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm tabular-nums">
-        <Figure term="Sent" paise={p.sent} />
-        <Figure term="Got back" paise={p.got} credit={p.got > 0} />
-        {p.toConfirm > 0 && <Figure term="To confirm" paise={p.toConfirm} credit />}
-        <Figure term="Net" paise={p.sent - p.got} />
+        <Figure term="Sent" paise={p.sent_paise} />
+        <Figure term="Got back" paise={p.got_back_paise} credit={p.got_back_paise > 0} />
+        {p.to_confirm_paise > 0 && <Figure term="To confirm" paise={p.to_confirm_paise} credit />}
+        <Figure term="Net" paise={p.net_paise} />
       </div>
-      {p.got + p.toConfirm > 0 && <p className="px-4 pt-2 text-xs text-muted">Money in from {name} is marked +. It is not part of Spent.</p>}
+      {(p.got_back_paise > 0 || p.to_confirm_paise > 0) && <p className="px-4 pt-2 text-xs text-muted">Money in from {name} is marked +. It is not part of Spent.</p>}
       <TxnList txns={txns} empty={`Nothing with ${name} this month.`} />
     </>
   )

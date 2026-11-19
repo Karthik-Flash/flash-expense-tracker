@@ -1,8 +1,8 @@
 # Overview
 
 A one-page tour of Flash Expense Tracker for someone new to the project. It
-links to the detailed documents instead of repeating them. State: end of
-Phase 3 (18 Nov 2026).
+links to the detailed documents instead of repeating them. State: Phase 4
+in progress (19 Nov 2026).
 
 ## What it does and for whom
 
@@ -50,9 +50,12 @@ redacted sample (D-008, D-015, D-048). Setup and runbook:
 8. **Stored result.** `recompute` writes roles, links and categories to the
    derived tables in one go (D-066).
    [design/phase-3-backbone.md](design/phase-3-backbone.md)
-9. **API.** `/api/v1` sums the stored results for a month in IST
-   ([api.md](api.md), D-078).
-10. **Screen.** The app shows them and sends the owner's answers back.
+9. **API.** `/api/v1` sums the stored results for each IST month and
+   sends everything the app shows as one snapshot ([api.md](api.md),
+   D-078, D-088).
+10. **Screen.** The phone keeps the snapshot and opens from it at once,
+    then refreshes; it shows the server's figures and never adds up
+    money itself. Answers go back to the server (D-089).
 
 ## Derived data and owner data
 
@@ -112,7 +115,7 @@ Every category has a muted colour and an icon tile; Home offers a list and a
 ring chart. Everything on screen is in the URL, so Back and reload behave.
 Full rules: [ui-spec.md](ui-spec.md).
 
-## Known limits at the end of Phase 3
+## Known limits (Phase 4)
 
 - The check against a bank statement (one normal, one messy month) is still
   open; it is the first item of Phase 4.
@@ -121,5 +124,8 @@ Full rules: [ui-spec.md](ui-spec.md).
 - Data ends at the 14 Nov 2026 export; live SMS on the phone is Phase 5.
 - One person seen under a name and a UPI ID shows twice until they are
   joined in the owner file; the app cannot join them yet.
-- The server sleeps when idle and can take about a minute to wake.
+- The server sleeps when idle and can take about a minute to wake; a
+  cron job keeps it awake 07:00 to 00:50 IST, and the phone copy shows
+  meanwhile.
+- Owner answers need a connection; queued taps come in 4B-2.
 - Open items in full: [HANDOFF.md](HANDOFF.md#open-items).
