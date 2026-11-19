@@ -4,6 +4,20 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 4B-3: offline boot (20 Nov 2026)
+
+- The app never opens blank. Signed in on this phone, the phone copy shows
+  at once (about 0.1 s in the boot checks), offline too and with an expired
+  session; the token refresh runs in the background (D-095).
+- A refused session or a 401 keeps the data and the waiting changes and
+  shows "Not synced" and "Sign in to sync"; the same login keeps them.
+- Offline login says "You're offline. Connect to sign in."
+- An error boundary ("Something went wrong", Reload, Copy details), a 3 s
+  boot watchdog, and a "Flash could not start" page in `index.html` when
+  the app's code fails to load.
+- The Speed sheet shows the boot path, the time to the first screen, the
+  last 5 boot errors, and a Boot column.
+
 ## Phase 4B-2: offline queue for owner actions (19 Nov 2026)
 
 - Every owner action goes through an outbox on the phone (IndexedDB v2):

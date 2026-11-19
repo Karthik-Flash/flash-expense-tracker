@@ -121,4 +121,6 @@ taps would run 20 full recomputes. So:
   screen and **keeps** the phone copy and the outbox on the device. The same
   login picks them up again; a different login wipes them first (D-089).
   Safer reading of "never drop ops on 401"; reported to the planner.
+  Since 4B-3 (D-095) a 401 or a refused session no longer leaves the data:
+  the screen stays, with "Sign in to sync"; the tap opens the login.
 - An update reload waits up to 10 s for an op in `sending`.

@@ -124,6 +124,7 @@ test('a failed refresh keeps the data and says Offline', async () => {
   await until(() => !dataState().refreshing)
   assert.equal(monthData(dataState().snapshot!, '2026-11')?.summary.spent_paise, 1234)
   assert.equal(freshnessLine(dataState()), 'Offline · showing data from 5 min ago')
+  assert.equal(freshnessLine(dataState(), Date.now(), true), 'Not synced · showing data from 5 min ago')
 })
 
 test('a 200 replaces the copy; sign-out wipes it', async () => {
@@ -203,11 +204,11 @@ test('freshness in IST', () => {
 
 test('Speed sheet rows from stored timings', () => {
   const rows = speedRows([
-    { at: Date.parse('2026-11-19T03:00:00Z'), local_ms: 412, fresh_ms: 3250, request_ms: 2800, result: '200', bytes: 1, cold: false },
+    { at: Date.parse('2026-11-19T03:00:00Z'), local_ms: 412, fresh_ms: 3250, request_ms: 2800, result: '200', bytes: 1, cold: false, boot: 'local copy' },
     { at: Date.parse('2026-11-18T16:10:00Z'), local_ms: null, fresh_ms: null, request_ms: 90000, result: 'timeout', bytes: null, cold: true },
   ])
   assert.deepEqual(rows, [
-    { when: 'Thu 19 Nov 08:30', local: '412 ms', fresh: '3.3 s', result: '200' },
-    { when: 'Wed 18 Nov 21:40', local: '–', fresh: '–', result: 'timeout, cold' },
+    { when: 'Thu 19 Nov 08:30', boot: 'local copy', local: '412 ms', fresh: '3.3 s', result: '200' },
+    { when: 'Wed 18 Nov 21:40', boot: '–', local: '–', fresh: '–', result: 'timeout, cold' },
   ])
 })

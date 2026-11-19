@@ -22,7 +22,8 @@ HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
 Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
 `phase-1-done`, `phase-2-done`. **Phase 3 done** (18 Nov 2026). **Phase 4 in
 progress**: 4C (install and update prompt), 4B-1 (phone copy) and 4B-2
-(offline queue) done 19 Nov; next 4E. A one-page tour:
+(offline queue) done 19 Nov; 4B-3 (offline boot) done 20 Nov; next 4E. A
+one-page tour:
 [docs/OVERVIEW.md](docs/OVERVIEW.md).
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
@@ -193,7 +194,9 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
    otherwise Vercel serves it from its CDN. Render is not involved yet.
 2. Signed out: the login screen. `@supabase/supabase-js` signs in with email
    and password against Supabase Auth and keeps the session in
-   localStorage, refreshing the token itself (D-080).
+   localStorage, refreshing the token itself (D-080). At launch the app
+   reads who is signed in from that stored session, without the network,
+   and shows the phone copy at once; the refresh runs behind it (D-095).
 3. Signed in: Home asks `GET /api/v1/summary?month=...` and the month's
    transactions from `VITE_API_URL` (baked in when Vercel last built the
    frontend), with `Authorization: Bearer <access token>`.
@@ -203,7 +206,8 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
    3 s the page shows "Starting up, this can take about a minute".
 5. Because the page's origin is in `CORS_ORIGINS`, the browser lets it read
    the answer. Home shows Net, Spent, Paid back and the categories. A 401
-   signs out, a 403 shows "This account has no access" (D-080).
+   keeps the screen and shows "Sign in to sync" (D-095); a 403 shows "This
+   account has no access" (D-080).
 
 ### Flow 2: nightly keep-alive (all times IST, D-053)
 
@@ -407,6 +411,23 @@ Render runs migration `0007` on deploy (`alembic current` says `0007`).
 5. Undo: offline, change one more category, tap Undo; nothing is sent.
 6. Paste to the planner only: the counts from step 4 and the Speed sheet
    numbers. Never paste names or amounts.
+
+### Offline launch: your check list after the 4B-3 deploy
+
+1. Open the app online once and wait for "Updated just now". Then leave the
+   phone for more than an hour (the access token lasts an hour), turn
+   airplane mode on and open the app. Home shows within 2 s with "Offline ·
+   showing data from …". Not a blank screen.
+2. Still offline, tap a category for one payment: it shows "Waiting to
+   sync". Turn airplane mode off: within a few seconds the waiting count
+   goes away, then the totals change.
+3. Sign out (choose "Sign out anyway" if asked), turn airplane mode on and
+   open the app: the login shows "You're offline. Connect to sign in.", and
+   Sign in answers that at once instead of spinning.
+4. Open the Speed sheet (version line): Boot shows "local copy" and the time
+   to the first screen in ms; Boot errors should be "None".
+5. Paste to the planner only: the Boot path, the ms, the boot error count
+   and whether any step showed a blank screen. Never paste names or amounts.
 
 ### Which build is on the phone
 
@@ -716,6 +737,9 @@ gh repo view --web                                # open the repo in the browser
 5. Close category colour pairs (OKLab distance about 4 to 5, such as card
    bill and uncategorised); icons and names carry identity (D-081).
 6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.
+   The 4B-3 offline boot was checked on a production build in headless
+   Edge (service worker on, offline emulation, a seeded FAKE session, a
+   stand-in auth and API), not yet on the real phone.
    The 4C update bar and version line were checked at 360 px, light, dark
    and 200 % in headless Edge only; the 4B-1 screens in headless Edge at
    390 px on demo data; the 4B-2 outbox on demo data in headless Edge (taps
@@ -757,6 +781,20 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-20: Phase 4B-3, offline boot
+
+- Cause of the blank screen: `App.tsx` drew nothing while auth was
+  "starting", and the start waited for supabase-js's `INITIAL_SESSION`,
+  which comes after up to 30 s of refresh retries; then it went to the
+  login, hiding the phone copy. Reproduced on a production build: offline
+  with an expired session blank for 28 s, then the login.
+- Fix (D-095): identity from the stored session before the first render,
+  refresh in the background (10 s token wait), "Sign in to sync" keeps the
+  data and the outbox, offline login note, 3 s watchdog, error boundary,
+  `index.html` "could not start" page, Speed Boot block and column.
+- Tests: frontend 70 (10 new boot tests), backend 707 on SQLite, scripts
+  89. Precache: all 10 files first paint needs; no other origin. Not pushed.
 
 ### 2026-11-19: Phase 4B-2, offline queue for owner actions
 
