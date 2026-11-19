@@ -1,7 +1,7 @@
 // The adapter in use. A production build always uses the HTTP adapter; the demo adapter
 // exists only in local dev with VITE_DEMO=1 (and is left out of the build).
 
-import { accessToken, noAccess, signOut } from '../auth.ts'
+import { accessToken, expire, noAccess } from '../auth.ts'
 import type { Api } from './client.ts'
 import { FakeApi } from './fake.ts'
 import { errorText, HttpApi } from './http.ts'
@@ -13,5 +13,5 @@ export const demoApi: FakeApi | null = DEMO ? new FakeApi() : null
 export const api: Api =
   demoApi ??
   new HttpApi(import.meta.env.VITE_API_URL ?? '', accessToken, (status) =>
-    status === 401 ? void signOut(errorText(401, null)) : noAccess(),
+    status === 401 ? void expire(errorText(401, null)) : noAccess(),
   )

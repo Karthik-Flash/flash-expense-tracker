@@ -2,7 +2,7 @@
 // It answers with the exact shapes of docs/api.md and applies writes in memory, so every
 // screen can be tried. A dev switch picks a state: normal, waking, empty, error, stale.
 
-import { ApiError, type Api } from './client.ts'
+import { ApiError, type Api, type SendAnswer, type SendRequest } from './client.ts'
 import {
   SCHEMA_VERSION,
   type Basis,
@@ -15,6 +15,7 @@ import {
   type PersonRow,
   type Role,
   type Sender,
+  type SenderAnswer,
   type SenderStatus,
   type Snapshot,
   type SnapshotAnswer,
@@ -174,6 +175,7 @@ export class FakeApi implements Api {
   private roleAnswer = new Map<number, Role>()
   private incomeLabel = new Map<string, string>()
   private wokeAt = 0
+  private answers = new Map<string, SendAnswer>()
 
   setState(state: DemoState): void {
     this.state = state
@@ -374,74 +376,93 @@ export class FakeApi implements Api {
     })
   }
 
-  answerSender(id: string, answer: Parameters<Api['answerSender']>[1]) {
-    return this.respond(() => {
-      const sender = this.sendersOf(this.rows).find((s) => s.id === id)
-      if (!sender) throw new ApiError(404, 'No such sender.')
-      const role: Role = answer.answer === 'friend' ? 'payback' : answer.answer === 'income' ? 'income' : 'ignored'
-      const mine = this.rows.filter((r) => r.direction === 'credit' && senderId(r.name, r.id) === id)
-      for (const row of mine) this.roleAnswer.set(row.id, role)
-      if (answer.answer === 'income') this.incomeLabel.set(id, answer.label.trim().replace(/\s+/g, ' '))
-      return { result: { id, credits: mine.length }, recompute: { status: 'done', run: 1 } }
-    })
-  }
-
-  resetSender(id: string) {
-    return this.respond(() => {
-      const mine = this.rows.filter((r) => r.direction === 'credit' && senderId(r.name, r.id) === id)
-      if (!mine.length) throw new ApiError(404, 'No such sender.')
-      for (const row of mine) this.roleAnswer.delete(row.id)
-      this.incomeLabel.delete(id)
-      return { result: { id, credits: mine.length }, recompute: { status: 'done', run: 1 } }
-    })
-  }
-
-  setCategory(txnId: number, category: string, scope: 'merchant' | 'transaction') {
-    return this.respond(() => {
-      const row = this.rows.find((r) => r.id === txnId)
-      if (!row) throw new ApiError(404, 'No such transaction.')
-      if (!NAME[category]) throw new ApiError(422, 'Not a category of the list.')
-      if (scope === 'merchant') {
-        if (!row.name) throw new ApiError(422, 'The transaction has no merchant text.')
-        this.merchantDefault.set(row.name, category)
-        this.oneOff.delete(txnId)
-      } else {
-        this.oneOff.set(txnId, category)
+  /** The demo's stand-in for the six owner writes, with the server's Idempotency-Key rule:
+   *  the same op_id gets the same answer and changes nothing (app/api/ops.py). */
+  send(request: SendRequest, signal: AbortSignal): Promise<SendAnswer> {
+    void signal
+    return this.respond((): SendAnswer => {
+      const done = this.answers.get(request.op_id)
+      if (done) return done
+      let answer: SendAnswer
+      try {
+        this.apply(request)
+        answer = { status: request.method === 'POST' ? 201 : 200, detail: null, message: '' }
+      } catch (e) {
+        if (!(e instanceof ApiError)) throw e
+        answer = { status: e.status, detail: e.message, message: e.message }
       }
-      return { result: { id: txnId, category, scope }, recompute: { status: 'done', run: 1 } }
+      this.answers.set(request.op_id, answer)
+      return answer
     })
   }
 
-  createLabel(name: string) {
-    return this.respond(() => {
-      const clean = name.trim().replace(/\s+/g, ' ')
-      if (!clean || [...clean].length > 30) throw new ApiError(422, 'A label name has 1 to 30 characters.')
-      for (const existing of this.labelNames.values()) {
-        if (existing.toLowerCase() === clean.toLowerCase()) throw new ApiError(409, 'A label with this name already exists.')
-      }
-      const id = Math.max(0, ...this.labelNames.keys()) + 1
-      this.labelNames.set(id, clean)
-      return { id, name: clean }
-    })
+  private apply({ method, path, body }: SendRequest): void {
+    const b = (body ?? {}) as Record<string, string | number | undefined>
+    const sender = /^\/senders\/([^/]+)$/.exec(path)
+    const txn = /^\/transactions\/(\d+)\/(category|label)$/.exec(path)
+    if (sender && method === 'PUT') return this.answerSender(decodeURIComponent(sender[1]), b as unknown as SenderAnswer)
+    if (sender && method === 'DELETE') return this.resetSender(decodeURIComponent(sender[1]))
+    if (path === '/labels' && method === 'POST') return void this.createLabel(String(b.name))
+    if (txn?.[2] === 'category' && method === 'PUT') return this.setCategory(Number(txn[1]), String(b.category), b.scope as 'merchant' | 'transaction')
+    if (txn?.[2] === 'label' && method === 'PUT') {
+      const id = b.new_label !== undefined ? this.createLabel(String(b.new_label)) : Number(b.label_id)
+      return this.setLabel(Number(txn[1]), id)
+    }
+    if (txn?.[2] === 'label' && method === 'DELETE') return this.clearLabel(Number(txn[1]))
+    throw new ApiError(404, 'Not found.')
   }
 
-  setLabel(txnId: number, labelId: number) {
-    return this.respond(() => {
-      const row = this.rows.find((r) => r.id === txnId)
-      if (!row) throw new ApiError(404, 'No such transaction.')
-      if (!this.labelNames.has(labelId)) throw new ApiError(404, 'No such label.')
-      row.label = labelId
-      return { result: { id: txnId, label_id: labelId }, recompute: { status: 'unchanged', run: null } }
-    })
+  private answerSender(id: string, answer: SenderAnswer): void {
+    const sender = this.sendersOf(this.rows).find((s) => s.id === id)
+    if (!sender) throw new ApiError(404, 'No such sender.')
+    const role: Role = answer.answer === 'friend' ? 'payback' : answer.answer === 'income' ? 'income' : 'ignored'
+    const mine = this.rows.filter((r) => r.direction === 'credit' && senderId(r.name, r.id) === id)
+    for (const row of mine) this.roleAnswer.set(row.id, role)
+    if (answer.answer === 'income') this.incomeLabel.set(id, answer.label.trim().replace(/\s+/g, ' '))
   }
 
-  clearLabel(txnId: number) {
-    return this.respond(() => {
-      const row = this.rows.find((r) => r.id === txnId)
-      if (!row) throw new ApiError(404, 'No such transaction.')
-      row.label = null
-      return { result: { id: txnId, label_id: null }, recompute: { status: 'unchanged', run: null } }
-    })
+  private resetSender(id: string): void {
+    const mine = this.rows.filter((r) => r.direction === 'credit' && senderId(r.name, r.id) === id)
+    if (!mine.length) throw new ApiError(404, 'No such sender.')
+    for (const row of mine) this.roleAnswer.delete(row.id)
+    this.incomeLabel.delete(id)
+  }
+
+  private setCategory(txnId: number, category: string, scope: 'merchant' | 'transaction'): void {
+    const row = this.rows.find((r) => r.id === txnId)
+    if (!row) throw new ApiError(404, 'No such transaction.')
+    if (!NAME[category]) throw new ApiError(422, 'Not a category of the list.')
+    if (scope === 'merchant') {
+      if (!row.name) throw new ApiError(422, 'The transaction has no merchant text.')
+      this.merchantDefault.set(row.name, category)
+      this.oneOff.delete(txnId)
+    } else {
+      this.oneOff.set(txnId, category)
+    }
+  }
+
+  private createLabel(name: string): number {
+    const clean = name.trim().replace(/\s+/g, ' ')
+    if (!clean || [...clean].length > 30) throw new ApiError(422, 'A label name has 1 to 30 characters.')
+    for (const existing of this.labelNames.values()) {
+      if (existing.toLowerCase() === clean.toLowerCase()) throw new ApiError(409, 'A label with this name already exists.')
+    }
+    const id = Math.max(0, ...this.labelNames.keys()) + 1
+    this.labelNames.set(id, clean)
+    return id
+  }
+
+  private setLabel(txnId: number, labelId: number): void {
+    const row = this.rows.find((r) => r.id === txnId)
+    if (!row) throw new ApiError(404, 'No such transaction.')
+    if (!this.labelNames.has(labelId)) throw new ApiError(404, 'No such label.')
+    row.label = labelId
+  }
+
+  private clearLabel(txnId: number): void {
+    const row = this.rows.find((r) => r.id === txnId)
+    if (!row) throw new ApiError(404, 'No such transaction.')
+    row.label = null
   }
 }
 
@@ -488,7 +509,7 @@ function chart(parts: CategoryAmount[]): MonthData['chart'] {
 }
 
 function todo(txns: Txn[]): Pick<Snapshot['todo'], 'merchants' | 'unnamed'> {
-  const groups = new Map<string, Merchant & { txn_id: number }>()
+  const groups = new Map<string, Snapshot['todo']['merchants'][number]>()
   let unnamed = 0
   for (const t of txns) {
     if (t.category !== 'uncategorised' || (t.role !== 'spend' && t.role !== 'card_bill_counted')) continue
@@ -496,7 +517,7 @@ function todo(txns: Txn[]): Pick<Snapshot['todo'], 'merchants' | 'unnamed'> {
       unnamed++
       continue
     }
-    const g = groups.get(t.display_name) ?? { name: t.display_name, total_paise: 0, count: 0, txn_id: t.id }
+    const g = groups.get(t.display_name) ?? { name: t.display_name, total_paise: 0, count: 0, txn_id: t.id, last_time_utc: t.time_utc }
     groups.set(t.display_name, { ...g, total_paise: g.total_paise + t.amount_paise, count: g.count + 1 })
   }
   return { merchants: [...groups.values()].sort((a, b) => b.total_paise - a.total_paise), unnamed }

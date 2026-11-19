@@ -2,7 +2,7 @@
 // search; every money figure comes from the server (D-088).
 
 import type { MonthData, Snapshot, Txn } from '../api/types.ts'
-import { monthOf } from '../lib/dates.ts'
+import { dayLabel, monthOf } from '../lib/dates.ts'
 import { nameOf } from './common.ts'
 
 export const LABEL_MAX = 30
@@ -38,6 +38,13 @@ export function monthData(s: Snapshot, month: string): MonthData | undefined {
 /** The month's transactions, newest first. */
 export function monthTxns(s: Snapshot, month: string): Txn[] {
   return s.transactions.filter((t) => monthOf(t.time_utc) === month)
+}
+
+/** "1 payment · Tue 12 Nov", "3 payments · last Tue 12 Nov" (as the sender cards say it). */
+export function paymentsText(count: number, lastIso?: string): string {
+  const n = `${count} ${count === 1 ? 'payment' : 'payments'}`
+  if (!lastIso) return n
+  return `${n} · ${count === 1 ? '' : 'last '}${dayLabel(lastIso)}`
 }
 
 /** Name search: every word must appear in the name, any case. */

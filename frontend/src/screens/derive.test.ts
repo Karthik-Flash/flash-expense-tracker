@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { Snapshot, Txn } from '../api/types.ts'
-import { isPersonTxn, labelName, matches, monthData, monthTxns, personKey } from './derive.ts'
+import { isPersonTxn, labelName, matches, monthData, monthTxns, paymentsText, personKey } from './derive.ts'
 
 const txn = (over: Partial<Txn>): Txn => ({
   id: 1,
@@ -63,4 +63,10 @@ test('name search', () => {
   assert.ok(matches(t, '  tea gate '))
   assert.ok(!matches(t, 'tea canteen'))
   assert.ok(matches(txn({ display_name: null, category: 'cash' }), 'cash'))
+})
+
+test('merchant cards say how many payments and when, as sender cards do', () => {
+  assert.equal(paymentsText(1, '2026-11-12T06:00:00Z'), '1 payment · Thu 12 Nov')
+  assert.equal(paymentsText(3, '2026-11-12T19:00:00Z'), '3 payments · last Fri 13 Nov') // 00:30 IST
+  assert.equal(paymentsText(2), '2 payments') // a phone copy from before the date was sent
 })

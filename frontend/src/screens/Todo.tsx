@@ -1,81 +1,68 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 
 import type { Category, Sender, Snapshot } from '../api/types.ts'
+import { actions, enqueue, todoView, useOutbox, type Op } from '../data/outbox.ts'
 import { useSnapshot } from '../data/store.ts'
 import { dayLabel } from '../lib/dates.ts'
-import { useApp } from '../state.tsx'
 import { Button, Empty, Header, Loaded, Money, Section } from '../ui.tsx'
-import { labelName } from './derive.ts'
+import { labelName, paymentsText } from './derive.ts'
+import { Pending } from './Transactions.tsx'
 
 export function TodoScreen() {
   const [load, retry] = useSnapshot()
+  const { ops } = useOutbox()
   return (
     <>
       <Header title="To-do" />
       <Loaded load={load} retry={retry}>
-        {({ todo: t, categories }) => (
-          <>
-            {t.senders.length === 0 && t.merchants.length === 0 && <Empty>Nothing to do.</Empty>}
-            {t.senders.length > 0 && (
-              <Section title="Who sent you money?">
-                {t.senders.map((s) => <SenderRow key={s.id} s={s} />)}
-              </Section>
-            )}
-            {t.merchants.length > 0 && (
-              <Section title="Pick a category">
-                {t.merchants.map((m) => <MerchantRow key={m.name} m={m} cats={categories} />)}
-              </Section>
-            )}
-            {t.unnamed > 0 && (
-              <p className="px-4 pt-3 text-xs text-muted">
-                {t.unnamed} uncategorised {t.unnamed === 1 ? 'payment has' : 'payments have'} no name. Set them in Transactions.
-              </p>
-            )}
-            {t.answered.length > 0 && (
-              <Section title="Answered">
-                {t.answered.map((s) => <SenderRow key={s.id} s={s} answered />)}
-              </Section>
-            )}
-          </>
-        )}
+        {({ todo, categories }) => {
+          // An item with an answer in the outbox leaves its list at once (D-093).
+          const t = todoView(todo, ops)
+          return (
+            <>
+              {t.senders.length === 0 && t.merchants.length === 0 && t.waiting.length === 0 && <Empty>Nothing to do.</Empty>}
+              {t.waiting.length > 0 && (
+                <Section title="Waiting to sync">
+                  {t.waiting.map((op) => <WaitingRow key={op.seq} op={op} />)}
+                </Section>
+              )}
+              {t.senders.length > 0 && (
+                <Section title="Who sent you money?">
+                  {t.senders.map((s) => <SenderRow key={s.id} s={s} />)}
+                </Section>
+              )}
+              {t.merchants.length > 0 && (
+                <Section title="Pick a category">
+                  {t.merchants.map((m) => <MerchantRow key={m.name} m={m} cats={categories} />)}
+                </Section>
+              )}
+              {todo.unnamed > 0 && (
+                <p className="px-4 pt-3 text-xs text-muted">
+                  {todo.unnamed} uncategorised {todo.unnamed === 1 ? 'payment has' : 'payments have'} no name. Set them in Transactions.
+                </p>
+              )}
+              {t.answered.length > 0 && (
+                <Section title="Answered">
+                  {t.answered.map((s) => <SenderRow key={s.id} s={s} answered />)}
+                </Section>
+              )}
+            </>
+          )
+        }}
       </Loaded>
     </>
   )
 }
 
-/** A write that, once saved, lets its row leave with a short collapse (unless `stay`). */
-function useWrite(stay = false, then = () => {}) {
-  const { changed } = useApp()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [left, setLeft] = useState(false)
-  const run = async (write: () => Promise<unknown>) => {
-    setBusy(true)
-    setError('')
-    try {
-      await write()
-      setLeft(!stay)
-      then()
-      changed()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save.')
-    } finally {
-      setBusy(false)
-    }
-  }
-  return { busy, error, left, run }
-}
-
-/** Collapses to nothing once `left`; the reload then drops the row. */
-function Leaving({ left, children }: { left: boolean; children: ReactNode }) {
+/** "Rohit V" over "Friend · Waiting to sync · Undo". */
+function WaitingRow({ op }: { op: Op }) {
   return (
-    <div
-      className={`grid transition-[grid-template-rows,opacity] duration-200 motion-reduce:transition-none ${left ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr]'}`}
-      aria-hidden={left || undefined}
-    >
-      <div className="min-h-0 overflow-hidden">
-        <div className="px-4 py-2.5">{children}</div>
-      </div>
+    <div className="px-4 py-2.5">
+      <span className="block truncate">{op.item}</span>
+      <span className="flex flex-wrap items-center gap-x-2 text-sm">
+        <span className="min-w-0 truncate">{op.choice}</span>
+        <Pending op={op} />
+      </span>
     </div>
   )
 }
@@ -89,16 +76,13 @@ function answerText(s: Sender): string {
 }
 
 function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
-  const { api } = useApp()
   const [mode, setMode] = useState<'answer' | 'family' | 'shown'>(answered ? 'shown' : 'answer')
-  // An answered sender stays in its section with the new answer; a new answer leaves.
-  const { busy, error, left, run } = useWrite(answered, () => answered && setMode('shown'))
-  // "Ask me again" leaves the Answered section: the sender is to confirm again.
-  const reset = useWrite()
   const [family, setFamily] = useState(s.income_label ?? 'Family')
   const rule = labelName(family, [])
+  // Saved on the phone first; the row moves to "Waiting to sync" (D-091).
+  const answer = (a: Parameters<typeof actions.answerSender>[1]) => void enqueue(actions.answerSender(s, a))
   return (
-    <Leaving left={left || reset.left}>
+    <div className="px-4 py-2.5">
       <div className="flex items-baseline gap-3">
         <span className="min-w-0 flex-1 truncate">{s.display_name ?? 'Bank transfer in'}</span>
         <Money paise={s.total_paise} credit />
@@ -115,13 +99,13 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
       {mode === 'answer' && (
         <>
           <div className="mt-2 flex flex-wrap gap-2">
-            <Button className="flex-1" disabled={busy} onClick={() => run(() => api.answerSender(s.id, { answer: 'friend' }))}>Friend</Button>
-            <Button className="flex-1" disabled={busy} onClick={() => setMode('family')}>Family</Button>
-            <Button className="flex-1" disabled={busy} onClick={() => run(() => api.answerSender(s.id, { answer: 'ignore' }))}>Ignore</Button>
+            <Button className="flex-1" onClick={() => answer({ answer: 'friend' })}>Friend</Button>
+            <Button className="flex-1" onClick={() => setMode('family')}>Family</Button>
+            <Button className="flex-1" onClick={() => answer({ answer: 'ignore' })}>Ignore</Button>
           </div>
           {answered && (
             <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3">
-              <button type="button" className="min-h-11 text-sm text-accent" disabled={reset.busy} onClick={() => reset.run(() => api.resetSender(s.id))}>
+              <button type="button" className="min-h-11 text-sm text-accent" onClick={() => void enqueue(actions.resetSender(s))}>
                 Ask me again later
               </button>
               <button type="button" className="min-h-11 text-sm text-muted" onClick={() => setMode('shown')}>Cancel</button>
@@ -129,13 +113,12 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
           )}
         </>
       )}
-      {reset.error && <p className="mt-1 text-sm text-danger" role="alert">{reset.error}</p>}
       {mode === 'family' && (
         <form
           className="mt-2"
           onSubmit={(e) => {
             e.preventDefault()
-            if (!rule.error) void run(() => api.answerSender(s.id, { answer: 'income', label: rule.name }))
+            if (!rule.error) answer({ answer: 'income', label: rule.name })
           }}
         >
           <label className="block text-xs text-muted" htmlFor={`family-${s.id}`}>Income, labelled (1 to 30 characters)</label>
@@ -147,37 +130,37 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
               aria-invalid={Boolean(rule.error)}
               className="min-h-11 min-w-32 flex-1 rounded-lg border border-line bg-surface px-3"
             />
-            <Button type="submit" kind="primary" disabled={busy || Boolean(rule.error)}>Save</Button>
+            <Button type="submit" kind="primary" disabled={Boolean(rule.error)}>Save</Button>
             <Button onClick={() => setMode(answered ? 'shown' : 'answer')}>Cancel</Button>
           </div>
           {rule.error && <p className="pt-1 text-xs text-danger" aria-live="polite">{rule.error}</p>}
         </form>
       )}
-      {error && <p className="mt-1 text-sm text-danger" role="alert">{error}</p>}
-    </Leaving>
+    </div>
   )
 }
 
 function MerchantRow({ m, cats }: { m: Snapshot['todo']['merchants'][number]; cats: Category[] }) {
-  const { api } = useApp()
-  const { busy, error, left, run } = useWrite()
+  const when = paymentsText(m.count, m.last_time_utc)
   return (
-    <Leaving left={left}>
+    <div className="px-4 py-2.5">
       <div className="flex items-baseline gap-3">
         <span className="min-w-0 flex-1 truncate">{m.name}</span>
         <Money paise={m.total_paise} />
       </div>
+      <p className="truncate text-xs text-muted">{when}</p>
       <select
-        aria-label={`Category for ${m.name}, ${m.count} ${m.count === 1 ? 'payment' : 'payments'}`}
-        disabled={busy}
+        aria-label={`Category for ${m.name}, ${when}`}
         value=""
-        onChange={(e) => e.target.value && run(() => api.setCategory(m.txn_id, e.target.value, 'merchant'))}
+        onChange={(e) => {
+          const picked = cats.find((c) => c.slug === e.target.value)
+          if (picked) void enqueue(actions.setCategory({ id: m.txn_id, display_name: m.name }, picked, 'merchant', m.name))
+        }}
         className="mt-1.5 min-h-11 w-full rounded-lg border border-line bg-surface px-3 text-sm"
       >
-        <option value="">Pick a category ({m.count} {m.count === 1 ? 'payment' : 'payments'})</option>
+        <option value="">Pick a category</option>
         {cats.filter((c) => c.slug !== 'uncategorised').map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
       </select>
-      {error && <p className="mt-1 text-sm text-danger" role="alert">{error}</p>}
-    </Leaving>
+    </div>
   )
 }

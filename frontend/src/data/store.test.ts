@@ -151,7 +151,7 @@ test('another login never sees the copy; another owner from the server wipes it'
   await startData(other.api, 'user-a')
   await until(() => !dataState().refreshing)
   const stored = await readLocal()
-  assert.deepEqual([stored?.meta.owner_id, stored?.snapshot.owner_id], ['owner-b', 'owner-b'])
+  assert.deepEqual([stored?.meta.owner_id, stored?.snapshot?.owner_id], ['owner-b', 'owner-b'])
 })
 
 test('another schema: discarded, fetched fresh', async () => {

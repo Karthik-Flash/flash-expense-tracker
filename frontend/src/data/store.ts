@@ -7,7 +7,7 @@ import { useSyncExternalStore } from 'react'
 import type { Api } from '../api/client.ts'
 import { SCHEMA_VERSION, type Snapshot } from '../api/types.ts'
 import { dayLabel, timeLabel, today } from '../lib/dates.ts'
-import { addTiming, readLocal, saveLocal, touchLocal, wipeLocal, type Meta, type Timing } from './local.ts'
+import { addTiming, dropSnapshot, readLocal, saveLocal, touchLocal, wipeLocal, type Meta, type Timing } from './local.ts'
 
 const REFRESH_EVERY_MS = 5 * 60_000
 const TIMEOUT_MS = 90_000
@@ -51,6 +51,22 @@ interface Session {
 let state = EMPTY
 let session: Session | null = null
 const listeners = new Set<() => void>()
+const appliedHooks = new Set<(ask: number) => void>()
+let asks = 0
+
+/** How many snapshot requests have been started: a later request has a higher number. */
+export const asksSoFar = () => asks
+const resetHooks = new Set<() => void>()
+
+/** After a snapshot (200 or 304) is applied; `ask` is the number of its request. */
+export function onApplied(hook: (ask: number) => void): void {
+  appliedHooks.add(hook)
+}
+
+/** When the data stops: sign-out, a lost session, another login. */
+export function onReset(hook: () => void): void {
+  resetHooks.add(hook)
+}
 
 function set(patch: Partial<DataState>): void {
   state = { ...state, ...patch }
@@ -99,13 +115,15 @@ export async function startData(api: Api, user: string): Promise<void> {
   session = s
   const local = await safe(readLocal)
   if (session !== s) return
-  const usable = local && local.meta.user_id === user && local.meta.schema_version === SCHEMA_VERSION && local.snapshot.schema_version === SCHEMA_VERSION
-  if (usable) {
+  if (!local || local.meta.user_id !== user) {
+    await safe(wipeLocal) // another login (or nothing to say whose it is): never show it
+  } else if (local.snapshot && local.meta.schema_version === SCHEMA_VERSION && local.snapshot.schema_version === SCHEMA_VERSION) {
     s.meta = local.meta
     s.fromLocal = true
     set({ snapshot: local.snapshot, fetchedAt: local.meta.fetched_at })
-  } else if (local) {
-    await safe(wipeLocal) // another login or another schema: never show it
+  } else {
+    s.meta = { ...local.meta, etag: '' }
+    await safe(dropSnapshot) // another schema: fetch fresh, keep the outbox
   }
   void refresh()
 }
@@ -136,6 +154,7 @@ async function pull(s: Session): Promise<void> {
   const slow = state.snapshot ? undefined : setTimeout(() => session === s && set({ slow: true }), SLOW_MS)
   set({ refreshing: true })
   const started = performance.now()
+  const ask = ++asks
   let result: Timing['result'] = 'error'
   let bytes: number | null = null
   try {
@@ -147,6 +166,7 @@ async function pull(s: Session): Promise<void> {
       if (s.meta) s.meta = { ...s.meta, fetched_at: now }
       s.fromLocal = false
       set({ fetchedAt: now, failed: false, error: '' })
+      for (const hook of appliedHooks) hook(ask)
       await safe(() => touchLocal(now))
     } else {
       if (answer.snapshot.schema_version !== SCHEMA_VERSION) throw new Error('The app needs an update. Close it and open it again.')
@@ -157,6 +177,7 @@ async function pull(s: Session): Promise<void> {
       s.meta = meta
       s.fromLocal = false
       set({ snapshot: answer.snapshot, fetchedAt: now, failed: false, error: '' })
+      for (const hook of appliedHooks) hook(ask)
       await safe(() => saveLocal(answer.snapshot, meta))
     }
   } catch (e) {
@@ -188,13 +209,19 @@ export function noteHomeDrawn(): void {
   if (launch && launch.local_ms === null && session?.fromLocal) launch.local_ms = Math.round(performance.now())
 }
 
-/** Sign-out or another login: stop, forget, and delete the phone copy. */
-export async function clearData(): Promise<void> {
+/** Stop and forget in memory; the phone copy and the outbox stay (a lost session, D-093). */
+export function pauseData(): void {
   const s = session
   session = null
   s?.stop()
   s?.controller?.abort()
   set(EMPTY)
+  for (const hook of resetHooks) hook()
+}
+
+/** Sign-out or another login: stop, forget, and delete the phone copy and the outbox. */
+export async function clearData(): Promise<void> {
+  pauseData()
   await safe(wipeLocal)
 }
 

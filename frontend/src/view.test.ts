@@ -52,3 +52,14 @@ test('Back closes the sheet, then the detail, then reaches the tab root', () => 
   assert.equal(parentOf(parseHash('#/transactions?cat=travel')), null)
   assert.equal(parentOf(parseHash('#/dev/logos')), null)
 })
+
+test('app-wide sheets live in the URL and close first on Back', () => {
+  const speed = parseHash('#/home?m=2026-11&speed')
+  assert.equal(speed.sheet, 'speed')
+  assert.equal(toHash(speed), '#/home?m=2026-11&speed')
+  assert.equal(toHash(parentOf(speed)!), '#/home?m=2026-11')
+  assert.equal(toHash(parseHash('#/home?speed')), '#/home?speed')
+  assert.equal(parseHash('#/todo?unsaved').sheet, 'unsaved')
+  assert.equal(parseHash('#/todo?nothing').sheet, null)
+  assert.deepEqual(stack(parseHash('#/transactions?txn=9&unsaved')).map(toHash), ['#/transactions', '#/transactions?txn=9', '#/transactions?txn=9&unsaved'])
+})

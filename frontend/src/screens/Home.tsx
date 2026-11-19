@@ -11,14 +11,12 @@ import { Bar, CategoryTile, Empty, Figure, Freshness, Header, Icon, Loaded, Mone
 import { nameOf } from './common.ts'
 import { isPersonTxn, monthData, monthTxns, personKey } from './derive.ts'
 import { Ring } from './Ring.tsx'
-import { SpeedSheet } from './Speed.tsx'
 import { TxnList } from './Transactions.tsx'
 
 export function Home() {
   const { signOut } = useApp()
-  const { month, replace } = useNav()
+  const { month, replace, open } = useNav()
   const [load, retry] = useSnapshot()
-  const [speed, setSpeed] = useState(false)
   return (
     <>
       <header className="flex min-h-14 items-center justify-between gap-2 px-4 pt-2">
@@ -26,7 +24,7 @@ export function Home() {
           <Wordmark height={22} />
         </h1>
         <div className="flex min-w-0 items-center gap-1">
-          <button type="button" onClick={() => setSpeed(true)} className="min-h-11 min-w-0 text-right text-xs text-muted">
+          <button type="button" onClick={() => open({ sheet: 'speed' })} className="min-h-11 min-w-0 text-right text-xs text-muted">
             {__VERSION_LINE__}
           </button>
           <button type="button" onClick={signOut} className="-mr-3 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted" aria-label="Sign out">
@@ -43,7 +41,6 @@ export function Home() {
         }}
       </Loaded>
       {load.status === 'ready' && <Drawn />}
-      {speed && <SpeedSheet onClose={() => setSpeed(false)} />}
     </>
   )
 }

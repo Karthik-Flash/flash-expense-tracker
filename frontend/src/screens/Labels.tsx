@@ -1,28 +1,24 @@
 import { useState } from 'react'
 
+import { actions, enqueue, useOutbox } from '../data/outbox.ts'
 import { useSnapshot } from '../data/store.ts'
 import { percentOf, rupees } from '../lib/money.ts'
-import { useApp, useNav } from '../state.tsx'
+import { useNav } from '../state.tsx'
 import { Bar, Button, CategoryTile, Empty, Figure, Header, Icon, Loaded, Money, RowButton, Section } from '../ui.tsx'
 import { labelName } from './derive.ts'
-import { TxnList } from './Transactions.tsx'
+import { Pending, TxnList } from './Transactions.tsx'
 
 export function Labels() {
-  const { api, changed } = useApp()
   const { open } = useNav()
   const [load, retry] = useSnapshot()
+  const { ops } = useOutbox()
   const [name, setName] = useState('')
-  const [error, setError] = useState('')
-  const rule = labelName(name, load.status === 'ready' ? load.data.labels.map((v) => v.name) : [])
-  const create = async () => {
-    setError('')
-    try {
-      await api.createLabel(rule.name)
-      setName('')
-      changed()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save.')
-    }
+  // Labels being made (in the outbox): no totals yet, and their names are taken.
+  const making = ops.filter((o) => o.state !== 'failed' && o.method === 'POST' && o.path === '/labels')
+  const rule = labelName(name, [...(load.status === 'ready' ? load.data.labels.map((v) => v.name) : []), ...making.map((o) => o.choice)])
+  const create = () => {
+    void enqueue(actions.createLabel(rule.name))
+    setName('')
   }
   return (
     <>
@@ -30,10 +26,19 @@ export function Labels() {
       <p className="px-4 text-sm text-muted">A label groups payments across months, like a trip. It never changes a category.</p>
       <Loaded load={load} retry={retry}>
         {({ labels: views }) =>
-          views.length === 0 ? (
+          views.length === 0 && making.length === 0 ? (
             <Empty>No labels yet.</Empty>
           ) : (
             <Section>
+              {making.map((op) => (
+                <div key={op.seq} className="flex items-start gap-3 px-4 py-3">
+                  <Icon name="tag" className="pt-0.5 text-muted" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{op.choice}</span>
+                    <Pending op={op} />
+                  </span>
+                </div>
+              ))}
               {views.map((v) => (
                 <RowButton key={v.id} onClick={() => open({ path: [String(v.id)] })}>
                   <Icon name="tag" className="self-start pt-0.5 text-muted" />
@@ -58,7 +63,7 @@ export function Labels() {
         className="flex gap-2 px-4 pt-6"
         onSubmit={(e) => {
           e.preventDefault()
-          if (!rule.error) void create()
+          if (!rule.error) create()
         }}
       >
         <input
@@ -73,7 +78,6 @@ export function Labels() {
         <Button type="submit" kind="primary" disabled={Boolean(rule.error)}>Create</Button>
       </form>
       <p id="label-rule" className="px-4 pt-1 text-xs text-danger" aria-live="polite">{name && rule.error}</p>
-      {error && <p className="px-4 pt-2 text-sm text-danger" role="alert">{error}</p>}
     </>
   )
 }

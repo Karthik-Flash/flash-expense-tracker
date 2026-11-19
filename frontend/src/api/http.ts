@@ -2,13 +2,10 @@
 // and Accept: application/json (a waking Render answers browser-like requests with an HTML
 // page). 401 and 403 also tell the login layer (auth.ts).
 
-import { ApiError, type Api } from './client.ts'
-import type { SenderAnswer, Snapshot, SnapshotAnswer, WriteResult } from './types.ts'
+import { ApiError, type Api, type SendAnswer, type SendRequest } from './client.ts'
+import type { Snapshot, SnapshotAnswer } from './types.ts'
 
 type Lost = (status: 401 | 403) => void
-
-/** What an owner action says when it cannot reach the server. Nothing is queued (4B-1). */
-export const OFFLINE = "You're offline. Try again when connected."
 
 /** What a failed request says to the owner. The server's own words for 404, 409 and 422. */
 export function errorText(status: number, detail: unknown): string {
@@ -24,8 +21,6 @@ export function errorText(status: number, detail: unknown): string {
   return 'The server did not accept this.'
 }
 
-const offline = () => typeof navigator !== 'undefined' && navigator.onLine === false
-
 export class HttpApi implements Api {
   readonly demo = false
   private readonly base: string
@@ -38,10 +33,9 @@ export class HttpApi implements Api {
     this.lost = lost
   }
 
-  /** The response, or an ApiError. A failed write says OFFLINE. */
-  private async request(method: string, path: string, init: { body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {}) {
-    const unreachable = new ApiError(0, method === 'GET' ? errorText(0, null) : OFFLINE)
-    if (method !== 'GET' && offline()) throw unreachable
+  /** The snapshot's response, or an ApiError. */
+  private async request(method: string, path: string, init: { headers?: Record<string, string>; signal?: AbortSignal } = {}) {
+    const unreachable = new ApiError(0, errorText(0, null))
     let token: string | null
     try {
       token = await this.token()
@@ -61,10 +55,8 @@ export class HttpApi implements Api {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
-          ...(init.body === undefined ? {} : { 'Content-Type': 'application/json' }),
           ...init.headers,
         },
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
       })
     } catch (e) {
       if (init.signal?.aborted) throw e
@@ -74,10 +66,6 @@ export class HttpApi implements Api {
     if (response.status === 401 || response.status === 403) this.lost(response.status)
     const detail = await response.json().then((b: unknown) => (b as { detail?: unknown } | null)?.detail, () => null)
     throw new ApiError(response.status, errorText(response.status, detail))
-  }
-
-  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    return (await (await this.request(method, path, { body })).json()) as T
   }
 
   async snapshot(etag: string | null, signal: AbortSignal): Promise<SnapshotAnswer> {
@@ -93,30 +81,37 @@ export class HttpApi implements Api {
     return { status: 200, etag: response.headers.get('ETag') ?? '', snapshot, bytes: new TextEncoder().encode(text).length }
   }
 
-  answerSender(id: string, answer: SenderAnswer) {
-    return this.call<WriteResult<{ id: string; credits: number }>>('PUT', `/senders/${encodeURIComponent(id)}`, answer)
-  }
-
-  resetSender(id: string) {
-    return this.call<WriteResult<{ id: string; credits: number }>>('DELETE', `/senders/${encodeURIComponent(id)}`)
-  }
-
-  setCategory(txnId: number, category: string, scope: 'merchant' | 'transaction') {
-    return this.call<WriteResult<{ id: number; category: string; scope: string }>>('PUT', `/transactions/${txnId}/category`, {
-      category,
-      scope,
-    })
-  }
-
-  createLabel(name: string) {
-    return this.call<{ id: number; name: string }>('POST', '/labels', { name })
-  }
-
-  setLabel(txnId: number, labelId: number) {
-    return this.call<WriteResult<{ id: number; label_id: number }>>('PUT', `/transactions/${txnId}/label`, { label_id: labelId })
-  }
-
-  clearLabel(txnId: number) {
-    return this.call<WriteResult<{ id: number; label_id: null }>>('DELETE', `/transactions/${txnId}/label`)
+  /** One owner action from the outbox, with its Idempotency-Key. A 401 or 403 is answered,
+   *  not acted on: the outbox keeps the action and asks for a sign-in (D-093). */
+  async send(request: SendRequest, signal: AbortSignal): Promise<SendAnswer> {
+    let token: string | null
+    try {
+      token = await this.token()
+    } catch {
+      throw new ApiError(0, errorText(0, null)) // offline: the token cannot be refreshed
+    }
+    if (!token) return { status: 401, detail: null, message: errorText(401, null) }
+    let response: Response
+    try {
+      response = await fetch(this.base + request.path, {
+        method: request.method,
+        cache: 'no-store',
+        signal,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Idempotency-Key': request.op_id,
+          ...(request.defer ? { 'X-Defer-Recompute': '1' } : {}),
+          ...(request.body === null || request.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
+        body: request.body === null || request.body === undefined ? undefined : JSON.stringify(request.body),
+      })
+    } catch (e) {
+      if (signal.aborted) throw e
+      throw new ApiError(0, errorText(0, null))
+    }
+    const json: unknown = await response.json().catch(() => null)
+    const detail = (json as { detail?: unknown } | null)?.detail ?? null
+    return { status: response.status, detail, message: response.ok ? '' : errorText(response.status, detail) }
   }
 }

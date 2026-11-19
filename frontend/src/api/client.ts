@@ -1,25 +1,34 @@
 // The one interface the app uses: the HTTP adapter (http.ts) for /api/v1, or the demo
 // adapter (fake.ts) in local dev with VITE_DEMO=1. Screens read the snapshot (data/store.ts);
-// they write through the methods below.
+// every owner action goes through the outbox (data/outbox.ts), which calls send().
 
-import type { SenderAnswer, SnapshotAnswer, WriteResult } from './types.ts'
+import type { SnapshotAnswer } from './types.ts'
+
+/** One owner action as the outbox sends it (D-091). */
+export interface SendRequest {
+  op_id: string
+  method: 'PUT' | 'POST' | 'DELETE'
+  path: string
+  body: unknown
+  /** More actions follow: the server may leave its recompute to the next read (D-094). */
+  defer: boolean
+}
+
+/** The server's answer to a SendRequest: any status, never thrown. */
+export interface SendAnswer {
+  status: number
+  /** The server's `detail`, as sent ("in_progress", "idempotency_key_reused", a message). */
+  detail: unknown
+  /** What to tell the owner when it failed. */
+  message: string
+}
 
 export interface Api {
   readonly demo: boolean
   /** The snapshot; 304 when `etag` is still current. */
   snapshot(etag: string | null, signal: AbortSignal): Promise<SnapshotAnswer>
-  answerSender(id: string, answer: SenderAnswer): Promise<WriteResult<{ id: string; credits: number }>>
-  /** Forget the answer: the sender is to confirm again. */
-  resetSender(id: string): Promise<WriteResult<{ id: string; credits: number }>>
-  setCategory(
-    txnId: number,
-    category: string,
-    scope: 'merchant' | 'transaction',
-  ): Promise<WriteResult<{ id: number; category: string; scope: string }>>
-  /** 409 when the owner has that name in any case. */
-  createLabel(name: string): Promise<{ id: number; name: string }>
-  setLabel(txnId: number, labelId: number): Promise<WriteResult<{ id: number; label_id: number }>>
-  clearLabel(txnId: number): Promise<WriteResult<{ id: number; label_id: null }>>
+  /** Throws an ApiError only when the server cannot be reached (status 0) or on abort. */
+  send(request: SendRequest, signal: AbortSignal): Promise<SendAnswer>
 }
 
 export class ApiError extends Error {

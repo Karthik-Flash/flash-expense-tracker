@@ -3,6 +3,9 @@
 
 export const TABS = ['home', 'transactions', 'todo', 'labels'] as const
 export type Tab = (typeof TABS)[number] | 'dev'
+/** App-wide sheets, a flag in the URL: "?speed" (Speed), "?unsaved" (couldn't save). */
+export const SHEETS = ['speed', 'unsaved'] as const
+export type SheetName = (typeof SHEETS)[number]
 
 export interface View {
   tab: Tab
@@ -16,9 +19,11 @@ export interface View {
   q: string
   /** The transaction whose sheet is open. */
   txn: number | null
+  /** An app-wide sheet over the screen. */
+  sheet: SheetName | null
 }
 
-export const HOME: View = { tab: 'home', path: [], month: null, category: null, label: null, q: '', txn: null }
+export const HOME: View = { tab: 'home', path: [], month: null, category: null, label: null, q: '', txn: null, sheet: null }
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 const ID = /^[1-9]\d{0,14}$/
@@ -51,6 +56,7 @@ export function parseHash(hash: string): View {
     label: id('label'),
     q: params.get('q') ?? '',
     txn: id('txn'),
+    sheet: SHEETS.find((s) => params.has(s)) ?? null,
   }
 }
 
@@ -62,12 +68,13 @@ export function toHash(view: View): string {
   if (view.label !== null) params.set('label', String(view.label))
   if (view.q) params.set('q', view.q)
   if (view.txn !== null) params.set('txn', String(view.txn))
-  const query = params.toString()
+  const query = [params.toString(), view.sheet ?? ''].filter(Boolean).join('&')
   return `#/${route}${query ? `?${query}` : ''}`
 }
 
-/** The layer under this one: the sheet closes first, then the detail, then the tab's root. */
+/** The layer under this one: an app-wide sheet, then a transaction's sheet, then the detail, then the tab's root. */
 export function parentOf(view: View): View | null {
+  if (view.sheet !== null) return { ...view, sheet: null }
   if (view.txn !== null) return { ...view, txn: null }
   if (view.tab === 'dev' || view.path.length === 0) return null
   const keep = view.tab === 'home' && view.path[0] === 'category' && view.path.length > 2 ? 2 : 0
