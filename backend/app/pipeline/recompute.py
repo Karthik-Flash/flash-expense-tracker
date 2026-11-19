@@ -21,7 +21,7 @@ import threading
 import time
 import uuid
 from collections import Counter, defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -327,18 +327,26 @@ def recompute(
     *,
     dry_run: bool = False,
     accept_key_changes: bool = False,
+    before_commit: Callable[[Outcome], None] | None = None,
 ) -> Outcome:
     """Bring the derived tables up to date in one transaction. Never writes an owner table.
 
     Stops without writing when the merchant engine changed since the stored run and a
     transaction would lose or change its owner match, unless accept_key_changes.
+    `before_commit` runs inside that transaction just before it commits (done or
+    unchanged), so a caller's own rows commit with it (D-092).
     """
     with owner_lock(session, owner_id):
-        return _recompute(session, owner_id, trigger, dry_run, accept_key_changes)
+        return _recompute(session, owner_id, trigger, dry_run, accept_key_changes, before_commit)
 
 
 def _recompute(
-    session: Session, owner_id: uuid.UUID, trigger: str, dry_run: bool, accept_key_changes: bool
+    session: Session,
+    owner_id: uuid.UUID,
+    trigger: str,
+    dry_run: bool,
+    accept_key_changes: bool,
+    before_commit: Callable[[Outcome], None] | None = None,
 ) -> Outcome:
     started, clock = datetime.now(UTC), time.monotonic()
     try:
@@ -354,8 +362,14 @@ def _recompute(
         if status != "done":
             # Nothing derived to write. An owner answer written in this session still
             # commits (it may change nothing derived); a dry run or a stop writes nothing.
-            session.commit() if status == "unchanged" else session.rollback()
-            return Outcome(status, p, None, time.monotonic() - clock)
+            outcome = Outcome(status, p, None, time.monotonic() - clock)
+            if status == "unchanged":
+                if before_commit:
+                    before_commit(outcome)
+                session.commit()
+            else:
+                session.rollback()
+            return outcome
 
         for model, key, (inserts, updates, deletes) in (
             (TxnDerived, TxnDerived.transaction_id, p.derived),
@@ -383,9 +397,11 @@ def _recompute(
         )
         session.add(run)
         session.flush()
-        run_id = run.id
+        outcome = Outcome("done", p, run.id, time.monotonic() - clock)
+        if before_commit:
+            before_commit(outcome)
         session.commit()
-        return Outcome("done", p, run_id, time.monotonic() - clock)
+        return outcome
     except BaseException:
         session.rollback()
         raise

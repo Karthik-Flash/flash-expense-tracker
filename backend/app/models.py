@@ -418,6 +418,27 @@ class TxnLabel(Base):
     source: Mapped[str] = mapped_column(String(10))
 
 
+class ClientOp(Base):
+    """One owner action sent with an Idempotency-Key (D-091, D-092): its final answer, so a
+    repeat of the same key gets the same answer and writes nothing. Never deleted."""
+
+    __tablename__ = "client_ops"
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    op_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    received_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    method: Mapped[str] = mapped_column(String(6))
+    path: Mapped[str] = mapped_column(String(200))
+    request_hash: Mapped[str] = mapped_column(String(64))  # method, path and body
+    status_code: Mapped[int | None] = mapped_column(SmallInteger)
+    response_body: Mapped[dict | None] = mapped_column(JSON)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    # The write skipped its recompute (X-Defer-Recompute, D-094); the next read runs it.
+    recompute_pending: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+
+
 # --- Derived data -------------------------------------------------------------
 # Written only by recompute (app/pipeline/recompute.py): one pure function of the
 # active transactions, the owner tables and the engine versions. Deleting every row

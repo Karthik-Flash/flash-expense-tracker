@@ -133,7 +133,13 @@ def todo_merchants(items: list[dict]) -> tuple[list[dict], int]:
             continue
         g = groups.setdefault(
             item["display_name"],
-            {"name": item["display_name"], "total_paise": 0, "count": 0, "txn_id": item["id"]},
+            {
+                "name": item["display_name"],
+                "total_paise": 0,
+                "count": 0,
+                "txn_id": item["id"],
+                "last_time_utc": item["time_utc"],
+            },  # items are newest first
         )
         g["total_paise"] += item["amount_paise"]
         g["count"] += 1
@@ -190,7 +196,7 @@ def etag_of(document: dict) -> str:
     return '"' + hashlib.sha256(canonical(document)).hexdigest() + '"'
 
 
-@router.get("/sync/snapshot")
+@router.get("/sync/snapshot", dependencies=v1.Fresh)
 def snapshot(
     owner: v1.Owner,
     session: v1.Db,

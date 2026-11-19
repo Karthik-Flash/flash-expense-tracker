@@ -170,7 +170,10 @@ def test_merchants_and_todo_groups() -> None:
         {"name": "Shop", "total_paise": 300, "count": 2},
     ]
     groups, unnamed = snap.todo_merchants(rows)
-    assert groups == [{"name": "Shop", "total_paise": 500, "count": 1, "txn_id": 3}]
+    assert groups == [
+        {"name": "Shop", "total_paise": 500, "count": 1, "txn_id": 3,
+         "last_time_utc": "2026-10-10T06:00:00Z"}
+    ]  # fmt: skip
     assert unnamed == 1
 
 

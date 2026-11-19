@@ -34,8 +34,9 @@ OWNER_TABLES = {
 }
 DERIVED_TABLES = {"derive_runs", "txn_derived", "txn_links"}
 CATEGORY_TABLES = {"owner_categories", "labels", "txn_labels"}  # owner tables of 0006
+CLIENT_TABLES = {"client_ops"}  # 0007: answers to Idempotency-Key writes
 NEW_TABLES = (
-    PIPELINE_TABLES | OWNER_TABLES | DERIVED_TABLES | CATEGORY_TABLES
+    PIPELINE_TABLES | OWNER_TABLES | DERIVED_TABLES | CATEGORY_TABLES | CLIENT_TABLES
 )  # every app table but heartbeat
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 BACKEND = Path(__file__).resolve().parent.parent
@@ -82,8 +83,12 @@ def test_upgrade_check_downgrade_upgrade(url: str) -> None:
     assert NEW_TABLES | {"heartbeat"} <= tables(url)
     command.check(cfg)  # models and migrations agree
 
-    command.downgrade(cfg, "0005")  # one step at a time: each downgrade works alone
-    assert not CATEGORY_TABLES & tables(url) and tables(url) >= DERIVED_TABLES
+    command.downgrade(cfg, "0006")  # one step at a time: each downgrade works alone
+    assert not CLIENT_TABLES & tables(url) and tables(url) >= CATEGORY_TABLES
+    command.upgrade(cfg, "head")
+    assert tables(url) >= CLIENT_TABLES
+    command.downgrade(cfg, "0005")
+    assert not (CATEGORY_TABLES | CLIENT_TABLES) & tables(url) and tables(url) >= DERIVED_TABLES
     command.downgrade(cfg, "0004")
     assert not DERIVED_TABLES & tables(url) and tables(url) >= OWNER_TABLES | PIPELINE_TABLES
     command.downgrade(cfg, "0003")
