@@ -55,7 +55,8 @@ redacted sample (D-008, D-015, D-048). Setup and runbook:
    D-078, D-088).
 10. **Screen.** The phone keeps the snapshot and opens from it at once,
     then refreshes; it shows the server's figures and never adds up
-    money itself. Answers go back to the server (D-089).
+    money itself. Answers are saved on the phone first and sent with an
+    Idempotency-Key, so a resend is applied once (D-089, D-091).
 
 ## Derived data and owner data
 
@@ -127,5 +128,6 @@ Full rules: [ui-spec.md](ui-spec.md).
 - The server sleeps when idle and can take about a minute to wake; a
   cron job keeps it awake 07:00 to 00:50 IST, and the phone copy shows
   meanwhile.
-- Owner answers need a connection; queued taps come in 4B-2.
+- Owner answers made offline wait on the phone ("Waiting to sync") and are
+  sent when the server can be reached; totals move only after that.
 - Open items in full: [HANDOFF.md](HANDOFF.md#open-items).

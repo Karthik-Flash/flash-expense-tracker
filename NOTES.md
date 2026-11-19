@@ -21,8 +21,8 @@ Quick reference and progress log. Updated after every task.
 HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
 Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
 `phase-1-done`, `phase-2-done`. **Phase 3 done** (18 Nov 2026). **Phase 4 in
-progress**: 4C (install and update prompt) and 4B-1 (phone copy) done
-19 Nov; next 4B-2. A one-page tour:
+progress**: 4C (install and update prompt), 4B-1 (phone copy) and 4B-2
+(offline queue) done 19 Nov; next 4E. A one-page tour:
 [docs/OVERVIEW.md](docs/OVERVIEW.md).
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
@@ -114,7 +114,7 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
    The full file now lives in `D:\FlashPrivate\private\` (D-051).
 2. When the owner file changes (cheat sheet, "Owner data and recompute"):
    edit `D:\FlashPrivate\private\owner.json` (shape in
-   `docs\owner.example.json`), check that `alembic current` says `0006`,
+   `docs\owner.example.json`), check that `alembic current` says `0007`,
    run `owner-load`, then paste the `reconcile-stats` output.
 3. Vercel: `VITE_API_URL` is saved as a Secret. Change it to a plain
    variable with the same value, then redeploy with the build cache off.
@@ -390,6 +390,24 @@ cd frontend; npm run lint; npm run typecheck; npm test; npm run build; cd ..
   --compressed https://flash-expense-tracker.onrender.com/api/v1/sync/snapshot`
   never paste its output (real data).
 
+### Offline taps: your check list after the 4B-2 deploy
+
+Render runs migration `0007` on deploy (`alembic current` says `0007`).
+
+1. Airplane mode on. Give one sender an answer in To-do and one payment a
+   category. Each shows "Waiting to sync"; Home's totals do not move; the
+   line under the month says "2 waiting to sync".
+2. Close the app completely and open it again (still offline): both are
+   still waiting.
+3. Tap Sign out: the app warns "2 changes haven't synced yet"; choose "Stay
+   signed in".
+4. Airplane mode off. Within a few seconds the waiting count goes away, then
+   the totals change. Open the Speed sheet (version line): Sync shows the
+   last drain (2 sent).
+5. Undo: offline, change one more category, tap Undo; nothing is sent.
+6. Paste to the planner only: the counts from step 4 and the Speed sheet
+   numbers. Never paste names or amounts.
+
 ### Which build is on the phone
 
 Home shows one muted line next to Sign out: `Version 0.1.0 · build 1a2b3c4`.
@@ -485,7 +503,7 @@ recursively). Every command prints counts only.
 
 ```powershell
 cd backend
-# 1. Migrate (Render also runs this on deploy; repeating is safe). Expect 0006 (head)
+# 1. Migrate (Render also runs this on deploy; repeating is safe). Expect 0007 (head)
 .\.venv\Scripts\python.exe -m alembic upgrade head; .\.venv\Scripts\python.exe -m alembic current
 # 2. Dry run: full pipeline inside one transaction, rolled back. Saves nothing
 .\.venv\Scripts\python.exe -m app.cli import-sms --input D:\FlashPrivate\raw --dry-run
@@ -700,7 +718,9 @@ gh repo view --web                                # open the repo in the browser
 6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.
    The 4C update bar and version line were checked at 360 px, light, dark
    and 200 % in headless Edge only; the 4B-1 screens in headless Edge at
-   390 px on demo data. Speed sheet timings on a real phone are still to come.
+   390 px on demo data; the 4B-2 outbox on demo data in headless Edge (taps
+   with the demo server failing, drain once it answers). Speed sheet timings
+   and an offline tap on a real phone are still to come.
 7. Accepted risk: npm audit, 4 moderate findings, build-time only: glob
    11.1.0 (GHSA-3g3m-2fjr-6pw4) and minimatch 10.2.6 and 5.1.9
    (GHSA-g3hv-75wg-m249), via vite-plugin-pwa 2.0.0 and workbox-build 7.4.1,
@@ -715,8 +735,9 @@ gh repo view --web                                # open the repo in the browser
 11. The owner doubts the October People total: verify it person by person.
 12. Vercel: `VITE_API_URL` is saved as a Secret. The owner changes it to a
     plain variable and redeploys with the build cache off.
-13. Offline taps are not queued yet: owner actions need a connection
-    (step 4B-2).
+13. HDFC UPI credit SMS carry only a VPA, sometimes masked with "*" by the
+    bank (22 of 22 in the redacted sample; 6 masked). Payer names come from
+    the statement (4A) or from the owner naming the person (4E).
 14. Later list: a friendlier Home, still minimal; revisit with 4D.
 
 Known limits: HDFC and INR only; the card bill pair rule waits for credit
@@ -736,6 +757,21 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-19: Phase 4B-2, offline queue for owner actions
+
+- Server: `client_ops` (migration `0007`, RLS on), `Idempotency-Key` on the
+  six owner writes in `backend/app/api/ops.py` (replay, 409 in progress,
+  422 key reuse, 5xx not stored, key per owner), `X-Defer-Recompute` with
+  reads recomputing first, `{"new_label"}` on the label route (D-091,
+  D-092, D-094). About 40 ms per write and recompute on the FAKE year.
+- Phone: outbox in IndexedDB v2 (`frontend/src/data/outbox.ts`), drain
+  rules and backoff, "Waiting to sync" on items, To-do waiting section,
+  sync line, Couldn't save sheet, sign-out warning, Speed Sync block,
+  `?speed` and `?unsaved` in the URL, merchant card dates (D-093). A lost
+  session keeps the phone copy and the outbox.
+- Tests: backend 707 on SQLite (3 Postgres-only skipped), frontend 60. Demo
+  checked in headless Edge at 390 px. Not pushed.
 
 ### 2026-11-19: Phase 4B-1, phone copy and instant open
 

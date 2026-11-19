@@ -4,6 +4,22 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 4B-2: offline queue for owner actions (19 Nov 2026)
+
+- Every owner action goes through an outbox on the phone (IndexedDB v2):
+  saved first, shown on its item as "Waiting to sync", sent in order with
+  an `Idempotency-Key`, retried with backoff (5 s, 15 s, 60 s, 5 min); a
+  401 keeps it and asks to sign in; a refused one waits in "Couldn't save"
+  with Retry and Discard (D-091, D-093).
+- Server: `client_ops` (migration `0007`) stores each keyed write's final
+  answer, so a resend is applied once (D-092). `X-Defer-Recompute` lets a
+  queue of taps run one recompute; every read runs a deferred one first
+  (D-094). The label route also takes `{"new_label"}`.
+- Sign-out with unsynced changes asks first. A lost session keeps the phone
+  copy and the outbox for the same login.
+- The Speed sheet is in the URL (`?speed`) and has a Sync block. To-do
+  merchant cards show their payment date.
+
 ## Phase 4B-1: phone copy and instant open (19 Nov 2026)
 
 - `GET /api/v1/sync/snapshot`: one document with every figure the app

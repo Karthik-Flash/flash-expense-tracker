@@ -72,9 +72,15 @@ taps would run 20 full recomputes. So:
   sender ids, merchant names, label names), `choice` (what to show), `state`,
   `attempts`, `last_error`, `key_reused`, `confirmed_at`.
 - Lifecycle: `pending` -> `sending` -> `confirmed` -> removed once a snapshot
-  with `fetched_at` after `confirmed_at` is applied; or `failed` (kept until
-  Retry or Discard). An op left in `sending` by a closed app goes back to
-  `pending`.
+  **asked for after** the confirmation is applied (200 or 304); or `failed`
+  (kept until Retry or Discard). An op left in `sending` by a closed app goes
+  back to `pending`; its key makes the resend safe.
+- As built, "after" is a request number, not `fetched_at > confirmed_at`: a
+  snapshot asked for just before the confirmation can land after it, and
+  clocks tie within a millisecond, so either would flip an item back to the
+  old value. The store numbers its snapshot requests; a confirmed op records
+  the number at confirmation; a confirmed op loaded from storage counts as
+  confirmed before every request of the new session.
 - Drain: first in, first out, one at a time, single flight. Triggers: a new
   tap, the `online` event (also resets the backoff), back in the foreground,
   after a snapshot refresh, and every 30 s while anything waits and the app

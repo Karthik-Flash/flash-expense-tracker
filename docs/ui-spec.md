@@ -252,14 +252,44 @@ most 30 characters."); Create stays disabled until the name is fine.
   Nov 21:40"; while a refresh runs "Updating…"; after a failed refresh
   "Offline · showing data from 5 min ago". No spinner over the numbers, no
   banner. The screens show the phone copy at once (D-089).
-- **Offline owner actions**: "You're offline. Try again when connected."
-  in the usual error place. Nothing is queued.
+- **Owner actions** (4B-2) are saved on the phone first and sent in the
+  background, online or offline; see "Waiting to sync".
 - **Speed sheet**: tap the version line on Home. The usual sheet: the two
   targets ("Open from phone copy: 2 s or less", "Fresh data, server awake:
   5 s or less"), the last launch (phone copy ms, fresh data s, request ms,
   size, result) and a plain table of the last 10 launches (time IST, local
-  ms, fresh s, result; "cold" when the request took over 10 s). Measured on
-  the phone and kept there (D-090). It is not in the URL: Back leaves Home.
+  ms, fresh s, result; "cold" when the request took over 10 s), and a Sync
+  block (waiting, couldn't save, last drain: time, sent, seconds; last
+  error). Measured on the phone and kept there (D-090). In the URL as
+  `?speed`, so Back closes it.
+
+## Waiting to sync (4B-2, D-091, D-093)
+
+- **A tap is saved at once.** Every owner action goes to the outbox on the
+  phone and is sent in the background, online or offline. No spinner, no
+  banner, no toast per tap.
+- **Pending item**: the item shows the owner's choice with muted "Waiting
+  to sync" (and Undo while it has not started sending). A transaction row
+  shows the new category tile and name, or the label, then "· Waiting to
+  sync"; the sheet shows it under Category or Label. Once the server
+  confirms, the choice stays without the note until the fresh numbers
+  arrive. Totals, the ring, percentages, ledger sums and comparisons never
+  change for a pending tap (D-088).
+- **To-do**: a sender or merchant with an answer waiting leaves its list
+  and the tab's count, and shows in "Waiting to sync" at the top: "Rohit V",
+  then "Friend · Waiting to sync · Undo".
+- **Labels**: a label being made shows at the top of the list with
+  "Waiting to sync" and no totals.
+- **Sync line**: the freshness line gains "· 3 waiting to sync"; "1 couldn't
+  save" is a link to the **Couldn't save** sheet (`?unsaved`): each refused
+  change with what it was, its item, the server's reason, Retry and Discard.
+  After a lasting 401 the line says "Sign in to sync" (a link to the login;
+  nothing is lost).
+- **Sign out** with changes not synced: a sheet "2 changes haven't synced
+  yet. If you sign out now they will be lost." with "Stay signed in"
+  (primary) and "Sign out anyway".
+- **To-do merchant cards** say when, like sender cards: "1 payment · Tue 12
+  Nov", "3 payments · last Tue 12 Nov".
 
 ## Update bar and version line
 

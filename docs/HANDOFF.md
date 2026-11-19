@@ -9,12 +9,12 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 
 - Phases 0 to 3 are done. Phase 4 runs as 4C, 4B, 4E, 4F, 4D, with 4A (the
   bank statement check carried from Phase 3) done before 4D
-  ([PLAN.md](PLAN.md)). 4C (install and update prompt) and 4B-1 (phone
-  copy and instant open) are done; next 4B-2 (queued taps).
+  ([PLAN.md](PLAN.md)). 4C (install and update prompt), 4B-1 (phone
+  copy and instant open) and 4B-2 (offline queue) are done; next 4E.
 - Engine versions: parser `hdfc-1.1.1`, `merchant-1.1.1`,
   `reconcile-1.3.0`, `categorise-1.0.0`.
-- Alembic head: `0006` (categories and labels).
-- Decisions: D-001 to D-090 ([DECISIONS.md](DECISIONS.md)).
+- Alembic head: `0007` (client_ops).
+- Decisions: D-001 to D-094 ([DECISIONS.md](DECISIONS.md)).
 - Live: app https://flash-expense-tracker.vercel.app, API
   https://flash-expense-tracker.onrender.com (more under "Live URLs").
 - The app: real login (Supabase Auth) and data (`/api/v1`), every screen,
@@ -23,7 +23,9 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   shows "New version available" and Home shows the build id (D-085 to
   D-087). Screens read one snapshot (`/api/v1/sync/snapshot`) kept on the
   phone in IndexedDB and open from it at once; every money figure comes
-  from the server (D-088 to D-090).
+  from the server (D-088 to D-090). Every owner action goes through an
+  outbox on the phone with an Idempotency-Key, shown as "Waiting to sync"
+  (D-091 to D-094; [design/phase-4b2-outbox.md](design/phase-4b2-outbox.md)).
 
 ### Owner commands
 
@@ -103,6 +105,7 @@ backend/            Render root
   app/api/auth.py     Supabase login (ES256 JWT via JWKS), AUTH_USERS -> owner
   app/api/v1.py       data API /api/v1 (docs/api.md)
   app/api/snapshot.py GET /api/v1/sync/snapshot: the app's one read, ETag and 304 (D-088)
+  app/api/ops.py      every owner write: Idempotency-Key (client_ops), deferred recompute (D-091 to D-094)
   app/config.py       settings from env / backend/.env (DATABASE_URL, PING_TOKEN, CORS_ORIGINS, OWNER_ID)
   app/db.py           engine, SessionLocal, Base
   app/models.py       ORM models; UtcDateTime column type
@@ -110,12 +113,12 @@ backend/            Render root
   app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py, owner_load.py (owner file -> owner tables), recompute.py (derive -> derived tables)
   app/importers/      sms_backup.py (streaming XML importer)
   app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals | category-stats | category-review | credit-review
-  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels
+  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels, 0007 client_ops
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
-frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar), src/data (local.ts: the IndexedDB phone copy; store.ts: snapshot, refresh, freshness, timings), src/screens/Speed.tsx (Speed sheet)
+frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar), src/data (local.ts: the IndexedDB phone copy; store.ts: snapshot, refresh, freshness, timings; outbox.ts: owner actions, drain, markers), src/screens/Speed.tsx (Speed sheet)
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests); backup_db.ps1 (owner: pg_dump via Docker)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-090), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-094), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```
@@ -219,7 +222,9 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.
    The 4C update bar and version line were checked at 360 px, light, dark
    and 200 % in headless Edge only; the 4B-1 screens in headless Edge at
-   390 px on demo data. Speed sheet timings on a real phone are still to come.
+   390 px on demo data; the 4B-2 outbox on demo data in headless Edge (taps
+   with the demo server failing, drain once it answers). Speed sheet timings
+   and an offline tap on a real phone are still to come.
 7. Accepted risk: npm audit, 4 moderate findings, build-time only: glob
    11.1.0 (GHSA-3g3m-2fjr-6pw4) and minimatch 10.2.6 and 5.1.9
    (GHSA-g3hv-75wg-m249), via vite-plugin-pwa 2.0.0 and workbox-build 7.4.1,
@@ -234,8 +239,9 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 11. The owner doubts the October People total: verify it person by person.
 12. Vercel: `VITE_API_URL` is saved as a Secret. The owner changes it to a
     plain variable and redeploys with the build cache off.
-13. Offline taps are not queued yet: owner actions need a connection
-    (step 4B-2).
+13. HDFC UPI credit SMS carry only a VPA, sometimes masked with "*" by the
+    bank (22 of 22 in the redacted sample; 6 masked). Payer names come from
+    the statement (4A) or from the owner naming the person (4E).
 14. Later list: a friendlier Home, still minimal; revisit with 4D.
 
 Known limits: HDFC and INR only; the card bill pair rule waits for credit

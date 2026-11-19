@@ -322,6 +322,24 @@ Additive. RLS on the three new tables.
 | I26 | Corrections survive reparse | `test_i26_*` |
 | I27 | A transaction imported after a merchant correction gets that category | `test_i27_*` |
 
+## Client operations (migration `0007`, D-092)
+
+`client_ops` keeps the final answer of each owner write sent with an
+`Idempotency-Key` (`docs/api.md`). One small row per tap, never deleted. Row
+level security on, no policies.
+
+| Column | What |
+| ------ | ---- |
+| `owner_id`, `op_id` | Primary key: the key belongs to its owner |
+| `received_at` | UTC |
+| `method`, `path` | The request |
+| `request_hash` | SHA-256 of method, path and canonical body: the same key on another request is a 422 |
+| `status_code`, `response_body` | The answer replayed for the same key (2xx or 4xx; a 5xx is never stored) |
+| `completed_at` | UTC; the row commits with the write, so it is never seen in progress |
+| `recompute_pending` | The write deferred its recompute (D-094); the next read runs it and clears the mark |
+
+It holds no money, no message text and no counterparty text.
+
 ## Login and the API (D-078)
 
 No migration. Settings: `SUPABASE_URL`, `AUTH_USERS` (`"<sub>:<owner_id>"`,
