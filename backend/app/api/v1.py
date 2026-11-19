@@ -199,13 +199,25 @@ def _write(session: Session, owner: uuid.UUID, action) -> dict:
     return {"result": result, "recompute": {"status": outcome.status, "run": outcome.run_id}}
 
 
-@router.get("/summary")
-def summary(owner: Owner, session: Db, month: Month) -> dict:
-    start, end = _month(month)
+def freshness(session: Session, owner: uuid.UUID) -> tuple[bool, str | None]:
+    """(stale, last recompute time) of the owner's stored rows."""
     try:
         p = plan(session, owner)
     except OwnerDataError as exc:
         raise HTTPException(409, str(exc)) from None
+    return stale_reason(p) is not None, _iso(last_run_time(session, owner))
+
+
+@router.get("/summary")
+def summary(owner: Owner, session: Db, month: Month) -> dict:
+    return month_summary(session, owner, month, *freshness(session, owner))
+
+
+def month_summary(
+    session: Session, owner: uuid.UUID, month: str, stale: bool, last_recompute: str | None
+) -> dict:
+    """The /summary answer for one IST month; the snapshot reuses it (D-088)."""
+    start, end = _month(month)
     rows = _stored(
         session, owner, Transaction.txn_time_utc >= start, Transaction.txn_time_utc < end
     )
@@ -242,8 +254,8 @@ def summary(owner: Owner, session: Db, month: Month) -> dict:
             "senders_to_confirm": len(open_senders),
             "not_counted_yet": not_counted,
         },
-        "stale": stale_reason(p) is not None,
-        "last_recompute_utc": _iso(last_run_time(session, owner)),
+        "stale": stale,
+        "last_recompute_utc": last_recompute,
         "previous": _previous(session, owner, month),
     }
 
