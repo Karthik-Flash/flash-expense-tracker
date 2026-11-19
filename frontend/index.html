@@ -12,6 +12,26 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Never a blank page (D-095): when the app's code has not started 3 s after load (a
+      // file failed to load), say so here, without the app's CSS or JS. Kept on the device.
+      setTimeout(function () {
+        if (window.flashStarted) return
+        try {
+          var log = JSON.parse(localStorage.getItem('flash-boot') || '{}')
+          log.errors = [{ at: Date.now(), message: 'The app did not start: a file failed to load' }].concat(log.errors || []).slice(0, 5)
+          localStorage.setItem('flash-boot', JSON.stringify(log))
+        } catch (e) {}
+        var dark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches
+        document.body.style.cssText = 'margin:0;font-family:system-ui,sans-serif;background:' + (dark ? '#111214;color:#e7e7e4' : '#f6f6f4;color:#1b1c1e')
+        document.getElementById('root').innerHTML =
+          '<main role="alert" style="max-width:480px;margin:0 auto;padding:30vh 24px 32px">' +
+          '<h1 style="font-size:1.25rem;margin:0">Flash could not start</h1>' +
+          '<p style="font-size:.875rem;opacity:.75">Part of the app did not load. Your data on this phone is safe. Connect to the internet and reload.</p>' +
+          '<button type="button" onclick="location.reload()" style="min-height:44px;margin-top:16px;padding:0 12px;border-radius:8px;border:0;font:inherit;font-weight:500;background:' +
+          (dark ? '#6bb7af;color:#111214' : '#0e6862;color:#fff') + '">Reload</button></main>'
+      }, 3000)
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

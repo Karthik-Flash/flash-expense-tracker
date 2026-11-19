@@ -7,7 +7,7 @@ import { monthLabel, shiftMonth } from './lib/dates.ts'
 import { catColor, categoryIcon } from './screens/common.ts'
 import { freshnessLine, useData, type Load } from './data/store.ts'
 import { syncLine, useOutbox } from './data/outbox.ts'
-import { expire } from './auth.ts'
+import { expire, useAuth } from './auth.ts'
 import { useNav } from './state.tsx'
 
 /** Under the month: "Updated 5 min ago · 3 waiting to sync · 1 couldn't save", "Updating…",
@@ -15,14 +15,16 @@ import { useNav } from './state.tsx'
 export function Freshness() {
   const data = useData()
   const outbox = useOutbox()
+  const auth = useAuth()
   const { open } = useNav()
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(timer)
   }, [])
-  const sync = syncLine(outbox.ops, outbox.signIn)
-  const text = [data.snapshot ? freshnessLine(data, now) : '', sync.waiting].filter(Boolean).join(' · ')
+  // The outbox got a 401, or the session was rejected at boot (D-095): the same link.
+  const sync = syncLine(outbox.ops, outbox.signIn || (auth.status === 'in' && auth.signIn))
+  const text = [data.snapshot ? freshnessLine(data, now, sync.signIn) : '', sync.waiting].filter(Boolean).join(' · ')
   const link = 'inline-flex min-h-11 items-center px-1 text-accent'
   return (
     <p className="min-h-5 px-4 text-center text-xs text-muted" role="status">

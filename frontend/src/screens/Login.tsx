@@ -1,8 +1,18 @@
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 
 import { DEMO } from '../api/index.ts'
+import { OFFLINE_SIGN_IN } from '../auth.ts'
 import { Wordmark } from '../brand.tsx'
 import { Button } from '../ui.tsx'
+
+function onConnection(change: () => void) {
+  window.addEventListener('online', change)
+  window.addEventListener('offline', change)
+  return () => {
+    window.removeEventListener('online', change)
+    window.removeEventListener('offline', change)
+  }
+}
 
 /** Email and password, no sign-up. `submit` answers '' when signed in, else what went wrong. */
 export function Login({ submit, note }: { submit: (email: string, password: string) => Promise<string>; note: string }) {
@@ -10,6 +20,7 @@ export function Login({ submit, note }: { submit: (email: string, password: stri
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const online = useSyncExternalStore(onConnection, () => navigator.onLine)
   const field = 'mt-1 min-h-11 w-full rounded-lg border border-line bg-surface px-3'
   return (
     <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col justify-center px-6 py-8">
@@ -43,7 +54,9 @@ export function Login({ submit, note }: { submit: (email: string, password: stri
             className={field}
           />
         </label>
-        {error ? (
+        {!online && !DEMO ? (
+          <p className="text-sm text-muted" role="status">{OFFLINE_SIGN_IN}</p>
+        ) : error ? (
           <p className="text-sm text-danger" role="alert">{error}</p>
         ) : (
           note && <p className="text-sm text-muted" role="status">{note}</p>

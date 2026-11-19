@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { readBoot } from '../boot.ts'
 import { readTimings, type Timing } from '../data/local.ts'
 import { failedOps, useOutbox, waiting } from '../data/outbox.ts'
 import { speedRows } from '../data/store.ts'
@@ -10,7 +11,6 @@ import { Sheet } from '../ui.tsx'
 function SyncBlock() {
   const s = useOutbox()
   const last = s.lastDrain
-  const at = last && new Date(last.at).toISOString()
   return (
     <>
       <h3 className="mt-4 text-xs font-medium text-muted">Sync</h3>
@@ -20,10 +20,42 @@ function SyncBlock() {
         <dt className="text-muted">Couldn't save</dt>
         <dd>{failedOps(s.ops).length}</dd>
         <dt className="text-muted">Last drain</dt>
-        <dd>{last && at ? `${dayLabel(at)} ${timeLabel(at)}, ${last.sent} sent, ${(last.ms / 1000).toFixed(1)} s` : '–'}</dd>
+        <dd>{last ? `${when(last.at)}, ${last.sent} sent, ${(last.ms / 1000).toFixed(1)} s` : '–'}</dd>
         <dt className="text-muted">Last error</dt>
         <dd className="wrap-break-word">{s.signIn ? 'Sign in to sync' : s.lastError || '–'}</dd>
       </dl>
+    </>
+  )
+}
+
+const when = (ms: number) => {
+  const iso = new Date(ms).toISOString()
+  return `${dayLabel(iso)} ${timeLabel(iso)}`
+}
+
+/** How this launch reached its first screen, and the last boot errors (D-095). */
+function BootBlock() {
+  const [log] = useState(readBoot)
+  return (
+    <>
+      <h3 className="mt-4 text-xs font-medium text-muted">Boot</h3>
+      <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 tabular-nums">
+        <dt className="text-muted">Path</dt>
+        <dd>{log.last?.path ?? '–'}</dd>
+        <dt className="text-muted">First screen</dt>
+        <dd>{log.last ? `${log.last.paint_ms} ms` : '–'}</dd>
+        <dt className="text-muted">Boot errors</dt>
+        <dd>{log.errors.length || 'None'}</dd>
+      </dl>
+      {log.errors.length > 0 && (
+        <ul className="mt-1 space-y-0.5 text-xs">
+          {log.errors.map((e, i) => (
+            <li key={i} className="wrap-break-word">
+              <span className="text-muted tabular-nums">{when(e.at)}</span> {e.message}
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   )
 }
@@ -67,6 +99,7 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
             <thead className="text-xs text-muted">
               <tr>
                 <th className="py-1 font-normal">Time</th>
+                <th className="py-1 pl-2 font-normal">Boot</th>
                 <th className="py-1 text-right font-normal">Local</th>
                 <th className="py-1 text-right font-normal">Fresh</th>
                 <th className="py-1 pl-3 font-normal">Result</th>
@@ -76,6 +109,7 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
               {rows.map((r, i) => (
                 <tr key={i}>
                   <td className="py-1 whitespace-nowrap">{r.when}</td>
+                  <td className="py-1 pl-2">{r.boot}</td>
                   <td className="py-1 text-right whitespace-nowrap">{r.local}</td>
                   <td className="py-1 text-right whitespace-nowrap">{r.fresh}</td>
                   <td className="py-1 pl-3">{r.result}</td>
@@ -84,6 +118,7 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
             </tbody>
           </table>
         )}
+        <BootBlock />
         <SyncBlock />
         <p className="mt-4 text-xs text-muted">Measured on this phone and kept only here. Never sent anywhere.</p>
       </div>

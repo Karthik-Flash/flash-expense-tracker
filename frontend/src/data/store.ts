@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from 'react'
 
 import type { Api } from '../api/client.ts'
+import { bootPath } from '../boot.ts'
 import { SCHEMA_VERSION, type Snapshot } from '../api/types.ts'
 import { dayLabel, timeLabel, today } from '../lib/dates.ts'
 import { addTiming, dropSnapshot, readLocal, saveLocal, touchLocal, wipeLocal, type Meta, type Timing } from './local.ts'
@@ -30,9 +31,11 @@ export interface DataState {
   error: string
   /** The first snapshot is slow to come (no phone copy). */
   slow: boolean
+  /** What is shown came from the phone copy, not yet from the server. */
+  local: boolean
 }
 
-const EMPTY: DataState = { snapshot: null, fetchedAt: null, refreshing: false, failed: false, error: '', slow: false }
+const EMPTY: DataState = { snapshot: null, fetchedAt: null, refreshing: false, failed: false, error: '', slow: false, local: false }
 
 interface Session {
   api: Api
@@ -46,6 +49,8 @@ interface Session {
   again: boolean
   controller: AbortController | null
   stop: () => void
+  /** While the phone copy is being read: stop waiting for it (the boot watchdog). */
+  settle: (() => void) | null
 }
 
 let state = EMPTY
@@ -111,16 +116,24 @@ export async function startData(api: Api, user: string): Promise<void> {
     again: false,
     controller: null,
     stop: watch(),
+    settle: null,
   }
   session = s
-  const local = await safe(readLocal)
+  const local = await new Promise<Awaited<ReturnType<typeof readLocal>> | 'late'>((resolve) => {
+    s.settle = () => resolve('late')
+    void safe(readLocal).then(resolve)
+  })
+  s.settle = null
   if (session !== s) return
-  if (!local || local.meta.user_id !== user) {
+  if (local === 'late') {
+    // ponytail: IndexedDB did not answer within the boot watchdog (D-095): go to the server
+    // and leave what is stored alone. A stuck database is not a reason to wipe it.
+  } else if (!local || local.meta.user_id !== user) {
     await safe(wipeLocal) // another login (or nothing to say whose it is): never show it
   } else if (local.snapshot && local.meta.schema_version === SCHEMA_VERSION && local.snapshot.schema_version === SCHEMA_VERSION) {
     s.meta = local.meta
     s.fromLocal = true
-    set({ snapshot: local.snapshot, fetchedAt: local.meta.fetched_at })
+    set({ snapshot: local.snapshot, fetchedAt: local.meta.fetched_at, local: true })
   } else {
     s.meta = { ...local.meta, etag: '' }
     await safe(dropSnapshot) // another schema: fetch fresh, keep the outbox
@@ -165,7 +178,7 @@ async function pull(s: Session): Promise<void> {
       result = '304'
       if (s.meta) s.meta = { ...s.meta, fetched_at: now }
       s.fromLocal = false
-      set({ fetchedAt: now, failed: false, error: '' })
+      set({ fetchedAt: now, failed: false, error: '', local: false })
       for (const hook of appliedHooks) hook(ask)
       await safe(() => touchLocal(now))
     } else {
@@ -176,7 +189,7 @@ async function pull(s: Session): Promise<void> {
       if (s.meta && s.meta.owner_id !== meta.owner_id) await safe(wipeLocal)
       s.meta = meta
       s.fromLocal = false
-      set({ snapshot: answer.snapshot, fetchedAt: now, failed: false, error: '' })
+      set({ snapshot: answer.snapshot, fetchedAt: now, failed: false, error: '', local: false })
       for (const hook of appliedHooks) hook(ask)
       await safe(() => saveLocal(answer.snapshot, meta))
     }
@@ -199,7 +212,7 @@ async function pull(s: Session): Promise<void> {
   const requestMs = Math.round(performance.now() - started)
   const fresh = result === '200' || result === '304' ? Math.round(performance.now()) : null
   await safe(() =>
-    addTiming({ at: launch.at, local_ms: launch.local_ms, fresh_ms: fresh, request_ms: requestMs, result, bytes, cold: requestMs > COLD_MS }),
+    addTiming({ at: launch.at, local_ms: launch.local_ms, fresh_ms: fresh, request_ms: requestMs, result, bytes, cold: requestMs > COLD_MS, boot: bootPath() }),
   )
 }
 
@@ -207,6 +220,11 @@ async function pull(s: Session): Promise<void> {
 export function noteHomeDrawn(): void {
   const launch = session?.launch
   if (launch && launch.local_ms === null && session?.fromLocal) launch.local_ms = Math.round(performance.now())
+}
+
+/** The boot watchdog (D-095): stop waiting for the phone copy and ask the server. */
+export function settleData(): void {
+  session?.settle?.()
 }
 
 /** Stop and forget in memory; the phone copy and the outbox stay (a lost session, D-093). */
@@ -259,20 +277,22 @@ export function agoPhrase(then: number, now = Date.now()): string {
   return `${dayLabel(iso)} ${timeLabel(iso)}`
 }
 
-/** The muted line under the month: how fresh the numbers are. */
-export function freshnessLine(d: Pick<DataState, 'fetchedAt' | 'refreshing' | 'failed'>, now = Date.now()): string {
+/** The muted line under the month: how fresh the numbers are. `signIn`: the failure is a
+ *  session to renew, not the network (D-095). */
+export function freshnessLine(d: Pick<DataState, 'fetchedAt' | 'refreshing' | 'failed'>, now = Date.now(), signIn = false): string {
   if (d.refreshing) return 'Updating…'
   if (d.fetchedAt === null) return ''
   const when = agoPhrase(d.fetchedAt, now)
-  return d.failed ? `Offline · showing data from ${when}` : `Updated ${when}`
+  return d.failed ? `${signIn ? 'Not synced' : 'Offline'} · showing data from ${when}` : `Updated ${when}`
 }
 
-/** The Speed sheet's table: time (IST), phone copy in ms, fresh data in s, result. */
-export function speedRows(timings: Timing[]): { when: string; local: string; fresh: string; result: string }[] {
+/** The Speed sheet's table: time (IST), boot path, phone copy in ms, fresh data in s, result. */
+export function speedRows(timings: Timing[]): { when: string; boot: string; local: string; fresh: string; result: string }[] {
   return timings.map((t) => {
     const iso = new Date(t.at).toISOString()
     return {
       when: `${dayLabel(iso)} ${timeLabel(iso)}`,
+      boot: t.boot ?? '–',
       local: t.local_ms === null ? '–' : `${t.local_ms} ms`,
       fresh: t.fresh_ms === null ? '–' : `${(t.fresh_ms / 1000).toFixed(1)} s`,
       result: t.cold ? `${t.result}, cold` : t.result,

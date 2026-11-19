@@ -34,6 +34,8 @@ export interface Timing {
   bytes: number | null
   /** The request took over 10 s: the server was asleep. */
   cold: boolean
+  /** How the launch reached its first screen (boot.ts); absent before 4B-3. */
+  boot?: string | null
 }
 
 interface Schema extends DBSchema {

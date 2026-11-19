@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { api, DEMO, demoApi } from './api/index.ts'
 import { DEMO_STATES, type DemoState } from './api/fake.ts'
+import { markPainted, type BootPath } from './boot.ts'
 import { refreshToken, signIn, signOut, useAuth } from './auth.ts'
 import { startOutbox, syncState, todoView, unsynced, useOutbox } from './data/outbox.ts'
-import { clearData, startData, useSnapshot } from './data/store.ts'
+import { clearData, startData, useData, useSnapshot } from './data/store.ts'
 import { AppContext, navigate, useNav, useScrollMemory, useView, type AppState } from './state.tsx'
 import { CategoryDetail, Home } from './screens/Home.tsx'
 import { LabelDetail, Labels } from './screens/Labels.tsx'
@@ -64,18 +65,21 @@ export default function App() {
   const state: AppState = useMemo(() => ({ api, signOut: leave }), [leave])
   const status = DEMO ? (demoIn ? 'in' : 'out') : auth.status
   const user = DEMO ? 'demo' : auth.status === 'in' ? auth.user : null
-  // The phone copy of this login at once, then the server (D-089); then the outbox (D-091).
+  // After the first paint: the phone copy of this login, then the server (D-089), then the
+  // outbox (D-091). Nothing here holds up the first screen (D-095).
   useEffect(() => {
     if (status === 'in' && user) void startData(api, user).then(() => startOutbox(api, refreshToken))
   }, [status, user])
   if (DEMO && view.tab === 'dev') return <Logos />
-  if (status === 'starting') return null
+  // Not reached: startAuth decides from the device before the first render (D-095).
+  if (status === 'starting') return <p className="px-4 py-10 text-center text-sm text-muted">Loading</p>
   return (
     <AppContext.Provider value={state}>
       <div className="flex min-h-dvh flex-col">
         {DEMO && <DemoBanner />}
         {status === 'in' && <Shell view={view} />}
         {status === 'no-access' && <NoAccess />}
+        {(status === 'out' || status === 'no-access') && <Painted path="login" />}
         {status === 'out' && (
           <Login
             note={auth.status === 'out' ? auth.note : ''}
@@ -124,15 +128,25 @@ function SignOutSheet({ count, stay, leave }: { count: number; stay: () => void;
   )
 }
 
+/** Records how this launch reached its first screen (boot.ts), once it is on screen. */
+function Painted({ path }: { path: BootPath }) {
+  useEffect(() => markPainted(path), [path])
+  return null
+}
+
 function Shell({ view }: { view: View }) {
   useScrollMemory(view)
   const { back } = useNav()
+  const [load] = useSnapshot()
+  const { local } = useData()
+  const path: BootPath | null = load.status === 'ready' ? (local ? 'local copy' : 'online') : load.status === 'error' ? 'error screen' : null
   return (
     <div className="mx-auto w-full max-w-[480px] flex-1 pb-[calc(5rem+env(safe-area-inset-bottom))]">
       <main>
         <Screen view={view} />
       </main>
       <Nav view={view} />
+      {path && <Painted path={path} />}
       {view.sheet === 'speed' && <SpeedSheet onClose={back} />}
       {view.sheet === 'unsaved' && <UnsavedSheet onClose={back} />}
     </div>
