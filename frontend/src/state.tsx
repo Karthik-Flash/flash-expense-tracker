@@ -5,10 +5,8 @@ import { currentMonth } from './lib/dates.ts'
 import { parentOf, parseHash, stack, toHash, type View } from './view.ts'
 
 export interface AppState {
-  /** Writes. Reads come from the snapshot (data/store.ts). */
+  /** The adapter. Reads come from the snapshot (data/store.ts), writes from the outbox. */
   api: Api
-  /** After a saved write: refresh the snapshot. */
-  changed: () => void
   signOut: () => void
 }
 

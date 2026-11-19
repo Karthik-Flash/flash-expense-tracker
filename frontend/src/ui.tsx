@@ -6,19 +6,39 @@ import { moneyIn, rupees, rupeesExact } from './lib/money.ts'
 import { monthLabel, shiftMonth } from './lib/dates.ts'
 import { catColor, categoryIcon } from './screens/common.ts'
 import { freshnessLine, useData, type Load } from './data/store.ts'
+import { syncLine, useOutbox } from './data/outbox.ts'
+import { expire } from './auth.ts'
+import { useNav } from './state.tsx'
 
-/** Under the month: "Updated 5 min ago", "Updating…", or "Offline · showing data from …". */
+/** Under the month: "Updated 5 min ago · 3 waiting to sync · 1 couldn't save", "Updating…",
+ *  or "Offline · showing data from …". The failed count opens its sheet. */
 export function Freshness() {
   const data = useData()
+  const outbox = useOutbox()
+  const { open } = useNav()
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(timer)
   }, [])
-  const line = data.snapshot ? freshnessLine(data, now) : ''
+  const sync = syncLine(outbox.ops, outbox.signIn)
+  const text = [data.snapshot ? freshnessLine(data, now) : '', sync.waiting].filter(Boolean).join(' · ')
+  const link = 'inline-flex min-h-11 items-center px-1 text-accent'
   return (
     <p className="min-h-5 px-4 text-center text-xs text-muted" role="status">
-      {line}
+      {text}
+      {sync.failed && (
+        <>
+          {text && ' · '}
+          <button type="button" className={link} onClick={() => open({ sheet: 'unsaved' })}>{sync.failed}</button>
+        </>
+      )}
+      {sync.signIn && (
+        <>
+          {(text || sync.failed) && ' · '}
+          <button type="button" className={link} onClick={() => void expire('Sign in again to sync your changes.')}>Sign in to sync</button>
+        </>
+      )}
     </p>
   )
 }

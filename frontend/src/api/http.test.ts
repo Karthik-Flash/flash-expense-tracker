@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import type { ApiError } from './client.ts'
-import { HttpApi, OFFLINE } from './http.ts'
+import type { ApiError, SendRequest } from './client.ts'
+import { HttpApi } from './http.ts'
 
 type Call = { url: string; init: RequestInit }
 
@@ -43,53 +43,71 @@ test('a waking server page instead of JSON is an error, not data', async () => {
   await assert.rejects(api.snapshot(null, signal), (e: ApiError) => e.status === 502)
 })
 
-test('writes carry the token, the path and the body', async () => {
+const op = (over: Partial<SendRequest> = {}): SendRequest => ({
+  op_id: '00000000-0000-4000-8000-000000000001',
+  method: 'PUT',
+  path: '/senders/s_ab%2Fc',
+  body: { answer: 'income', label: 'Family' },
+  defer: false,
+  ...over,
+})
+
+test('an owner action: token, Idempotency-Key, path, body; defer only when asked', async () => {
   const { api, calls } = stub(200, { result: {}, recompute: { status: 'done', run: 1 } })
-  await api.answerSender('s_ab/c', { answer: 'income', label: 'Family' })
+  assert.deepEqual(await api.send(op(), signal), { status: 200, detail: null, message: '' })
+  const headers = calls[0].init.headers as Record<string, string>
   assert.equal(calls[0].url, 'https://api.test/api/v1/senders/s_ab%2Fc')
   assert.equal(calls[0].init.method, 'PUT')
   assert.equal(calls[0].init.body, '{"answer":"income","label":"Family"}')
-  assert.equal((calls[0].init.headers as Record<string, string>).Accept, 'application/json')
-  await api.resetSender('s_1')
-  assert.equal(calls[1].init.method, 'DELETE')
+  assert.equal(headers['Idempotency-Key'], '00000000-0000-4000-8000-000000000001')
+  assert.equal(headers.Accept, 'application/json')
+  assert.equal(headers['X-Defer-Recompute'], undefined)
+  await api.send(op({ method: 'DELETE', body: null, defer: true }), signal)
+  const second = calls[1].init.headers as Record<string, string>
+  assert.equal(calls[1].init.body, undefined)
+  assert.equal(second['X-Defer-Recompute'], '1')
+  assert.equal(second['Content-Type'], undefined)
 })
 
-test('401 and 403 tell the login layer; other errors keep the server words', async () => {
-  const cases: [number, unknown, RegExp, number[]][] = [
-    [401, { detail: 'not logged in' }, /session ended/, [401]],
-    [403, { detail: 'no access' }, /no access/, [403]],
-    [503, { detail: 'TEST internal' }, /not ready/, []],
-    [500, 'not json', /had a problem/, []],
-    [409, { detail: 'a label with this name already exists' }, /^A label with this name already exists\.$/, []],
-    [422, { detail: [{ msg: 'x' }] }, /did not accept/, []],
+test('an owner action answers every status; it never signs anyone out', async () => {
+  const cases: [number, unknown, unknown, RegExp][] = [
+    [401, { detail: 'not logged in' }, 'not logged in', /session ended/],
+    [403, { detail: 'no access' }, 'no access', /no access/],
+    [409, { detail: 'in_progress' }, 'in_progress', /In_progress/],
+    [422, { detail: 'idempotency_key_reused' }, 'idempotency_key_reused', /Idempotency_key_reused/],
+    [503, { detail: 'TEST internal' }, 'TEST internal', /not ready/],
+    [500, 'not json', null, /had a problem/],
   ]
-  for (const [status, body, text, lost] of cases) {
+  for (const [status, body, detail, text] of cases) {
     const s = stub(status, body)
-    await assert.rejects(s.api.createLabel('Trip'), (e: ApiError) => e.status === status && text.test(e.message))
-    assert.deepEqual(s.lost, lost, String(status))
+    const answer = await s.api.send(op(), signal)
+    assert.equal(answer.status, status)
+    assert.equal(answer.detail, detail)
+    assert.match(answer.message, text)
+    assert.deepEqual(s.lost, [], String(status))
   }
 })
 
-test('an owner action offline says so and queues nothing', async () => {
-  const failed = stub(0, null)
-  await assert.rejects(failed.api.createLabel('Trip'), (e: ApiError) => e.status === 0 && e.message === OFFLINE)
-  await assert.rejects(failed.api.snapshot(null, signal), /Could not reach the server/)
+test('the snapshot: 401 and 403 tell the login layer', async () => {
+  for (const [status, lost] of [[401, [401]], [403, [403]], [503, []]] as const) {
+    const s = stub(status, { detail: 'x' })
+    await assert.rejects(s.api.snapshot(null, signal), (e: ApiError) => e.status === status)
+    assert.deepEqual(s.lost, lost)
+  }
+})
 
+test('unreachable: an ApiError 0, and no request without a refreshable token', async () => {
+  const failed = stub(0, null)
+  await assert.rejects(failed.api.send(op(), signal), (e: ApiError) => e.status === 0)
+  await assert.rejects(failed.api.snapshot(null, signal), /Could not reach the server/)
   const expired = stub(200, {}, async () => {
     throw new TypeError('Failed to fetch') // the token refresh could not reach Supabase
   })
-  await assert.rejects(expired.api.setLabel(1, 2), (e: ApiError) => e.message === OFFLINE)
+  await assert.rejects(expired.api.send(op(), signal), (e: ApiError) => e.status === 0)
   assert.deepEqual([expired.calls.length, expired.lost], [0, []])
-
-  const saved = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
-  Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true })
-  try {
-    const off = stub(200, {})
-    await assert.rejects(off.api.clearLabel(1), (e: ApiError) => e.message === OFFLINE)
-    assert.equal(off.calls.length, 0)
-  } finally {
-    if (saved) Object.defineProperty(globalThis, 'navigator', saved)
-  }
+  const none = stub(200, {}, null)
+  assert.equal((await none.api.send(op(), signal)).status, 401)
+  assert.deepEqual([none.calls.length, none.lost], [0, []])
 })
 
 test('no session: no request, and the owner goes to login', async () => {

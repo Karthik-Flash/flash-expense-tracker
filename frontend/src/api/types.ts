@@ -148,7 +148,8 @@ export interface Snapshot {
   todo: {
     senders: Sender[]
     answered: Sender[]
-    merchants: (Merchant & { txn_id: number })[]
+    /** `last_time_utc`: the newest payment (absent in a phone copy from before 4B-2). */
+    merchants: (Merchant & { txn_id: number; last_time_utc?: string })[]
     unnamed: number
   }
   labels: LabelView[]

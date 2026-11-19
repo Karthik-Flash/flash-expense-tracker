@@ -989,3 +989,51 @@ Home drawn from the copy, to the fresh snapshot (or 304) applied, the
 request time, result, size, and whether the server was cold (over 10 s).
 The last 20 are kept; the Speed sheet (tap the version line) shows the
 targets, the last launch and the last 10. They are never sent anywhere.
+
+## D-091 Every owner write goes through the phone outbox (2026-11-19)
+
+One code path online and offline: a tap is saved in the outbox (IndexedDB
+`flash` v2, store `outbox`) and sent first in first out, one at a time, with
+its op id as `Idempotency-Key`. Triggers: the tap, `online`, back in the
+foreground, after a snapshot refresh, every 30 s while anything waits. A
+network error, a 90 s timeout, a 5xx or `409 in_progress` keeps it pending
+with a backoff of 5 s, 15 s, 60 s, then 5 min; a 401 or 403 gets one token
+refresh, then "Sign in to sync"; another 4xx fails that tap only. After a
+drain that confirmed a tap, one snapshot refresh. An update reload waits up
+to 10 s for a tap being sent. The sheet's "new label" is one write
+(`{"new_label"}`), since a label made offline has no id yet. Design:
+`docs/design/phase-4b2-outbox.md`.
+
+## D-092 client_ops keeps final answers, never deleted, RLS on (2026-11-19)
+
+Migration `0007`. Key `(owner_id, op_id)`: a key belongs to its owner (safer
+than a key on op_id alone). The row commits in the write's transaction:
+`recompute()` takes a `before_commit` hook for it. 2xx and 4xx are stored
+and replayed; a 5xx rolls everything back; another request under the same
+key is 422 `idempotency_key_reused`; the same key still running in this
+process is 409 `in_progress` (across processes the owner lock makes the
+second wait, then replay). Without the header nothing changes.
+
+## D-093 A pending tap shows on its item only and is never dropped without the owner (2026-11-19)
+
+A pending or confirmed tap shows the owner's choice on its item; no total,
+percentage, ring, ledger sum or comparison changes until a snapshot asked
+for after the confirmation is applied (request numbers order that, not
+clocks). To-do lists and the tab count leave out items with an answer
+waiting. A tap leaves the outbox only when a later snapshot shows it, when
+the owner undoes it before it is sent, or when the owner discards a refused
+one. Sign-out with unsynced taps asks first ("Stay signed in" is the
+default). A lost session (401) no longer wipes: it goes to the login and
+keeps the phone copy and the outbox for the same login; another login wipes
+them first. Refines D-089.
+
+## D-094 Deferred recompute for a queue of taps (2026-11-19)
+
+Each write recomputes the owner's derived rows (about 40 ms on SQLite with
+704 FAKE transactions; more over the Supabase pooler). With
+`X-Defer-Recompute: 1` and a key, a write skips it and marks its
+`client_ops` row; the phone sends the header on every queued tap but the
+last. Every read route and the snapshot run a pending recompute first and
+clear the marks in the same commit; any write's recompute clears them too.
+So 20 queued taps cost one recompute, and derived data is never served out
+of step with owner data.

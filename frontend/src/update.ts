@@ -3,6 +3,8 @@
 import { createElement as h, useSyncExternalStore } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 
+import { waitForSending } from './data/outbox.ts'
+
 // Plain createElement, not JSX, so node --test can load this file (update.test.ts).
 
 const HOUR = 60 * 60 * 1000
@@ -37,7 +39,8 @@ const BUTTON = 'min-h-11 rounded-lg border px-3 text-sm font-medium wrap-break-w
 /**
  * "New version available" with Reload and Later, above the bottom navigation when there is one.
  * Mount once: the hook registers the service worker. The new worker waits; only Reload
- * activates it, and the page then reloads once. The app never reloads by itself.
+ * activates it, and the page then reloads once. The app never reloads by itself. Reload first
+ * waits (at most 10 s) for an owner action being sent (D-091).
  */
 export function UpdateBar({ aboveNav }: { aboveNav: boolean }) {
   const {
@@ -60,7 +63,7 @@ export function UpdateBar({ aboveNav }: { aboveNav: boolean }) {
           'span',
           { className: 'flex flex-wrap gap-2' },
           h('button', { type: 'button', onClick: hideUntilNextLaunch, className: `${BUTTON} border-line bg-surface text-ink` }, 'Later'),
-          h('button', { type: 'button', onClick: () => void updateServiceWorker(true), className: `${BUTTON} border-accent bg-accent text-on-accent` }, 'Reload'),
+          h('button', { type: 'button', onClick: () => void waitForSending(10_000).then(() => updateServiceWorker(true)), className: `${BUTTON} border-accent bg-accent text-on-accent` }, 'Reload'),
         ),
       ),
   )

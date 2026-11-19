@@ -248,3 +248,7 @@ def clear_label(session: Session, owner_id: uuid.UUID, txn_id: int) -> None:
     if (row := session.get(TxnLabel, txn_id)) is not None:
         session.delete(row)
         session.flush()
+
+
+# The checked transaction, for a route that must fail before writing anything else.
+transaction_of = _transaction

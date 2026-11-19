@@ -5,7 +5,7 @@ refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
 **Status (19 Nov 2026):** Phases 0 to 3 done. **Phase 4 in progress**: 4C
-and 4B-1 done; next 4B-2.
+4B-1 and 4B-2 done; next 4E.
 
 Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
@@ -133,7 +133,10 @@ until Phase 4.
 
 ## Phase 4: Installable offline-first PWA, owner fixes, second bank
 
-Order: 4C, 4B, 4E, 4F, 4D. 4A (carried from Phase 3) must finish before 4D.
+Order: 4C, 4B, 4E, 4F, 4G, 4D. 4A (carried from Phase 3) must finish before
+4D; before 4A the planner reminds the owner to download two months of
+statements (October and one messy month) as Excel or delimited text, not
+PDF, into `D:\FlashPrivate`.
 
 - [x] 4C Install and update prompt (19 Nov 2026): manifest and icons, the
   update bar instead of silent updates, app-shell-only service worker, the
@@ -145,13 +148,21 @@ Order: 4C, 4B, 4E, 4F, 4D. 4A (carried from Phase 3) must finish before 4D.
   usable in 2 s from the phone copy, fresh data in 5 s when the server is
   awake, and a cold server never blocks the screen.
   4B-1 (19 Nov 2026, D-088 to D-090): the snapshot, the phone copy, the
-  freshness line and the Speed sheet. 4B-2: taps queued as "Waiting to
-  sync".
-- [ ] 4E Owner fixes: join one person seen under a name and a UPI ID; a
-  faster To-do; the label length mismatch (column 80, API 30).
+  freshness line and the Speed sheet. 4B-2 (19 Nov 2026, D-091 to D-094):
+  every owner action through the outbox, shown as "Waiting to sync".
+- [ ] 4E Owner fixes: join one person seen under a name and a UPI ID (To-do
+  sender cards get "See payments", "Name this person" and "Same as…"); a
+  faster To-do; the label length mismatch (column 80, API 30); a new logo:
+  3 original options (an idea: a lightning bolt behind the $), the owner
+  picks, then the wordmark and every app icon are updated.
 - [ ] 4F Second bank: a counts-only survey of the 153 other-bank messages;
   pick the bank with the most money messages; vocabulary survey, parser,
   sender-registry entry, reparse.
+- [ ] 4G Cash wallet, after 4F and before 4D: ATM withdrawals keep counting
+  as Spent under "Cash"; logging a cash expense moves that amount into its
+  category, so Spent never drops because a log is missing; the wallet shows
+  cash in hand (withdrawn minus logged); logging works offline through the
+  outbox. Designed with the planner first.
 - [ ] 4A Statement check: a PRIVATE CLI that reads a NetBanking statement
   file from `D:\FlashPrivate` and prints only count and rupee differences
   per IST month, with likely causes. The owner runs it on one normal and one

@@ -3,7 +3,9 @@ is scoped to the token's owner. Money is integer paise; times are UTC ISO string
 No response holds raw message text or a reference.
 
 Writes use source "app", are idempotent, and end with one recompute in the same database
-transaction: the answer and the derived rows are saved together, or nothing is.
+transaction: the answer and the derived rows are saved together, or nothing is. With an
+Idempotency-Key a repeat writes nothing and gets the first answer (app/api/ops.py). Every
+read first runs a recompute a deferred write left (D-094).
 """
 
 import uuid
@@ -13,10 +15,11 @@ from types import SimpleNamespace
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.api import ops
 from app.api.auth import current_owner
 from app.db import get_session
 from app.engine.categorise import CATEGORIES, SPENDING_ROLES, UNCATEGORISED, breakdown, label_view
@@ -32,20 +35,13 @@ from app.models import (
     TxnLabel,
 )
 from app.pipeline import owner_actions
-from app.pipeline.owner_actions import ActionError
-from app.pipeline.recompute import (
-    OwnerDataError,
-    last_run_time,
-    owner_lock,
-    plan,
-    recompute,
-    stale_reason,
-)
+from app.pipeline.recompute import OwnerDataError, last_run_time, plan, stale_reason
 
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(current_owner)])
 Owner = Annotated[uuid.UUID, Depends(current_owner)]
 Db = Annotated[Session, Depends(get_session)]
 Month = Annotated[str, Query(pattern=r"^\d{4}-\d{2}$", description="IST month, YYYY-MM")]
+Fresh = [Depends(ops.fresh_reads)]  # every read: a deferred recompute runs first
 NOT_COUNTED = ("foreign_currency_deferred", "no_parser_for_bank")
 
 
@@ -68,7 +64,16 @@ class NewLabel(Body):
 
 
 class LabelAnswer(Body):
-    label_id: int
+    """An existing label, or a new one made and attached in the same write (4B-2)."""
+
+    label_id: int | None = None
+    new_label: str | None = Field(None, max_length=200)
+
+    @model_validator(mode="after")
+    def one_of(self) -> "LabelAnswer":
+        if (self.label_id is None) == (self.new_label is None):
+            raise ValueError("send label_id or new_label")
+        return self
 
 
 def _now() -> datetime:
@@ -182,23 +187,6 @@ def _label_totals(rows: list) -> dict:
     }
 
 
-def _write(session: Session, owner: uuid.UUID, action) -> dict:
-    """Run one owner answer and one recompute under the owner's lock, all or nothing."""
-    with owner_lock(session, owner):
-        try:
-            result = action()
-            outcome = recompute(session, owner, "owner")
-        except ActionError as exc:
-            session.rollback()
-            raise HTTPException(404 if exc.kind == "not_found" else 422, str(exc)) from None
-        except OwnerDataError as exc:
-            session.rollback()
-            raise HTTPException(409, str(exc)) from None
-    if outcome.status == "stopped":
-        raise HTTPException(409, "recompute stopped: an engine change needs the owner's check")
-    return {"result": result, "recompute": {"status": outcome.status, "run": outcome.run_id}}
-
-
 def freshness(session: Session, owner: uuid.UUID) -> tuple[bool, str | None]:
     """(stale, last recompute time) of the owner's stored rows."""
     try:
@@ -208,7 +196,7 @@ def freshness(session: Session, owner: uuid.UUID) -> tuple[bool, str | None]:
     return stale_reason(p) is not None, _iso(last_run_time(session, owner))
 
 
-@router.get("/summary")
+@router.get("/summary", dependencies=Fresh)
 def summary(owner: Owner, session: Db, month: Month) -> dict:
     return month_summary(session, owner, month, *freshness(session, owner))
 
@@ -260,7 +248,7 @@ def month_summary(
     }
 
 
-@router.get("/transactions")
+@router.get("/transactions", dependencies=Fresh)
 def transactions(
     owner: Owner,
     session: Db,
@@ -299,7 +287,7 @@ def transactions(
     return {"items": items, "next_cursor": next_cursor}
 
 
-@router.get("/transactions/{txn_id}")
+@router.get("/transactions/{txn_id}", dependencies=Fresh)
 def transaction(owner: Owner, session: Db, txn_id: int) -> dict:
     row = session.execute(_items(owner).where(Transaction.id == txn_id)).first()
     if row is None:
@@ -312,7 +300,7 @@ def categories(owner: Owner) -> list[dict]:
     return [{"slug": slug, "name": name} for slug, name in CATEGORIES.items()]
 
 
-@router.get("/labels")
+@router.get("/labels", dependencies=Fresh)
 def labels(owner: Owner, session: Db) -> list[dict]:
     """Every label with its totals across all dates (no breakdown: see /labels/{id})."""
     rows = defaultdict(list)
@@ -333,7 +321,7 @@ def labels(owner: Owner, session: Db) -> list[dict]:
     return out
 
 
-@router.get("/labels/{label_id}")
+@router.get("/labels/{label_id}", dependencies=Fresh)
 def label_detail(owner: Owner, session: Db, label_id: int) -> dict:
     found = session.get(Label, label_id)
     if found is None or found.owner_id != owner:
@@ -344,7 +332,7 @@ def label_detail(owner: Owner, session: Db, label_id: int) -> dict:
     return {"id": found.id, "name": found.name, **_label_totals(rows)}
 
 
-@router.get("/senders")
+@router.get("/senders", dependencies=Fresh)
 def senders(
     owner: Owner,
     session: Db,
@@ -375,58 +363,60 @@ def senders(
 
 
 @router.put("/senders/{sender_id}")
-def answer_sender(owner: Owner, session: Db, sender_id: str, body: SenderAnswer) -> dict:
+def answer_sender(owner: Owner, session: Db, op: ops.OpDep, sender_id: str, body: SenderAnswer):
     def action() -> dict:
         s = owner_actions.answer_sender(session, owner, sender_id, body.answer, body.label, "app")
         return {"id": s.id, "credits": s.count}
 
-    return _write(session, owner, action)
+    return ops.write(session, owner, op, action, body.model_dump())
 
 
 @router.delete("/senders/{sender_id}")
-def reset_sender(owner: Owner, session: Db, sender_id: str) -> dict:
+def reset_sender(owner: Owner, session: Db, op: ops.OpDep, sender_id: str):
     def action() -> dict:
         s = owner_actions.reset_sender(session, owner, sender_id)
         return {"id": s.id, "credits": s.count}
 
-    return _write(session, owner, action)
+    return ops.write(session, owner, op, action)
 
 
 @router.put("/transactions/{txn_id}/category")
-def set_category(owner: Owner, session: Db, txn_id: int, body: CategoryAnswer) -> dict:
+def set_category(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: CategoryAnswer):
     def action() -> dict:
         owner_actions.set_category(session, owner, txn_id, body.category, body.scope, "app")
         return {"id": txn_id, "category": body.category, "scope": body.scope}
 
-    return _write(session, owner, action)
+    return ops.write(session, owner, op, action, body.model_dump())
 
 
 @router.post("/labels", status_code=201)
-def create_label(owner: Owner, session: Db, body: NewLabel) -> dict:
+def create_label(owner: Owner, session: Db, op: ops.OpDep, body: NewLabel):
     """A new label: 201. A name the owner already has, in any case: 409."""
-    with owner_lock(session, owner):
-        try:
-            made = owner_actions.create_label(session, owner, body.name, "app")
-        except ActionError as exc:
-            session.rollback()
-            raise HTTPException(409 if exc.kind == "conflict" else 422, str(exc)) from None
-        session.commit()
-    return {"id": made.id, "name": made.name}
+
+    def action() -> dict:
+        made = owner_actions.create_label(session, owner, body.name, "app")
+        return {"id": made.id, "name": made.name}
+
+    return ops.write(session, owner, op, action, body.model_dump(), recomputes=False, status=201)
 
 
 @router.put("/transactions/{txn_id}/label")
-def set_label(owner: Owner, session: Db, txn_id: int, body: LabelAnswer) -> dict:
+def set_label(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: LabelAnswer):
     def action() -> dict:
-        owner_actions.set_label(session, owner, txn_id, body.label_id, "app")
-        return {"id": txn_id, "label_id": body.label_id}
+        label_id = body.label_id
+        if body.new_label is not None:
+            owner_actions.transaction_of(session, owner, txn_id)  # a missing one: 404 first
+            label_id = owner_actions.create_label(session, owner, body.new_label, "app").id
+        owner_actions.set_label(session, owner, txn_id, label_id, "app")
+        return {"id": txn_id, "label_id": label_id}
 
-    return _write(session, owner, action)
+    return ops.write(session, owner, op, action, body.model_dump())
 
 
 @router.delete("/transactions/{txn_id}/label")
-def clear_label(owner: Owner, session: Db, txn_id: int) -> dict:
+def clear_label(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
     def action() -> dict:
         owner_actions.clear_label(session, owner, txn_id)
         return {"id": txn_id, "label_id": None}
 
-    return _write(session, owner, action)
+    return ops.write(session, owner, op, action)

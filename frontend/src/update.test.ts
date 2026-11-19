@@ -55,13 +55,15 @@ test('hidden while no update is waiting', () => {
   assert.doesNotMatch(html, /New version available/)
 })
 
-test('shows when an update is waiting; Reload calls the update once', () => {
+test('shows when an update is waiting; Reload calls the update once', async () => {
   sw.waiting = true
   const { html, tree } = render()
   assert.match(html, /New version available/)
   assert.match(html, />Reload</)
   assert.match(html, />Later</)
   press(tree, 'Reload')
+  // Reload first waits for an owner action being sent (none here), then updates.
+  await new Promise((r) => setTimeout(r, 0))
   assert.equal(sw.updates, 1)
 })
 

@@ -5,7 +5,7 @@
 import { createClient, isAuthRetryableFetchError, type SupabaseClient } from '@supabase/supabase-js'
 import { useSyncExternalStore } from 'react'
 
-import { clearData } from './data/store.ts'
+import { clearData, pauseData } from './data/store.ts'
 
 export type AuthState =
   | { status: 'starting' }
@@ -23,7 +23,9 @@ let state: AuthState = { status: 'starting' }
 const listeners = new Set<() => void>()
 
 function set(next: AuthState): void {
-  if (next.status !== 'in') void clearData() // never show one account's data to the next
+  // Never show one account's data to the next: leaving 'in' stops the data in memory. What
+  // is stored is deleted by sign-out, or by the next login when it is another one (D-089).
+  if (next.status !== 'in') pauseData()
   state = next
   for (const listener of listeners) listener()
 }
@@ -66,6 +68,16 @@ export async function accessToken(): Promise<string | null> {
   return data.session?.access_token ?? null
 }
 
+/** One refresh of the access token (the outbox after a 401). True when it worked. */
+export async function refreshToken(): Promise<boolean> {
+  try {
+    const { data, error } = await auth().refreshSession()
+    return !error && Boolean(data.session)
+  } catch {
+    return false
+  }
+}
+
 /** '' when signed in, else what to tell the owner. */
 export async function signIn(email: string, password: string): Promise<string> {
   try {
@@ -84,7 +96,20 @@ export async function signIn(email: string, password: string): Promise<string> {
   }
 }
 
-/** Sign out on this device: the phone copy is deleted first. `note` is shown on the login screen. */
+/** The session ended (a 401): the login screen, keeping the phone copy and the outbox, so
+ *  no waiting action is lost; the same login picks them up again (D-093). */
+export async function expire(note = ''): Promise<void> {
+  if (state.status === 'out') return
+  set({ status: 'out', note })
+  try {
+    await auth().signOut({ scope: 'local' })
+  } catch {
+    // The local session is gone either way.
+  }
+}
+
+/** Sign out on this device: the phone copy and the outbox are deleted first. `note` is shown
+ *  on the login screen. The app asks first when actions have not synced (D-093). */
 export async function signOut(note = ''): Promise<void> {
   if (state.status === 'out') return
   await clearData()

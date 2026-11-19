@@ -1,10 +1,12 @@
 // The phone copy (D-089): the only module that touches IndexedDB. Database "flash",
-// version 1: the snapshot, its meta, and the last 20 launch timings (D-090). It never leaves
-// the device; sign-out deletes the whole database.
+// version 2: the snapshot, its meta, the last 20 launch timings (D-090) and, since 4B-2,
+// the outbox of owner actions (D-091). It never leaves the device; sign-out deletes the
+// whole database.
 
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb'
 
 import type { Snapshot } from '../api/types.ts'
+import type { Op } from './outbox.ts'
 
 const NAME = 'flash'
 const KEY = 'current'
@@ -38,26 +40,60 @@ interface Schema extends DBSchema {
   snapshot: { key: string; value: Snapshot }
   meta: { key: string; value: Meta }
   timings: { key: number; value: Timing }
+  outbox: { key: number; value: Op }
 }
 
 let db: Promise<IDBPDatabase<Schema>> | null = null
 
 function open(): Promise<IDBPDatabase<Schema>> {
-  db ??= openDB<Schema>(NAME, 1, {
-    upgrade(d) {
-      d.createObjectStore('snapshot')
-      d.createObjectStore('meta')
-      d.createObjectStore('timings', { autoIncrement: true })
+  db ??= openDB<Schema>(NAME, 2, {
+    upgrade(d, from) {
+      if (from < 1) {
+        d.createObjectStore('snapshot')
+        d.createObjectStore('meta')
+        d.createObjectStore('timings', { autoIncrement: true })
+      }
+      // Version 2 only adds a store: the stored copy, meta and timings stay.
+      if (from < 2) d.createObjectStore('outbox', { keyPath: 'seq' })
+    },
+    blocking() {
+      // A newer tab wants to upgrade or delete the database: let it.
+      void db?.then((d) => d.close())
+      db = null
     },
   })
   return db
 }
 
-export async function readLocal(): Promise<{ snapshot: Snapshot; meta: Meta } | null> {
+export async function readLocal(): Promise<{ snapshot: Snapshot | null; meta: Meta } | null> {
   const d = await open()
   const tx = d.transaction(['snapshot', 'meta'])
   const [snapshot, meta] = await Promise.all([tx.objectStore('snapshot').get(KEY), tx.objectStore('meta').get(KEY)])
-  return snapshot && meta ? { snapshot, meta } : null
+  return meta ? { snapshot: snapshot ?? null, meta } : null
+}
+
+/** A copy of another schema: drop it, keep the meta (whose it is) and the outbox. */
+export async function dropSnapshot(): Promise<void> {
+  const tx = (await open()).transaction(['snapshot', 'meta'], 'readwrite')
+  const meta = await tx.objectStore('meta').get(KEY)
+  await Promise.all([
+    tx.objectStore('snapshot').delete(KEY),
+    meta ? tx.objectStore('meta').put({ ...meta, etag: '' }, KEY) : undefined,
+    tx.done,
+  ])
+}
+
+/** The outbox, first in first out. */
+export async function readOutbox(): Promise<Op[]> {
+  return (await open()).getAll('outbox')
+}
+
+export async function putOp(op: Op): Promise<void> {
+  await (await open()).put('outbox', op)
+}
+
+export async function deleteOp(seq: number): Promise<void> {
+  await (await open()).delete('outbox', seq)
 }
 
 /** Replace the copy and its meta in one transaction. */

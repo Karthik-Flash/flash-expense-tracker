@@ -40,7 +40,7 @@ owner's transaction, label or sender is "404 not found".
 | PUT | `/api/v1/senders/{id}` | `{"answer": "friend"}`, `{"answer": "income", "label": "..."}` or `{"answer": "ignore"}` |
 | DELETE | `/api/v1/senders/{id}` | Forget the answer: the sender is to confirm again |
 | PUT | `/api/v1/transactions/{id}/category` | `{"category": slug, "scope": "merchant" \| "transaction"}` |
-| PUT | `/api/v1/transactions/{id}/label` | `{"label_id"}`: at most one label per transaction |
+| PUT | `/api/v1/transactions/{id}/label` | `{"label_id"}`, or `{"new_label": name}` to make a label and attach it in one write (409 when the name exists): at most one label per transaction |
 | DELETE | `/api/v1/transactions/{id}/label` | Remove the label (also when there is none) |
 
 **Writes** are saved with source `app`, are idempotent, and end with one
@@ -66,6 +66,33 @@ name the owner already has).
 - **Names** (a label, an income label): trimmed, inner runs of spaces joined
   into one, then 1 to 30 characters. The client applies the same rules
   (`frontend/src/screens/derive.ts`).
+
+### Idempotency-Key (D-091, D-092)
+
+The app sends every write with `Idempotency-Key: <uuid>` (the phone outbox's
+op id). Without the header a write behaves exactly as above.
+
+| Case | Answer | Written |
+| ---- | ------ | ------- |
+| A new key | the write's answer (2xx, or a 4xx such as 404, 409, 422) | the write, its recompute and the stored answer, in one transaction |
+| The same key again, same request | the stored status and body | nothing |
+| The same key while the first is still running | 409 `{"detail": "in_progress"}` | nothing |
+| The same key with another method, path or body | 422 `{"detail": "idempotency_key_reused"}` | nothing |
+| A key that is not a UUID | 422 | nothing |
+| A 5xx | 500 | nothing, so a retry runs fresh |
+
+A key belongs to its owner (table `client_ops`, key `(owner_id, op_id)`):
+another owner's key never matches. A 2xx or 4xx answer is final and is kept.
+
+### Deferred recompute (D-094)
+
+`X-Defer-Recompute: 1`, honoured only with an `Idempotency-Key`: the write
+commits without its recompute and answers `"recompute": {"status":
+"deferred", "run": null}`. The phone sends it on every queued write but the
+last. Every read route and the snapshot first run the recompute such a write
+left, so they never serve derived data out of step with owner data. A
+recompute stopped by an engine change leaves the mark; the read shows
+`stale` as before.
 
 ## Snapshot (D-088)
 

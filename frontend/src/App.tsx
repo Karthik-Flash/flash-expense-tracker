@@ -2,16 +2,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { api, DEMO, demoApi } from './api/index.ts'
 import { DEMO_STATES, type DemoState } from './api/fake.ts'
-import { signIn, signOut, useAuth } from './auth.ts'
-import { clearData, refresh, startData, useSnapshot } from './data/store.ts'
-import { AppContext, navigate, useScrollMemory, useView, type AppState } from './state.tsx'
+import { refreshToken, signIn, signOut, useAuth } from './auth.ts'
+import { startOutbox, syncState, todoView, unsynced, useOutbox } from './data/outbox.ts'
+import { clearData, startData, useSnapshot } from './data/store.ts'
+import { AppContext, navigate, useNav, useScrollMemory, useView, type AppState } from './state.tsx'
 import { CategoryDetail, Home } from './screens/Home.tsx'
 import { LabelDetail, Labels } from './screens/Labels.tsx'
 import { Login } from './screens/Login.tsx'
+import { SpeedSheet } from './screens/Speed.tsx'
+import { UnsavedSheet } from './screens/Sync.tsx'
 import { Logos } from './screens/Logos.tsx'
 import { TodoScreen } from './screens/Todo.tsx'
 import { Transactions } from './screens/Transactions.tsx'
-import { Button, Icon } from './ui.tsx'
+import { Button, Icon, Sheet } from './ui.tsx'
 import { UpdateBar } from './update.ts'
 import { HOME, type Tab, type View } from './view.ts'
 
@@ -44,19 +47,26 @@ export default function App() {
   const view = useView()
   const auth = useAuth()
   const [demoIn, setDemoIn] = useState(demoSignedIn)
-  const changed = useCallback(() => void refresh(), [])
-  const leave = useCallback(() => {
+  const [asking, setAsking] = useState(0)
+  const leaveNow = useCallback(() => {
+    setAsking(0)
     if (!DEMO) return void signOut()
     setDemoSignedIn(false)
     void clearData()
     setDemoIn(false)
   }, [])
-  const state: AppState = useMemo(() => ({ api, changed, signOut: leave }), [changed, leave])
+  // Changes not yet on the server would be lost: ask first (D-093).
+  const leave = useCallback(() => {
+    const n = unsynced(syncState().ops)
+    if (n) setAsking(n)
+    else leaveNow()
+  }, [leaveNow])
+  const state: AppState = useMemo(() => ({ api, signOut: leave }), [leave])
   const status = DEMO ? (demoIn ? 'in' : 'out') : auth.status
   const user = DEMO ? 'demo' : auth.status === 'in' ? auth.user : null
-  // The phone copy of this login at once, then the server (D-089).
+  // The phone copy of this login at once, then the server (D-089); then the outbox (D-091).
   useEffect(() => {
-    if (status === 'in' && user) void startData(api, user)
+    if (status === 'in' && user) void startData(api, user).then(() => startOutbox(api, refreshToken))
   }, [status, user])
   if (DEMO && view.tab === 'dev') return <Logos />
   if (status === 'starting') return null
@@ -78,6 +88,7 @@ export default function App() {
           />
         )}
         <UpdateBar aboveNav={status === 'in'} />
+        {asking > 0 && <SignOutSheet count={asking} stay={() => setAsking(0)} leave={leaveNow} />}
       </div>
     </AppContext.Provider>
   )
@@ -96,14 +107,34 @@ function NoAccess() {
   )
 }
 
+/** Sign-out with changes still in the outbox: staying is the default. */
+function SignOutSheet({ count, stay, leave }: { count: number; stay: () => void; leave: () => void }) {
+  return (
+    <Sheet title="Sign out?" onClose={stay}>
+      <div className="px-4 py-4">
+        <p className="text-sm">
+          {count} {count === 1 ? "change hasn't" : "changes haven't"} synced yet. If you sign out now they will be lost.
+        </p>
+        <div className="mt-4 grid gap-2">
+          <Button kind="primary" onClick={stay}>Stay signed in</Button>
+          <Button onClick={leave}>Sign out anyway</Button>
+        </div>
+      </div>
+    </Sheet>
+  )
+}
+
 function Shell({ view }: { view: View }) {
   useScrollMemory(view)
+  const { back } = useNav()
   return (
     <div className="mx-auto w-full max-w-[480px] flex-1 pb-[calc(5rem+env(safe-area-inset-bottom))]">
       <main>
         <Screen view={view} />
       </main>
       <Nav view={view} />
+      {view.sheet === 'speed' && <SpeedSheet onClose={back} />}
+      {view.sheet === 'unsaved' && <UnsavedSheet onClose={back} />}
     </div>
   )
 }
@@ -152,8 +183,10 @@ function Nav({ view }: { view: View }) {
 
 function TodoCount() {
   const [load] = useSnapshot()
+  const { ops } = useOutbox()
   if (load.status !== 'ready') return null
-  const n = load.data.todo.senders.length + load.data.todo.merchants.length
+  const t = todoView(load.data.todo, ops) // answers waiting to sync are not counted
+  const n = t.senders.length + t.merchants.length
   if (!n) return null
   return (
     <span
@@ -181,7 +214,9 @@ function DemoBanner() {
               demoApi?.setState(next)
               setCurrent(next)
               // A new session: "waking" shows "Starting up" again.
-              void clearData().then(() => startData(api, 'demo'))
+              void clearData()
+                .then(() => startData(api, 'demo'))
+                .then(() => startOutbox(api))
             }}
             className="min-h-9 rounded border border-line bg-surface px-1 text-xs text-ink"
           >
