@@ -262,6 +262,11 @@ most 30 characters."); Create stays disabled until the name is fine.
   block (waiting, couldn't save, last drain: time, sent, seconds; last
   error). Measured on the phone and kept there (D-090). In the URL as
   `?speed`, so Back closes it.
+- **Speed: Boot** (4B-3, D-095): a Boot block (path of the last launch:
+  "local copy", "online", "login" or "error screen"; time to the first
+  screen in ms; the count of boot errors, then the last 5, time IST and
+  message), and a Boot column in the launches table ("–" for launches
+  before 4B-3).
 
 ## Waiting to sync (4B-2, D-091, D-093)
 
@@ -283,8 +288,11 @@ most 30 characters."); Create stays disabled until the name is fine.
 - **Sync line**: the freshness line gains "· 3 waiting to sync"; "1 couldn't
   save" is a link to the **Couldn't save** sheet (`?unsaved`): each refused
   change with what it was, its item, the server's reason, Retry and Discard.
-  After a lasting 401 the line says "Sign in to sync" (a link to the login;
-  nothing is lost).
+  After a lasting 401, or when the server refused the stored session at
+  launch, the line says "Not synced · showing data from …" and "Sign in to
+  sync" (a link to the login; the data and the waiting changes stay on
+  screen and on the phone). Signing in with the same login keeps them and
+  sends the changes; another login deletes them first (D-095).
 - **Sign out** with changes not synced: a sheet "2 changes haven't synced
   yet. If you sign out now they will be lost." with "Stay signed in"
   (primary) and "Sign out anyway".
@@ -316,10 +324,26 @@ most 30 characters."); Create stays disabled until the name is fine.
 - **Error**: "Could not load", the reason, and "Try again". No network:
   "Could not reach the server. Check the connection and try again." A 503:
   "The server is not ready yet. Try again in a minute."
-- **Signed out**: a 401 from the API signs out on this device and shows the
-  login with "Your session ended. Sign in again."
+- **Launch** (4B-3, D-095): the first screen never waits on the network.
+  Signed in on this phone, the phone copy shows at once, even offline with
+  an expired session; with no stored session, the login. Offline, the login
+  says "You're offline. Connect to sign in." and Sign in answers that at
+  once instead of spinning.
+- **Session refused**: a 401 from the API, or a stored session the server
+  refused, keeps the screen and shows "Sign in to sync" on the freshness
+  line (see "Waiting to sync"). Tapping it opens the login with "Sign in
+  again to sync your changes."
 - **No access**: a 403 shows "This account has no access" and Sign out.
 - **Stale**: a quiet notice "Totals are being updated." above the numbers.
+- **Something went wrong** (D-095): an exception anywhere shows a plain
+  page: "Something went wrong", "Your data on this phone is safe. Reload to
+  start the app again.", Reload (primary) and Copy details (plain), and the
+  message in small muted text. The error is kept for the Speed sheet.
+- **Could not start** (D-095): when the app's code does not start 3 s after
+  load (a file failed to load), `index.html` itself shows "Flash could not
+  start", "Part of the app did not load. Your data on this phone is safe.
+  Connect to the internet and reload." and Reload, in the page colours. Never
+  a blank screen.
 - While a screen reloads after a change, the old numbers stay until the new
   ones arrive.
 

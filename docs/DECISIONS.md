@@ -966,6 +966,10 @@ compresses answers of 1,000 bytes or more.
 
 ## D-089 A copy on the phone, wiped on sign-out, another login or another schema (2026-11-19)
 
+Amended by 4B-2 (D-093): a lost session (401) keeps the copy and the
+outbox for the same login; only sign-out or another login wipes them. The
+owner confirmed the amendment on 2026-11-20; D-095 builds on it.
+
 The phone keeps the last snapshot in IndexedDB (database `flash`, version 1:
 `snapshot`, `meta`, `timings`), through `frontend/src/data/local.ts` only,
 with `idb` 8.0.4. On launch it shows that copy at once and refreshes in the
@@ -1037,3 +1041,33 @@ last. Every read route and the snapshot run a pending recompute first and
 clear the marks in the same commit; any write's recompute clears them too.
 So 20 queued taps cost one recompute, and derived data is never served out
 of step with owner data.
+
+## D-095 Boot never waits on the network; never a blank screen (2026-11-20)
+
+The owner's phone opened to a blank screen in airplane mode with an expired
+access token. The app rendered nothing while auth was "starting", and the
+start waited for supabase-js 2.119.0's `INITIAL_SESSION`, which comes only
+after `_recoverAndRefresh` has tried to refresh the expired token, retrying
+network errors with backoff for up to 30 s; then the empty session sent the
+app to the login, hiding the phone copy. Now:
+
+- Who is signed in comes from the session stored on the device (its user
+  id in supabase-js's localStorage entry), read synchronously before the
+  first render, even when the access token has expired. With a match in
+  `meta.user_id` the phone copy shows at once; with no stored session, the
+  login. Snapshot refresh and outbox drain start after the first paint.
+- The token refresh runs in the background. A network failure or a 10 s
+  wait for the token leaves the session alone: the data stays,
+  "Offline · showing data from …", the outbox waits. A refused refresh
+  token (the library removes the session) or a 401 keeps the data and the
+  outbox and shows "Sign in to sync"; the same login keeps everything and
+  drains, another login wipes first (D-089 as amended).
+- Offline, sign-in answers "You're offline. Connect to sign in." at once.
+- A 3 s watchdog: when nothing is drawn by then it notes a boot error,
+  settles auth from the device and stops waiting for IndexedDB (the server
+  is asked; nothing stored is wiped). A top-level error boundary shows
+  "Something went wrong" with Reload and Copy details. If the app's code
+  never starts, an inline script in `index.html` shows "Flash could not
+  start" with Reload after 3 s.
+- The boot path, the time to the first screen and the last 5 boot errors
+  stay on the device (localStorage `flash-boot`) for the Speed sheet.

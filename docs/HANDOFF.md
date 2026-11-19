@@ -14,7 +14,7 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 - Engine versions: parser `hdfc-1.1.1`, `merchant-1.1.1`,
   `reconcile-1.3.0`, `categorise-1.0.0`.
 - Alembic head: `0007` (client_ops).
-- Decisions: D-001 to D-094 ([DECISIONS.md](DECISIONS.md)).
+- Decisions: D-001 to D-095 ([DECISIONS.md](DECISIONS.md)).
 - Live: app https://flash-expense-tracker.vercel.app, API
   https://flash-expense-tracker.onrender.com (more under "Live URLs").
 - The app: real login (Supabase Auth) and data (`/api/v1`), every screen,
@@ -26,6 +26,9 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   from the server (D-088 to D-090). Every owner action goes through an
   outbox on the phone with an Idempotency-Key, shown as "Waiting to sync"
   (D-091 to D-094; [design/phase-4b2-outbox.md](design/phase-4b2-outbox.md)).
+  Launch never waits on the network: identity from the stored session, the
+  phone copy at once, an error boundary, a 3 s watchdog, never a blank
+  screen (D-095).
 
 ### Owner commands
 
@@ -115,10 +118,10 @@ backend/            Render root
   app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals | category-stats | category-review | credit-review
   alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels, 0007 client_ops
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
-frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar), src/data (local.ts: the IndexedDB phone copy; store.ts: snapshot, refresh, freshness, timings; outbox.ts: owner actions, drain, markers), src/screens/Speed.tsx (Speed sheet)
+frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login; identity from the stored session at boot), src/boot.ts (boot path, first-screen time, boot errors, watchdog), src/crash.ts (error boundary), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar), src/data (local.ts: the IndexedDB phone copy; store.ts: snapshot, refresh, freshness, timings; outbox.ts: owner actions, drain, markers), src/screens/Speed.tsx (Speed sheet)
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests); backup_db.ps1 (owner: pg_dump via Docker)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-094), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-095), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```

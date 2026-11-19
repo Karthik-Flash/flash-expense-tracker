@@ -4,8 +4,8 @@ Summary of phases 0 to 6. Draft from Phase 0; the planner owns this file and
 refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
-**Status (19 Nov 2026):** Phases 0 to 3 done. **Phase 4 in progress**: 4C
-4B-1 and 4B-2 done; next 4E.
+**Status (20 Nov 2026):** Phases 0 to 3 done. **Phase 4 in progress**: 4C
+4B-1, 4B-2 and 4B-3 done; next 4E.
 
 Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
@@ -150,6 +150,7 @@ PDF, into `D:\FlashPrivate`.
   4B-1 (19 Nov 2026, D-088 to D-090): the snapshot, the phone copy, the
   freshness line and the Speed sheet. 4B-2 (19 Nov 2026, D-091 to D-094):
   every owner action through the outbox, shown as "Waiting to sync".
+  4B-3 (20 Nov 2026, D-095): offline boot, never a blank screen.
 - [ ] 4E Owner fixes: join one person seen under a name and a UPI ID (To-do
   sender cards get "See payments", "Name this person" and "Same as…"); a
   faster To-do; the label length mismatch (column 80, API 30); a new logo:
