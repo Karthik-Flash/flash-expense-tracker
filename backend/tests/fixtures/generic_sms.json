@@ -3,7 +3,7 @@
  "accepted": [
   {
    "id": "A001-UPI-trf",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Dear UPI user A/C X4821 debited by Rs.1,250.00 on date 10Mar26 trf to TEST RAVI Refno 512345678901. If not u? call 1800111109. -SBI",
    "expect": {
@@ -23,7 +23,7 @@
   },
   {
    "id": "A002-UPI-trf",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Dear UPI user A/C X0917 debited by Rs.340 on date 02Apr26 trf to TEST ANITA K Refno 623456789012. If not u? call 1800111109. -SBI",
    "expect": {
@@ -43,7 +43,7 @@
   },
   {
    "id": "A003-UPI-trf",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Dear UPI user A/C X7733 debited by Rs.25,000.50 on date 21May26 trf to TEST MEERA Refno 534567890123. If not u? call 1800111109. -SBI",
    "expect": {
@@ -63,7 +63,7 @@
   },
   {
    "id": "A004-UPI-trf",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Dear UPI user A/C X2468 debited by Rs.1,00,000 on date 30Jun26 trf to DEMO KIRAN Refno 645678901234. If not u? call 1800111109. -SBI",
    "expect": {
@@ -83,7 +83,7 @@
   },
   {
    "id": "A005-UPI-vpa",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Rs.1,250.00 debited from A/c XX4821 on 10-03-26 to VPA testravi@okaxis. UPI Ref No 512345678901. Not you? Call 18000000000",
    "expect": {
@@ -103,7 +103,7 @@
   },
   {
    "id": "A006-UPI-vpa",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Rs.340 debited from A/c XX0917 on 02-04-26 to VPA demo.cafe@ybl. UPI Ref No 623456789012. Not you? Call 18000000000",
    "expect": {
@@ -123,7 +123,7 @@
   },
   {
    "id": "A007-UPI-vpa",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Rs.25,000.50 debited from A/c XX7733 on 21-05-26 to VPA testmeera99@oksbi. UPI Ref No 534567890123. Not you? Call 18000000000",
    "expect": {
@@ -143,7 +143,7 @@
   },
   {
    "id": "A008-UPI-vpa",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Rs.1,00,000 debited from A/c XX2468 on 30-06-26 to VPA demokiran@paytm. UPI Ref No 645678901234. Not you? Call 18000000000",
    "expect": {
@@ -163,7 +163,7 @@
   },
   {
    "id": "A009-acct-semicolon",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Bank Acct XX482 debited for Rs 1,250.00 on 10-Mar-26; TEST RAVI credited. UPI:512345678901. Call 18002000000 for dispute.",
    "expect": {
@@ -183,7 +183,7 @@
   },
   {
    "id": "A010-acct-semicolon",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Bank Acct XX917 debited for Rs 340 on 02-Apr-26; TEST ANITA K credited. UPI:623456789012. Call 18002000000 for dispute.",
    "expect": {
@@ -203,7 +203,7 @@
   },
   {
    "id": "A011-acct-semicolon",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Bank Acct XX733 debited for Rs 25,000.50 on 21-May-26; TEST MEERA credited. UPI:534567890123. Call 18002000000 for dispute.",
    "expect": {
@@ -223,7 +223,7 @@
   },
   {
    "id": "A012-acct-semicolon",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Bank Acct XX468 debited for Rs 1,00,000 on 30-Jun-26; DEMO KIRAN credited. UPI:645678901234. Call 18002000000 for dispute.",
    "expect": {
@@ -243,7 +243,7 @@
   },
   {
    "id": "A013-lines-p2a",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "INR 1,250.00 debited\nA/c no. XX4821\n10-03-26, 09:12:05\nUPI/P2A/512345678901/TEST RAVI\nNot you? SMS BLOCKUPI to 9000000000",
    "expect": {
@@ -263,7 +263,7 @@
   },
   {
    "id": "A014-lines-p2a",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "INR 340 debited\nA/c no. XX0917\n02-04-26, 18:40:00\nUPI/P2A/623456789012/TEST ANITA K\nNot you? SMS BLOCKUPI to 9000000000",
    "expect": {
@@ -283,7 +283,7 @@
   },
   {
    "id": "A015-lines-p2a",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "INR 25,000.50 debited\nA/c no. XX7733\n21-05-26, 07:05:30\nUPI/P2A/534567890123/TEST MEERA\nNot you? SMS BLOCKUPI to 9000000000",
    "expect": {
@@ -303,7 +303,7 @@
   },
   {
    "id": "A016-lines-p2a",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "INR 1,00,000 debited\nA/c no. XX2468\n30-06-26, 22:59:59\nUPI/P2A/645678901234/DEMO KIRAN\nNot you? SMS BLOCKUPI to 9000000000",
    "expect": {
@@ -323,7 +323,7 @@
   },
   {
    "id": "A017-sent-vpa",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Sent Rs.1,250.00 from Bank A/c X4821 to testravi@okaxis on 10-03-26.UPI Ref 512345678901. Not you, call 18600000000",
    "expect": {
@@ -343,7 +343,7 @@
   },
   {
    "id": "A018-sent-vpa",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Sent Rs.340 from Bank A/c X0917 to demo.cafe@ybl on 02-04-26.UPI Ref 623456789012. Not you, call 18600000000",
    "expect": {
@@ -363,7 +363,7 @@
   },
   {
    "id": "A019-sent-vpa",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Sent Rs.25,000.50 from Bank A/c X7733 to testmeera99@oksbi on 21-05-26.UPI Ref 534567890123. Not you, call 18600000000",
    "expect": {
@@ -383,7 +383,7 @@
   },
   {
    "id": "A020-sent-vpa",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Sent Rs.1,00,000 from Bank A/c X2468 to demokiran@paytm on 30-06-26.UPI Ref 645678901234. Not you, call 18600000000",
    "expect": {
@@ -403,7 +403,7 @@
   },
   {
    "id": "A021-debit-card",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Rs 1,250.00 spent on your Debit Card XX4821 at TESTMART on 10/03/26 09:12:05. Avl Bal Rs 12,345.67",
    "expect": {
@@ -423,7 +423,7 @@
   },
   {
    "id": "A022-debit-card",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Rs 340 spent on your Debit Card XX0917 at DEMO CAFE on 02/04/26 18:40:00. Avl Bal Rs 4,000",
    "expect": {
@@ -443,7 +443,7 @@
   },
   {
    "id": "A023-debit-card",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Rs 25,000.50 spent on your Debit Card XX7733 at TEST FUEL on 21/05/26 07:05:30. Avl Bal Rs 1,02,000.00",
    "expect": {
@@ -463,7 +463,7 @@
   },
   {
    "id": "A024-debit-card",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Rs 1,00,000 spent on your Debit Card XX2468 at DEMO BOOKS on 30/06/26 22:59:59. Avl Bal Rs 3,10,500.25",
    "expect": {
@@ -483,7 +483,7 @@
   },
   {
    "id": "A025-credit-card",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Txn of INR 1,250.00 done on Credit Card ending 4821 at TESTMART on 10-Mar-2026 at 09:12 AM. Avl Lmt INR 12,345.67",
    "expect": {
@@ -503,7 +503,7 @@
   },
   {
    "id": "A026-credit-card",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Txn of INR 340 done on Credit Card ending 0917 at DEMO CAFE on 02-Apr-2026 at 06:40 PM. Avl Lmt INR 4,000",
    "expect": {
@@ -523,7 +523,7 @@
   },
   {
    "id": "A027-credit-card",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Txn of INR 25,000.50 done on Credit Card ending 7733 at TEST FUEL on 21-May-2026 at 07:05 AM. Avl Lmt INR 1,02,000.00",
    "expect": {
@@ -543,7 +543,7 @@
   },
   {
    "id": "A028-credit-card",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Txn of INR 1,00,000 done on Credit Card ending 2468 at DEMO BOOKS on 30-Jun-2026 at 10:59 PM. Avl Lmt INR 3,10,500.25",
    "expect": {
@@ -563,7 +563,7 @@
   },
   {
    "id": "A029-atm",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Rs.1,250.00 withdrawn from A/c XX4821 at ATM on 10Mar26 09:12. Avl Bal Rs.12,345.67",
    "expect": {
@@ -583,7 +583,7 @@
   },
   {
    "id": "A030-atm",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Rs.340 withdrawn from A/c XX0917 at ATM on 02Apr26 18:40. Avl Bal Rs.4,000",
    "expect": {
@@ -603,7 +603,7 @@
   },
   {
    "id": "A031-atm",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Rs.25,000.50 withdrawn from A/c XX7733 at ATM on 21May26 07:05. Avl Bal Rs.1,02,000.00",
    "expect": {
@@ -623,7 +623,7 @@
   },
   {
    "id": "A032-atm",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Rs.1,00,000 withdrawn from A/c XX2468 at ATM on 30Jun26 22:59. Avl Bal Rs.3,10,500.25",
    "expect": {
@@ -643,7 +643,7 @@
   },
   {
    "id": "A033-neft-out",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Your A/c XX4821 is debited with INR 1,250.00 on 10-03-2026 towards NEFT to TEST RAVI. UTR TEST26512345678901",
    "expect": {
@@ -663,7 +663,7 @@
   },
   {
    "id": "A034-neft-out",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Your A/c XX0917 is debited with INR 340 on 02-04-2026 towards NEFT to TEST ANITA K. UTR TEST26623456789012",
    "expect": {
@@ -683,7 +683,7 @@
   },
   {
    "id": "A035-neft-out",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Your A/c XX7733 is debited with INR 25,000.50 on 21-05-2026 towards NEFT to TEST MEERA. UTR TEST26534567890123",
    "expect": {
@@ -703,7 +703,7 @@
   },
   {
    "id": "A036-neft-out",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Your A/c XX2468 is debited with INR 1,00,000 on 30-06-2026 towards NEFT to DEMO KIRAN. UTR TEST26645678901234",
    "expect": {
@@ -723,7 +723,7 @@
   },
   {
    "id": "A037-imps-out",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "IMPS of Rs 1,250.00 sent from A/c XX4821 to TEST RAVI on 10/03/2026. Ref no 512345678901",
    "expect": {
@@ -743,7 +743,7 @@
   },
   {
    "id": "A038-imps-out",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "IMPS of Rs 340 sent from A/c XX0917 to TEST ANITA K on 02/04/2026. Ref no 623456789012",
    "expect": {
@@ -763,7 +763,7 @@
   },
   {
    "id": "A039-imps-out",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "IMPS of Rs 25,000.50 sent from A/c XX7733 to TEST MEERA on 21/05/2026. Ref no 534567890123",
    "expect": {
@@ -783,7 +783,7 @@
   },
   {
    "id": "A040-imps-out",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "IMPS of Rs 1,00,000 sent from A/c XX2468 to DEMO KIRAN on 30/06/2026. Ref no 645678901234",
    "expect": {
@@ -803,7 +803,7 @@
   },
   {
    "id": "A041-purchase",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Purchase of Rs.1,250.00 made on Card XX4821 at TESTMART on 10-03-26.",
    "expect": {
@@ -823,7 +823,7 @@
   },
   {
    "id": "A042-purchase",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Purchase of Rs.340 made on Card XX0917 at DEMO CAFE on 02-04-26.",
    "expect": {
@@ -843,7 +843,7 @@
   },
   {
    "id": "A043-purchase",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Purchase of Rs.25,000.50 made on Card XX7733 at TEST FUEL on 21-05-26.",
    "expect": {
@@ -863,7 +863,7 @@
   },
   {
    "id": "A044-purchase",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Purchase of Rs.1,00,000 made on Card XX2468 at DEMO BOOKS on 30-06-26.",
    "expect": {
@@ -883,7 +883,7 @@
   },
   {
    "id": "A045-paid-upi",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "You have paid Rs 1,250.00 to TESTMART from A/c XX4821 via UPI. Ref 512345678901",
    "expect": {
@@ -903,7 +903,7 @@
   },
   {
    "id": "A046-paid-upi",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "You have paid Rs 340 to DEMO CAFE from A/c XX0917 via UPI. Ref 623456789012",
    "expect": {
@@ -923,7 +923,7 @@
   },
   {
    "id": "A047-paid-upi",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "You have paid Rs 25,000.50 to TEST FUEL from A/c XX7733 via UPI. Ref 534567890123",
    "expect": {
@@ -943,7 +943,7 @@
   },
   {
    "id": "A048-paid-upi",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "You have paid Rs 1,00,000 to DEMO BOOKS from A/c XX2468 via UPI. Ref 645678901234",
    "expect": {
@@ -963,7 +963,7 @@
   },
   {
    "id": "A049-netbanking",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "INR 1,250.00 debited from your account XX4821 for NetBanking payment to TESTMART on 10-03-26",
    "expect": {
@@ -983,7 +983,7 @@
   },
   {
    "id": "A050-netbanking",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "INR 340 debited from your account XX0917 for NetBanking payment to DEMO CAFE on 02-04-26",
    "expect": {
@@ -1003,7 +1003,7 @@
   },
   {
    "id": "A051-netbanking",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "INR 25,000.50 debited from your account XX7733 for NetBanking payment to TEST FUEL on 21-05-26",
    "expect": {
@@ -1023,7 +1023,7 @@
   },
   {
    "id": "A052-netbanking",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "INR 1,00,000 debited from your account XX2468 for NetBanking payment to DEMO BOOKS on 30-06-26",
    "expect": {
@@ -1043,7 +1043,7 @@
   },
   {
    "id": "A053-autopay-run",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Rs 1,250.00 debited from A/c XX4821 towards TESTMART AutoPay. Ref 512345678901",
    "expect": {
@@ -1063,7 +1063,7 @@
   },
   {
    "id": "A054-autopay-run",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Rs 340 debited from A/c XX0917 towards DEMO CAFE AutoPay. Ref 623456789012",
    "expect": {
@@ -1083,7 +1083,7 @@
   },
   {
    "id": "A055-autopay-run",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Rs 25,000.50 debited from A/c XX7733 towards TEST FUEL AutoPay. Ref 534567890123",
    "expect": {
@@ -1103,7 +1103,7 @@
   },
   {
    "id": "A056-autopay-run",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Rs 1,00,000 debited from A/c XX2468 towards DEMO BOOKS AutoPay. Ref 645678901234",
    "expect": {
@@ -1123,7 +1123,7 @@
   },
   {
    "id": "A057-upi-in",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Dear Customer, your A/c X4821-credited by Rs.1,250.00 on 10Mar26 transfer from TEST RAVI Ref No 512345678901 -SBI",
    "expect": {
@@ -1143,7 +1143,7 @@
   },
   {
    "id": "A058-upi-in",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Dear Customer, your A/c X0917-credited by Rs.340 on 02Apr26 transfer from TEST ANITA K Ref No 623456789012 -SBI",
    "expect": {
@@ -1163,7 +1163,7 @@
   },
   {
    "id": "A059-upi-in",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Dear Customer, your A/c X7733-credited by Rs.25,000.50 on 21May26 transfer from TEST MEERA Ref No 534567890123 -SBI",
    "expect": {
@@ -1183,7 +1183,7 @@
   },
   {
    "id": "A060-upi-in",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Dear Customer, your A/c X2468-credited by Rs.1,00,000 on 30Jun26 transfer from DEMO KIRAN Ref No 645678901234 -SBI",
    "expect": {
@@ -1203,7 +1203,7 @@
   },
   {
    "id": "A061-vpa-in",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Rs 1,250.00 credited to your A/c XX4821 on 10-03-26 by VPA testravi@okaxis (UPI Ref No 512345678901).",
    "expect": {
@@ -1223,7 +1223,7 @@
   },
   {
    "id": "A062-vpa-in",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Rs 340 credited to your A/c XX0917 on 02-04-26 by VPA demo.cafe@ybl (UPI Ref No 623456789012).",
    "expect": {
@@ -1243,7 +1243,7 @@
   },
   {
    "id": "A063-vpa-in",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Rs 25,000.50 credited to your A/c XX7733 on 21-05-26 by VPA testmeera99@oksbi (UPI Ref No 534567890123).",
    "expect": {
@@ -1263,7 +1263,7 @@
   },
   {
    "id": "A064-vpa-in",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Rs 1,00,000 credited to your A/c XX2468 on 30-06-26 by VPA demokiran@paytm (UPI Ref No 645678901234).",
    "expect": {
@@ -1283,7 +1283,7 @@
   },
   {
    "id": "A065-masked-in",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Received Rs.1,250.00 in your A/c XX4821 from *vi42@okaxis on 10-03-26. UPI Ref 512345678901",
    "expect": {
@@ -1303,7 +1303,7 @@
   },
   {
    "id": "A066-masked-in",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Received Rs.340 in your A/c XX0917 from *ta07@ybl on 02-04-26. UPI Ref 623456789012",
    "expect": {
@@ -1323,7 +1323,7 @@
   },
   {
    "id": "A067-masked-in",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Received Rs.25,000.50 in your A/c XX7733 from *ra99@oksbi on 21-05-26. UPI Ref 534567890123",
    "expect": {
@@ -1343,7 +1343,7 @@
   },
   {
    "id": "A068-masked-in",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Received Rs.1,00,000 in your A/c XX2468 from *an11@paytm on 30-06-26. UPI Ref 645678901234",
    "expect": {
@@ -1363,7 +1363,7 @@
   },
   {
    "id": "A069-salary-neft",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "INR 1,250.00 credited to A/c no. XX4821 on 10-03-2026 09:12:05 by NEFT from TEST TECH PVT LTD. Avl Bal INR 12,345.67",
    "expect": {
@@ -1383,7 +1383,7 @@
   },
   {
    "id": "A070-salary-neft",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "INR 340 credited to A/c no. XX0917 on 02-04-2026 18:40:00 by NEFT from DEMO STIPEND FUND. Avl Bal INR 4,000",
    "expect": {
@@ -1403,7 +1403,7 @@
   },
   {
    "id": "A071-salary-neft",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "INR 25,000.50 credited to A/c no. XX7733 on 21-05-2026 07:05:30 by NEFT from TEST LABS LLP. Avl Bal INR 1,02,000.00",
    "expect": {
@@ -1423,7 +1423,7 @@
   },
   {
    "id": "A072-salary-neft",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "INR 1,00,000 credited to A/c no. XX2468 on 30-06-2026 22:59:59 by NEFT from DEMO SALARIES. Avl Bal INR 3,10,500.25",
    "expect": {
@@ -1443,7 +1443,7 @@
   },
   {
    "id": "A073-imps-in",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "A/c XX4821 credited with Rs 1,250.00 on 10/03/26 via IMPS from TEST RAVI. IMPS Ref no 512345678901",
    "expect": {
@@ -1463,7 +1463,7 @@
   },
   {
    "id": "A074-imps-in",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "A/c XX0917 credited with Rs 340 on 02/04/26 via IMPS from TEST ANITA K. IMPS Ref no 623456789012",
    "expect": {
@@ -1483,7 +1483,7 @@
   },
   {
    "id": "A075-imps-in",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "A/c XX7733 credited with Rs 25,000.50 on 21/05/26 via IMPS from TEST MEERA. IMPS Ref no 534567890123",
    "expect": {
@@ -1503,7 +1503,7 @@
   },
   {
    "id": "A076-imps-in",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "A/c XX2468 credited with Rs 1,00,000 on 30/06/26 via IMPS from DEMO KIRAN. IMPS Ref no 645678901234",
    "expect": {
@@ -1523,7 +1523,7 @@
   },
   {
    "id": "A077-deposit",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Rs.1,250.00 deposited in A/c XX4821 on 10-Mar-26. Cash deposit. Avl Bal Rs.12,345.67",
    "expect": {
@@ -1543,7 +1543,7 @@
   },
   {
    "id": "A078-deposit",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Rs.340 deposited in A/c XX0917 on 02-Apr-26. Cash deposit. Avl Bal Rs.4,000",
    "expect": {
@@ -1563,7 +1563,7 @@
   },
   {
    "id": "A079-deposit",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Rs.25,000.50 deposited in A/c XX7733 on 21-May-26. Cash deposit. Avl Bal Rs.1,02,000.00",
    "expect": {
@@ -1583,7 +1583,7 @@
   },
   {
    "id": "A080-deposit",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Rs.1,00,000 deposited in A/c XX2468 on 30-Jun-26. Cash deposit. Avl Bal Rs.3,10,500.25",
    "expect": {
@@ -1603,7 +1603,7 @@
   },
   {
    "id": "A081-refund-in",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Refund of Rs 1,250.00 from TESTMART credited to your Card XX4821 on 10-03-26",
    "expect": {
@@ -1624,7 +1624,7 @@
   },
   {
    "id": "A082-refund-in",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Refund of Rs 340 from DEMO CAFE credited to your Card XX0917 on 02-04-26",
    "expect": {
@@ -1645,7 +1645,7 @@
   },
   {
    "id": "A083-refund-in",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Refund of Rs 25,000.50 from TEST FUEL credited to your Card XX7733 on 21-05-26",
    "expect": {
@@ -1666,7 +1666,7 @@
   },
   {
    "id": "A084-refund-in",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Refund of Rs 1,00,000 from DEMO BOOKS credited to your Card XX2468 on 30-06-26",
    "expect": {
@@ -1687,7 +1687,7 @@
   },
   {
    "id": "A085-card-payment-in",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Payment of Rs 1,250.00 received towards your Credit Card XX4821 on 10-03-26. Thank you",
    "expect": {
@@ -1708,7 +1708,7 @@
   },
   {
    "id": "A086-card-payment-in",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Payment of Rs 340 received towards your Credit Card XX0917 on 02-04-26. Thank you",
    "expect": {
@@ -1729,7 +1729,7 @@
   },
   {
    "id": "A087-card-payment-in",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Payment of Rs 25,000.50 received towards your Credit Card XX7733 on 21-05-26. Thank you",
    "expect": {
@@ -1750,7 +1750,7 @@
   },
   {
    "id": "A088-card-payment-in",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Payment of Rs 1,00,000 received towards your Credit Card XX2468 on 30-06-26. Thank you",
    "expect": {
@@ -1771,7 +1771,7 @@
   },
   {
    "id": "A089-interest",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T03:44:05Z",
    "body": "Interest of Rs.1,250.00 credited to A/c XX4821 on 10-03-26",
    "expect": {
@@ -1791,7 +1791,7 @@
   },
   {
    "id": "A090-interest",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-04-02T13:12:00Z",
    "body": "Interest of Rs.340 credited to A/c XX0917 on 02-04-26",
    "expect": {
@@ -1811,7 +1811,7 @@
   },
   {
    "id": "A091-interest",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-05-21T01:37:30Z",
    "body": "Interest of Rs.25,000.50 credited to A/c XX7733 on 21-05-26",
    "expect": {
@@ -1831,7 +1831,7 @@
   },
   {
    "id": "A092-interest",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-06-30T17:31:59Z",
    "body": "Interest of Rs.1,00,000 credited to A/c XX2468 on 30-06-26",
    "expect": {
@@ -1853,7 +1853,7 @@
  "rejected": [
   {
    "id": "N001-otp",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "123456 is the OTP for your txn of Rs 500.00 at TESTMART on card XX4821. Valid for 5 mins. Do not share it with anyone.",
    "expect": {
@@ -1863,7 +1863,7 @@
   },
   {
    "id": "N002-otp",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Your One Time Password for adding payee TEST RAVI is 654321. Never share your OTP. -Bank",
    "expect": {
@@ -1873,7 +1873,7 @@
   },
   {
    "id": "N003-otp",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Use verification code 445566 to log in to Bank app. Rs 0 charged.",
    "expect": {
@@ -1883,7 +1883,7 @@
   },
   {
    "id": "N004-otp",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "OTP 908172 for e-commerce txn of INR 2,499.00 on Credit Card ending 7733 at DEMO BOOKS.",
    "expect": {
@@ -1893,7 +1893,7 @@
   },
   {
    "id": "N005-otp",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Dear Customer, OTP for UPI PIN reset on A/c XX0917 is 112233. Do not share.",
    "expect": {
@@ -1903,7 +1903,7 @@
   },
   {
    "id": "N006-request",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "TEST MEERA has requested Rs 300 from you on UPI. Approve or decline in the Bank app.",
    "expect": {
@@ -1913,7 +1913,7 @@
   },
   {
    "id": "N007-request",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "You have a collect request of Rs.1,500 from demo.cafe@ybl. Ref 512345678111. Ignore if not known.",
    "expect": {
@@ -1923,7 +1923,7 @@
   },
   {
    "id": "N008-request",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Payment request of INR 750.00 received from testravi@okaxis. Pay on your UPI app.",
    "expect": {
@@ -1933,7 +1933,7 @@
   },
   {
    "id": "N009-request",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "DEMO KIRAN is requesting Rs 200 via UPI. Open app to pay. A/c XX4821",
    "expect": {
@@ -1943,7 +1943,7 @@
   },
   {
    "id": "N010-promo",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Congratulations! You are pre-approved for a Personal Loan of Rs 5,00,000. Apply now: bank.example/x",
    "expect": {
@@ -1953,7 +1953,7 @@
   },
   {
    "id": "N011-promo",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Get up to Rs 2,000 cashback on your Debit Card XX4821 spends this week. T&C apply.",
    "expect": {
@@ -1963,7 +1963,7 @@
   },
   {
    "id": "N012-promo",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Special offer: Instant loan credited to your A/c XX0917 in 2 mins. Rs 50,000 at low interest.",
    "expect": {
@@ -1973,7 +1973,7 @@
   },
   {
    "id": "N013-promo",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "You are eligible for a Credit Card limit increase to Rs 1,50,000. Reply YES.",
    "expect": {
@@ -1983,7 +1983,7 @@
   },
   {
    "id": "N014-promo",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Hurry! Limited period: flat Rs 100 off on recharges paid via UPI.",
    "expect": {
@@ -1993,7 +1993,7 @@
   },
   {
    "id": "N015-promo",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Win vouchers worth Rs 10,000! Spend Rs 5,000 on your Card XX7733 to enter.",
    "expect": {
@@ -2003,7 +2003,7 @@
   },
   {
    "id": "N016-failed",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Txn of Rs 1,250.00 at TESTMART on Card XX4821 declined due to insufficient balance.",
    "expect": {
@@ -2013,7 +2013,7 @@
   },
   {
    "id": "N017-failed",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Your UPI payment of Rs.340 to demo.cafe@ybl failed. Money if debited will be reversed. Ref 512345678222",
    "expect": {
@@ -2023,7 +2023,7 @@
   },
   {
    "id": "N018-failed",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Rs 500 debited from A/c XX4821 on 10-03-26 has been reversed. UPI Ref 512345678333",
    "expect": {
@@ -2033,7 +2033,7 @@
   },
   {
    "id": "N019-failed",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Transaction of INR 2,000 at DEMO FUEL on Credit Card ending 7733 was unsuccessful.",
    "expect": {
@@ -2043,7 +2043,7 @@
   },
   {
    "id": "N020-failed",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "IMPS of Rs 5,000 to TEST ANITA K from A/c XX0917 could not be processed. Ref no 623456789333",
    "expect": {
@@ -2053,7 +2053,7 @@
   },
   {
    "id": "N021-failed",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Your NEFT of INR 10,000.00 from A/c XX2468 is rejected by beneficiary bank. UTR TEST26645678901999",
    "expect": {
@@ -2063,7 +2063,7 @@
   },
   {
    "id": "N022-mandate_notice",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "UPI AutoPay mandate of Rs 199 for DEMO STREAM created on A/c XX4821. Ref 512345670001",
    "expect": {
@@ -2073,7 +2073,7 @@
   },
   {
    "id": "N023-mandate_notice",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Pre-debit notification: Rs 649.00 will be debited from A/c XX0917 on 15-03-26 for DEMO GYM mandate.",
    "expect": {
@@ -2083,7 +2083,7 @@
   },
   {
    "id": "N024-mandate_notice",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "E-mandate registered for INR 2,000 per month on Card XX7733 for TEST INSURE.",
    "expect": {
@@ -2093,7 +2093,7 @@
   },
   {
    "id": "N025-mandate_notice",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Your Standing Instruction of Rs 5,000 to TEST RAVI from A/c XX2468 is modified.",
    "expect": {
@@ -2103,7 +2103,7 @@
   },
   {
    "id": "N026-card_bill_due",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Your Credit Card XX7733 statement: Total Amt Due Rs 12,345.00, Min Amt Due Rs 620.00. Due date 25-03-26.",
    "expect": {
@@ -2113,7 +2113,7 @@
   },
   {
    "id": "N027-card_bill_due",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Reminder: Payment of Rs 8,900 on your Credit Card ending 7733 is due on 28-03-2026.",
    "expect": {
@@ -2123,7 +2123,7 @@
   },
   {
    "id": "N028-card_bill_due",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Credit Card XX2468 bill of INR 3,210.50 generated. Minimum amount INR 200.00 payable by 05-04-26.",
    "expect": {
@@ -2133,7 +2133,7 @@
   },
   {
    "id": "N029-card_bill_due",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Card bill for XX7733: amount due Rs 1,500. Pay now to avoid charges.",
    "expect": {
@@ -2143,7 +2143,7 @@
   },
   {
    "id": "N030-scheduled",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Rs 1,000 will be debited from A/c XX4821 on 12-03-26 towards SIP of TEST FUND.",
    "expect": {
@@ -2153,7 +2153,7 @@
   },
   {
    "id": "N031-scheduled",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Your loan EMI of Rs 7,500 is due on 15-03-26. Keep balance in A/c XX0917.",
    "expect": {
@@ -2163,7 +2163,7 @@
   },
   {
    "id": "N032-scheduled",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Scheduled transfer of INR 2,500 to TEST MEERA from A/c XX2468 on 20-03-26.",
    "expect": {
@@ -2173,7 +2173,7 @@
   },
   {
    "id": "N033-scheduled",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Upcoming payment: Rs 299 to DEMO STREAM via UPI on 18-03-26 from A/c XX4821.",
    "expect": {
@@ -2183,7 +2183,7 @@
   },
   {
    "id": "N034-balance_only",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Your A/c XX4821 balance is Rs 10,000.00 as on 10-03-26.",
    "expect": {
@@ -2193,7 +2193,7 @@
   },
   {
    "id": "N035-balance_only",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Avl Bal in A/c XX0917 as of 10-Mar-26 is INR 4,512.30.",
    "expect": {
@@ -2203,7 +2203,7 @@
   },
   {
    "id": "N036-balance_only",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Dear Customer, available balance in your account XX2468 is Rs.1,02,000.00",
    "expect": {
@@ -2213,7 +2213,7 @@
   },
   {
    "id": "N037-balance_only",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Balance enquiry: A/c XX7733 Bal Rs 230.10 on 10/03/26.",
    "expect": {
@@ -2223,7 +2223,7 @@
   },
   {
    "id": "N038-other",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Your A/c XX4821 is now linked to UPI. Never share your PIN.",
    "expect": {
@@ -2233,7 +2233,7 @@
   },
   {
    "id": "N039-other",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Welcome! Your new Debit Card XX0917 is dispatched.",
    "expect": {
@@ -2243,7 +2243,7 @@
   },
   {
    "id": "N040-other",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Login to Bank app on a new device at 10:15. Not you? Call 1800000000.",
    "expect": {
@@ -2253,7 +2253,7 @@
   },
   {
    "id": "N041-foreign_currency_deferred",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "USD 25.00 spent on Credit Card ending 7733 at DEMO SHOP US on 10-03-26.",
    "expect": {
@@ -2262,7 +2262,7 @@
   },
   {
    "id": "N042-foreign_currency_deferred",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Txn of EUR 40.50 at TEST CAFE PARIS on Card XX4821 done. Avl Lmt Rs 45,000",
    "expect": {
@@ -2271,7 +2271,7 @@
   },
   {
    "id": "N043-foreign_currency_deferred",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "AED 120 debited from Card XX7733 at DEMO MALL on 10-03-26.",
    "expect": {
@@ -2280,7 +2280,7 @@
   },
   {
    "id": "N044-no_amount",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Dear UPI user A/C X4821 debited by 500.0 on date 10Mar26 trf to TEST RAVI Refno 512345678444. -SBI",
    "expect": {
@@ -2290,7 +2290,7 @@
   },
   {
    "id": "N045-no_amount",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "A/c XX0917 credited with 2,000.00 on 10-03-26 by NEFT from TEST LABS LLP.",
    "expect": {
@@ -2300,7 +2300,7 @@
   },
   {
    "id": "N046-no_amount",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Amount debited from your A/c XX2468 for DEMO BOOKS. Ref 645678901555",
    "expect": {
@@ -2310,7 +2310,7 @@
   },
   {
    "id": "N047-several_amounts",
-   "sender": "JM-YESBNK",
+   "sender": "AD-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Rs 500 debited from A/c XX4821 for TESTMART. Charges Rs 10 debited. Ref 512345678555",
    "expect": {
@@ -2320,7 +2320,7 @@
   },
   {
    "id": "N048-several_amounts",
-   "sender": "JD-CBSSBI",
+   "sender": "JD-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Rs.1,000 and Rs.250 credited to A/c XX0917 on 10-03-26. Ref 623456789555",
    "expect": {
@@ -2330,7 +2330,7 @@
   },
   {
    "id": "N049-no_anchor",
-   "sender": "VM-SBIINB",
+   "sender": "VK-ICICIT",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Rs 340 spent at DEMO CAFE on 10-03-26. Thank you for banking with us.",
    "expect": {
@@ -2340,7 +2340,7 @@
   },
   {
    "id": "N050-no_anchor",
-   "sender": "AD-SBIUPI",
+   "sender": "AX-AXISBK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "INR 1,250.00 received from TEST RAVI on 10-03-26.",
    "expect": {
@@ -2350,7 +2350,7 @@
   },
   {
    "id": "N051-no_verb",
-   "sender": "VK-ICICIT",
+   "sender": "VM-KOTAKM",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Rs 2,000 transferred from A/c XX4821 to A/c XX0917 on 10-03-26.",
    "expect": {
@@ -2360,7 +2360,7 @@
   },
   {
    "id": "N052-no_verb",
-   "sender": "AX-AXISBK",
+   "sender": "JM-YESBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "IMPS txn Rs 750.00 A/c XX2468 TEST MEERA Ref 645678901666",
    "expect": {
@@ -2370,7 +2370,7 @@
   },
   {
    "id": "N053-amount_format",
-   "sender": "VM-KOTAKM",
+   "sender": "VM-DOPBNK",
    "received_at": "2026-03-10T06:00:00Z",
    "body": "Rs 100,000.00 debited from A/c XX4821 on 10-03-26. Ref 512345678666",
    "expect": {

@@ -1,0 +1,272 @@
+[
+ {
+  "id": "sbi-S01-upi-debit-no-currency",
+  "sender": "AD-SBIUPI-S",
+  "body": "Dear UPI user A/C X4821 debited by 500.0 on date 10Mar26 trf to TEST RAVI Refno 512345678901 If not u? call-1800111109 for other services-18001234-SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "debit",
+   "amount_paise": 50000,
+   "direction": "debit",
+   "account_last4": "4821",
+   "channel": "upi",
+   "counterparty_raw": "TEST RAVI",
+   "reference": "512345678901",
+   "balance_paise": null,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S01-upi-debit-dot",
+  "sender": "VM-SBIUPI",
+  "body": "Dear UPI user A/C X0917 debited by 1,250.50 on date 10Mar26 trf to DEMO CAFE Refno 523456789012. If not u? call 1800111109. -SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "debit",
+   "amount_paise": 125050,
+   "direction": "debit",
+   "account_last4": "0917",
+   "channel": "upi",
+   "counterparty_raw": "DEMO CAFE",
+   "reference": "523456789012",
+   "balance_paise": null,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S02-upi-credit",
+  "sender": "JD-SBIUPI-S",
+  "body": "Dear SBI User, your A/c X7733-credited by Rs.340 on 10Mar26 transfer from TEST MEERA Ref No 534567890123 -SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "credit",
+   "amount_paise": 34000,
+   "direction": "credit",
+   "account_last4": "7733",
+   "channel": "upi",
+   "counterparty_raw": "TEST MEERA",
+   "reference": "534567890123",
+   "balance_paise": null,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S03-debit-by-transfer",
+  "sender": "VM-CBSSBI-S",
+  "body": "Dear Customer, Your A/C XXXXX2468 has a debit by transfer of Rs 2,000.00 on 10Mar26. Avl Bal Rs 10,500.25.-SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "debit",
+   "amount_paise": 200000,
+   "direction": "debit",
+   "account_last4": "2468",
+   "channel": null,
+   "counterparty_raw": null,
+   "reference": null,
+   "balance_paise": 1050025,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S04-credit-by-transfer",
+  "sender": "VM-CBSSBI",
+  "body": "Dear Customer,Your A/C XXXXX2468 has a credit by Transfer of Rs 1,500.00 on 10Mar26 by TEST KIRAN. Avl Bal Rs 12,000.00.-SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "credit",
+   "amount_paise": 150000,
+   "direction": "credit",
+   "account_last4": "2468",
+   "channel": null,
+   "counterparty_raw": "TEST KIRAN",
+   "reference": null,
+   "balance_paise": 1200000,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S05-credit-by-payer",
+  "sender": "VM-CBSSBI",
+  "body": "Dear Customer,Your A/C XXXXX2468 has a credit by ACH-CR- DEMO DIVIDEND 2026 of Rs 120.00 on 10Mar26. Avl Bal Rs 12,120.00. Download YONO-SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "credit",
+   "amount_paise": 12000,
+   "direction": "credit",
+   "account_last4": "2468",
+   "channel": null,
+   "counterparty_raw": "ACH-CR- DEMO DIVIDEND 2026",
+   "reference": null,
+   "balance_paise": 1212000,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S06-credit-for-upi",
+  "sender": "VM-CBSSBI",
+  "body": "Your A/C XXXXX2468 has credit for UPI/645678901234/TESTPAY/9001 of Rs 75.00 on 10Mar26. Avl Bal Rs 12,195.00.-SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "credit",
+   "amount_paise": 7500,
+   "direction": "credit",
+   "account_last4": "2468",
+   "channel": "upi",
+   "counterparty_raw": null,
+   "reference": "UPI/645678901234/TESTPAY/9001",
+   "balance_paise": 1219500,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S07-neft-sent",
+  "sender": "VM-SBIINB",
+  "body": "Dear Customer, Your NEFT of Rs 5,000.00 with UTR SBIN926069012345 DTD 10-03-26 credited to Beneficiary AC NO. XXXXXXX9001 at TEST BANK on 10-03-26 at 02:15 PM.-SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "debit",
+   "amount_paise": 500000,
+   "direction": "debit",
+   "account_last4": null,
+   "channel": "neft",
+   "counterparty_raw": null,
+   "reference": "SBIN926069012345",
+   "balance_paise": null,
+   "txn_time_utc": "2026-03-10T08:45:00Z",
+   "time_inferred": false
+  }
+ },
+ {
+  "id": "sbi-S08-deposit-by-transfer",
+  "sender": "VM-CBSSBI",
+  "body": "Your A/C XXXXX2468 Credited INR 900.00 on 10/03/26 -Deposit by transfer from Mr. TEST ANAND. Avl Bal INR 13,095.00-SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "credit",
+   "amount_paise": 90000,
+   "direction": "credit",
+   "account_last4": "2468",
+   "channel": null,
+   "counterparty_raw": "Mr. TEST ANAND",
+   "reference": null,
+   "balance_paise": 1309500,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S09-debited-with-note",
+  "sender": "VM-CBSSBI",
+  "body": "Your AC XXXXX2468 Debited INR 25.00 on 10/03/26 -CDM CHARGE DR. Avl Bal INR 13,070.00.-SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "debit",
+   "amount_paise": 2500,
+   "direction": "debit",
+   "account_last4": "2468",
+   "channel": null,
+   "counterparty_raw": "CDM CHARGE DR",
+   "reference": null,
+   "balance_paise": 1307000,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S10-imps-in",
+  "sender": "VM-SBIINB",
+  "body": "Dear Customer, Your a/c no. XXXXXXXX2468 is credited by Rs.2,345.00 on 10-03-26 by a/c linked to mobile 9XXXXXX001-DEMO BROKING LTD (IMPS Ref no 656789012345).If not done by you, call 1800111109. -SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "credit",
+   "amount_paise": 234500,
+   "direction": "credit",
+   "account_last4": "2468",
+   "channel": "imps",
+   "counterparty_raw": "DEMO BROKING LTD",
+   "reference": "656789012345",
+   "balance_paise": null,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S11-neft-in",
+  "sender": "VM-SBIINB",
+  "body": "Dear Customer, INR 4,000.00 credited to your A/c No XX2468 on 10/03/2026 through NEFT with UTR TESTN26069000001 by DEMO PAYOUTS, INFO: BATCHID:9001 TEST-SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "credit",
+   "amount_paise": 400000,
+   "direction": "credit",
+   "account_last4": "2468",
+   "channel": "neft",
+   "counterparty_raw": "DEMO PAYOUTS",
+   "reference": "TESTN26069000001",
+   "balance_paise": null,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S12-imps-out",
+  "sender": "VM-SBIINB",
+  "body": "Dear Customer, Your a/c no. XXXXXXXX2468 is debited for Rs.700.00 on 10-03-26 and a/c XXXXXXX9002 credited (IMPS Ref no 667890123456). -SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "debit",
+   "amount_paise": 70000,
+   "direction": "debit",
+   "account_last4": "2468",
+   "channel": "imps",
+   "counterparty_raw": null,
+   "reference": "667890123456",
+   "balance_paise": null,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S13-netbanking",
+  "sender": "VM-SBIINB",
+  "body": "Dear Customer, Thx for INB txn of Rs.1,999.00 frm A/c X2468 ref# TJA9001234 on 10Mar26. If not done, fwd this SMS to 9000000001 to block INB or call 1800111109-SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "debit",
+   "amount_paise": 199900,
+   "direction": "debit",
+   "account_last4": "2468",
+   "channel": "netbanking",
+   "counterparty_raw": null,
+   "reference": "TJA9001234",
+   "balance_paise": null,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ },
+ {
+  "id": "sbi-S14-sbcollect",
+  "sender": "VM-SBIINB",
+  "body": "Dear Customer, SBCollect Txn ANI9001234 dtd 10032026 Rs.150.00 for TEST COLLEGE-DUPLICATE CARD is successful. -SBI",
+  "received_at": "2026-03-10T09:00:00Z",
+  "expected": {
+   "type": "debit",
+   "amount_paise": 15000,
+   "direction": "debit",
+   "account_last4": null,
+   "channel": "netbanking",
+   "counterparty_raw": "TEST COLLEGE-DUPLICATE CARD",
+   "reference": "ANI9001234",
+   "balance_paise": null,
+   "txn_time_utc": "2026-03-10T09:00:00Z",
+   "time_inferred": true
+  }
+ }
+]

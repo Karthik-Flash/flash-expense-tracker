@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api import ops
 from app.main import app
-from app.models import ClientOp, Label, OwnerCategory, TxnDerived
+from app.models import ClientOp, Label, OwnerCategory, RecomputeMark, TxnDerived
 from app.pipeline import owner_actions
 from tests.apiclient import OWNER_A, SUB_B, all_transactions, bearer, get, token
 
@@ -48,7 +48,7 @@ def test_same_key_twice_writes_once_and_answers_the_same(client, data, db_engine
     key = uuid.uuid4()
     one, two = send(client, "PUT", path, body, key), send(client, "PUT", path, body, key)
     assert one.status_code == two.status_code == 200 and one.json() == two.json()
-    assert one.json()["recompute"]["status"] == "done"
+    assert one.json()["recompute"]["status"] == "deferred"  # the next read recomputes (D-106)
     assert count(db_engine, OwnerCategory) == 1
 
 
@@ -151,7 +151,7 @@ def test_no_key_writes_no_row_on_every_write_route(client, data, db_engine) -> N
     for method, path, body in calls:
         response = send(client, method, path, body, defer=True)  # defer is ignored without a key
         assert response.status_code == 200, (path, response.text)
-        assert response.json()["recompute"]["status"] in ("done", "unchanged")
+        assert response.json()["recompute"]["status"] == "deferred"
     assert count(db_engine, ClientOp) == 0
 
 
@@ -195,7 +195,7 @@ def test_a_deferred_write_is_recomputed_before_any_read(client, data, db_engine)
     assert not any(m["summary"]["stale"] for m in snapshot["months"])
 
 
-def test_a_recompute_through_a_write_clears_deferred_marks(client, data, db_engine) -> None:
+def test_the_next_read_clears_every_mark(client, data, db_engine) -> None:
     t = a_spend(client)
     path = f"/api/v1/transactions/{t['id']}/category"
     send(
@@ -207,5 +207,8 @@ def test_a_recompute_through_a_write_clears_deferred_marks(client, data, db_engi
         defer=True,
     )
     send(client, "PUT", path, {"category": "health", "scope": "transaction"}, uuid.uuid4())
+    assert count(db_engine, ClientOp, ClientOp.recompute_pending) == 1  # the second write's
+    assert get(client, "/api/v1/transactions").status_code == 200
     assert count(db_engine, ClientOp, ClientOp.recompute_pending) == 0
+    assert count(db_engine, RecomputeMark) == 0
     assert category_in_db(db_engine, t["id"]) == "health"

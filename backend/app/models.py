@@ -319,6 +319,9 @@ class Party(Base):
     display_name: Mapped[str | None] = mapped_column(String(LABEL_MAX))
     source: Mapped[str] = mapped_column(String(10))
     created_at: Mapped[datetime] = _created()
+    # When the owner last answered Friend or Family for this party (4F-B); null: never, or
+    # before 4F-B. payback-audit never calls an answered party silent.
+    answered_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
 
 class PartyText(Base):
@@ -472,6 +475,19 @@ class ClientOp(Base):
     recompute_pending: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )
+
+
+class RecomputeMark(Base):
+    """The owner data changed since the last recompute (D-106): every owner write sets it in
+    its own transaction; the next read recomputes and deletes it. A failed recompute keeps
+    it with `failed_at` and the error type, and is tried again after 5 minutes."""
+
+    __tablename__ = "recompute_marks"
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    marked_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    failed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    failure: Mapped[str | None] = mapped_column(String(40))
 
 
 # --- Derived data -------------------------------------------------------------

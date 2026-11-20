@@ -104,5 +104,50 @@ def test_audit_dry_run_and_apply(run, db_engine, tmp_path) -> None:
     assert state(factory) == (after, parties_after)
 
 
+def test_an_explicit_answer_is_never_silent(run, db_engine, tmp_path) -> None:
+    """Corrected in 4F-B: Friend with a category is not silent when the answer is on record,
+    as answered_at or as a stored app answer for its sender."""
+    import uuid
+    from datetime import UTC, datetime
+
+    from app.models import ClientOp
+    from app.pipeline.owner_actions import senders
+
+    run("import-sms", "--input", str(write_backup(tmp_path / "a.xml", full_rows())))
+    factory = sessionmaker(db_engine, expire_on_commit=False)
+    credits = person_credits(factory)
+    on_record, in_app, silent = credits[:3]
+    now = datetime.now(UTC)
+    add_party(factory, on_record, kind="person", category="food_drinks", source="app",
+              answered_at=now)  # fmt: skip
+    in_app_party = add_party(factory, in_app, kind="person", category="food_drinks", source="app")
+    add_party(factory, silent, kind="person", category="food_drinks", source="app")
+    run("recompute")
+    with factory() as s:
+        sender = next(x for x in senders(s, settings.owner_id) if x.party_id == in_app_party)
+        s.add(ClientOp(owner_id=settings.owner_id, op_id=uuid.uuid4(), received_at=now,
+                       method="PUT", path=f"/api/v1/senders/{sender.id}", request_hash="x" * 64,
+                       status_code=200, response_body={}, completed_at=now))  # fmt: skip
+        s.commit()
+    out = run("payback-audit")
+    assert count(out, "silent person parties") == 1 and count(out, "credits in Paid back") == 1
+
+
+def test_a_friend_answer_is_recorded_and_a_reset_forgets_it(client, data, db_engine) -> None:
+    from tests.apiclient import bearer, get, put, token
+
+    sender = next(s for s in get(client, "/api/v1/senders").json() if s["status"] == "to_confirm")
+    assert put(client, f"/api/v1/senders/{sender['id']}", {"answer": "friend"}).status_code == 200
+    answered = select(Party).where(Party.answered_at.is_not(None))
+    with sessionmaker(db_engine)() as s:
+        parties = s.scalars(answered).all()
+    assert len(parties) == 1 and parties[0].kind == "person"
+    get(client, "/api/v1/senders")  # the read recomputes (D-106): the sender is a party now
+    reset = client.delete(f"/api/v1/senders/{sender['id']}", headers=bearer(token()))
+    assert reset.status_code == 200
+    with sessionmaker(db_engine)() as s:
+        assert s.scalars(answered).all() == []
+
+
 def test_apply_needs_fix(run, db_engine) -> None:
     assert "--apply needs --fix" in run("payback-audit", "--apply", code=2)

@@ -1,11 +1,13 @@
-"""D-102: after a deploy of new engine versions, the first read recomputes, once. FAKE data."""
+"""D-102: after a deploy of new engine versions, the first read recomputes, once. A failure
+is kept on the recompute mark and tried again after 5 minutes (D-106). FAKE data."""
 
-import pytest
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from app.api import ops
-from app.models import DeriveRun, TxnDerived
+from app.models import DeriveRun, RecomputeMark, TxnDerived
 from app.pipeline.recompute import VERSIONS
 from tests.apiclient import OWNER_A, get
 
@@ -28,13 +30,6 @@ def age_last_run(db_engine) -> None:
         )
         last.versions = VERSIONS | {"reconcile": "reconcile-0.0.1"}
         s.commit()
-
-
-@pytest.fixture(autouse=True)
-def _forget_failures():
-    ops._refresh_failed.clear()
-    yield
-    ops._refresh_failed.clear()
 
 
 def test_the_first_read_recomputes_once_and_serves_fresh_totals(client, data, db_engine) -> None:
@@ -61,16 +56,32 @@ def test_a_failed_refresh_keeps_the_stored_rows_with_the_notice(
         calls.append(args)
         raise RuntimeError("TEST: the database went away")
 
+    real = ops.recompute
     monkeypatch.setattr(ops, "recompute", broken)
     first = get(client, "/api/v1/summary", month="2026-01")
     assert first.status_code == 200 and first.json()["stale"] is True  # "being updated"
-    assert "version refresh on read failed (RuntimeError)" in caplog.text
+    assert "recompute on read failed (RuntimeError)" in caplog.text
     assert "went away" not in caplog.text  # the message could hold data: never logged
     assert get(client, "/api/v1/sync/snapshot").status_code == 200
     assert len(calls) == 1  # not tried again on every read
     with sessionmaker(db_engine)() as s:
         assert sorted(tuple(r) for r in s.execute(select(TxnDerived.__table__))) == stored
     assert runs(db_engine)[-1][1]["reconcile"] == "reconcile-0.0.1"
+    with sessionmaker(db_engine)() as s:  # 5 minutes later the next read tries again
+        found = s.get(RecomputeMark, OWNER_A)
+        assert found.failure == "RuntimeError"
+        found.failed_at = datetime.now(UTC) - timedelta(minutes=6)
+        s.commit()
+    assert get(client, "/api/v1/summary", month="2026-01").json()["stale"] is True
+    assert len(calls) == 2
+    monkeypatch.setattr(ops, "recompute", real)  # undo() would also undo the login
+    assert get(client, "/api/v1/summary", month="2026-01").json()["stale"] is True  # held back
+    with sessionmaker(db_engine)() as s:
+        s.get(RecomputeMark, OWNER_A).failed_at = datetime.now(UTC) - timedelta(minutes=6)
+        s.commit()
+    assert get(client, "/api/v1/summary", month="2026-01").json()["stale"] is False
+    with sessionmaker(db_engine)() as s:
+        assert s.get(RecomputeMark, OWNER_A) is None
 
 
 def test_no_run_yet_or_same_versions_reads_without_a_recompute(client, data, db_engine) -> None:

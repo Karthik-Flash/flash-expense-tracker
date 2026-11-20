@@ -377,7 +377,11 @@ def test_batch_row_records_versions_counts_and_fingerprint(
     with factory() as s:
         batch = s.get(ImportBatch, batch_id)
     assert batch.status == "done" and batch.finished_at >= batch.started_at
-    assert batch.parser_versions == {"HDFC": HDFC.version, "other banks": "generic-1.0.0"}
+    assert batch.parser_versions == {
+        "HDFC": HDFC.version,
+        "SBI": "sbi-1.0.0",
+        "other banks": "generic-1.0.0",
+    }
     assert re.fullmatch(r"[0-9a-f]{64}", batch.input_fingerprint)
     assert backup.name not in batch.input_fingerprint
     assert {k: v for k, v in batch.counts.items() if k != "seconds"} == counts.as_dict()

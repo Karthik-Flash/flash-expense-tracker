@@ -36,8 +36,15 @@ DERIVED_TABLES = {"derive_runs", "txn_derived", "txn_links"}
 CATEGORY_TABLES = {"owner_categories", "labels", "txn_labels"}  # owner tables of 0006
 CLIENT_TABLES = {"client_ops"}  # 0007: answers to Idempotency-Key writes
 CHECK_TABLES = {"txn_checks"}  # 0009: the owner's "Looks right" (D-101)
+MARK_TABLES = {"recompute_marks"}  # 0010: writes before recompute (D-106)
 NEW_TABLES = (
-    PIPELINE_TABLES | OWNER_TABLES | DERIVED_TABLES | CATEGORY_TABLES | CLIENT_TABLES | CHECK_TABLES
+    PIPELINE_TABLES
+    | OWNER_TABLES
+    | DERIVED_TABLES
+    | CATEGORY_TABLES
+    | CLIENT_TABLES
+    | CHECK_TABLES
+    | MARK_TABLES
 )  # every app table but heartbeat
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 BACKEND = Path(__file__).resolve().parent.parent
@@ -84,7 +91,11 @@ def test_upgrade_check_downgrade_upgrade(url: str) -> None:
     assert NEW_TABLES | {"heartbeat"} <= tables(url)
     command.check(cfg)  # models and migrations agree
 
-    command.downgrade(cfg, "0008")  # one step at a time: each downgrade works alone
+    command.downgrade(cfg, "0009")  # one step at a time: each downgrade works alone
+    assert not MARK_TABLES & tables(url) and tables(url) >= CHECK_TABLES
+    command.upgrade(cfg, "head")
+    assert tables(url) >= MARK_TABLES
+    command.downgrade(cfg, "0008")
     assert not CHECK_TABLES & tables(url) and tables(url) >= CLIENT_TABLES
     command.upgrade(cfg, "head")
     assert tables(url) >= CHECK_TABLES
