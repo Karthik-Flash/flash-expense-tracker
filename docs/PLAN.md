@@ -5,8 +5,9 @@ refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
 **Status (20 Nov 2026):** Phases 0 to 3 done. **Phase 4 in progress**: 4C,
-4B-1, 4B-2, 4B-3 and 4E done (the owner picks a logo option); next 4F, then
-Phase 5, then the pilot. 4A, 4G and 4D run during the pilot.
+4B-1, 4B-2, 4B-3, 4E and 4F-A done (logo C2 applied); next the owner runs the
+4F-A counts, then 4F-B if needed, then Phase 5, then the pilot. 4A, 4G and
+4D run during the pilot.
 
 Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
@@ -163,6 +164,17 @@ PDF, into `D:\FlashPrivate`.
 - [ ] 4F Second bank: a counts-only survey of the 153 other-bank messages;
   pick the bank with the most money messages; vocabulary survey, parser,
   sender-registry entry, reparse.
+  4F-A (20 Nov 2026, D-099 to D-103): CI fix (Postgres error class), the
+  first read after a deploy recomputes, `payback-audit` (silent paybacks,
+  dry run first), `bank-survey`, `redact-sample` with a leak scan and
+  `--approve`, the generic parser `generic-1.0.0` for registered banks
+  without a parser (check flag, debits count, credits never lower Net),
+  `generic-preview`, To-do "Check these payments", "Not a payment" on every
+  transaction, logo C2 everywhere.
+  Next (proposed): the owner runs payback-audit, bank-survey and
+  generic-preview and pastes the counts; then 4F-B, a dedicated parser for
+  the owner's main other bank if the counts show the generic parser misses
+  much of it (for example SBI amounts without "Rs"); then Phase 5.
 - [ ] 4G Cash wallet, after 4F and before 4D: ATM withdrawals keep counting
   as Spent under "Cash"; logging a cash expense moves that amount into its
   category, so Spent never drops because a log is missing; the wallet shows

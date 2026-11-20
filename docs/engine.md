@@ -103,6 +103,9 @@ prove that.
 
 ## Adding a bank
 
+0. **Counts first** (the owner runs them, D-100): `bank-survey`,
+   `generic-preview`, then `redact-sample --family <bank>` and, after
+   reading the file, `redact-sample --approve <bank>`.
 1. **Survey**: `scripts/shape_survey.py` on the redacted sample with the
    bank's sender cores; write `docs/templates/<bank>.md` (shapes only).
 2. **Fixtures**: `backend/tests/fixtures/sms/<bank>.json`, fake values only
@@ -117,6 +120,54 @@ prove that.
 6. **Check coverage**:
    `backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input data\sample\redacted_sample.json`
    It prints counts and the shapes of Unknown messages, never bodies.
+
+## Generic parser (`generic-1.0.0`, D-101)
+
+`app/engine/parsers/generic.py` reads banks in `senders.SENDER_BANKS` that
+have no dedicated parser (`parsers.GENERIC_BANKS`: today SBI, ICICI, AXIS,
+KOTAK, YES, INDIA_POST; never HDFC, never PhonePe, an app). It stays pure
+and never invents a value.
+
+1. **Foreign currency** (USD, EUR, ...): `foreign_currency_deferred`, as
+   for HDFC.
+2. **Rejects** (`not_a_transaction`, detail = reason), in this order:
+   `otp`, `request` (has requested, collect request), `promo`
+   (pre-approved, offer, eligible, loan up to, ...), `failed` (failed,
+   declined, unsuccessful, reversed, cancelled, insufficient),
+   `mandate_notice` (mandate/AutoPay/SI with registered, created, will,
+   upcoming, pre-debit, ...), `card_bill_due` (credit card, card bill or
+   statement with an amount due or minimum), `scheduled` (will be debited,
+   scheduled, upcoming, reminder, is due), then `balance_only` (no
+   completed action, a balance word) and `other`.
+3. **Accept** only with all of: an INR amount (Rs, Rs., INR, the rupee
+   sign; an amount right after Avl Bal, balance, limit or outstanding does
+   not count), a completed-action verb (debit: debited, spent, paid, sent,
+   withdrawn, purchase, "txn of ... at"; credit: credited, received,
+   deposited), and an anchor (a mask such as XX1234, x123, *1234 or
+   "ending 1234"; a UPI/IMPS/NEFT/RRN/UTR/Ref reference with 6+ digits; or
+   a UPI ID). The first verb gives the direction. Otherwise
+   `generic_unsure` with `no_verb`, `no_amount`, `amount_format` (for
+   example Western grouping), `several_amounts` or `no_anchor`; these stay
+   in "not counted yet".
+4. **Fields**: amount in paise (`money.to_paise`); the account digits only
+   when the message names one; the reference; the channel (atm, credit_card
+   only when the text says credit card, else debit_card for a card, upi,
+   imps, neft, netbanking, or none); the counterparty only from a single UPI
+   ID or an explicit slot (to/at/towards for a debit, from/by for a credit,
+   UPI/P2A/ref/NAME, "; NAME credited") before the closing wording ("Not
+   you", "call", "SMS"); the event time from a date followed by a time, in
+   IST, within 45 days before to 1 day after arrival, else the arrival time
+   (`time_inferred`).
+5. **Result**: type `debit` or `credit` (never `refund`), template `GEN`,
+   hints `generic` (plus `generic_refund` when a credit says refund, and
+   `card_bill_payment` for a payment received on a credit card).
+
+Dedupe (`pipeline/dedupe.py`): a reference gives the usual `ref` key; else
+`("gen", bank, direction, amount, account, event minute)`. `kind_of(body)`
+gives the bank survey's kind for any message. Fixtures:
+`backend/tests/fixtures/generic_sms.json` (92 accepted, 53 rejected, FAKE).
+`generic-preview` counts what it would do over stored messages before a
+reparse.
 
 ## Merchant normalisation
 

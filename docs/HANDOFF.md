@@ -13,11 +13,15 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   reading, history and live, uploaded through the outbox; onboarding,
   privacy policy, pilot invites; pilot fixes; 8-day target), then the
   pilot. 4A, 4G and 4D run during the pilot. Done: 4C, 4B-1, 4B-2, 4B-3,
-  4E (people, faster To-do, logo options, D-096 to D-098).
-- Engine versions: parser `hdfc-1.1.1`, `merchant-1.1.1`,
-  `reconcile-1.4.0`, `categorise-1.1.0`.
-- Alembic head: `0008` (people and the label limit).
-- Decisions: D-001 to D-098 ([DECISIONS.md](DECISIONS.md)).
+  4E (people, faster To-do, logo options, D-096 to D-098), 4F-A (generic
+  parser for other banks, payback audit, refresh on the first read after a
+  deploy, bank survey and redacted samples, Not a payment, logo C2, D-099
+  to D-103). Next: the owner runs the 4F-A counts (NOTES cheat sheet), then
+  4F-B (a dedicated parser for the main other bank) if they show a need.
+- Engine versions: parsers `hdfc-1.1.1` and `generic-1.0.0` (other banks),
+  `merchant-1.1.1`, `reconcile-1.4.0`, `categorise-1.1.0`.
+- Alembic head: `0009` (owner checks, recompute trigger `read`).
+- Decisions: D-001 to D-103 ([DECISIONS.md](DECISIONS.md)).
 - Cron: the warm job needs a non-browser User-Agent; its fallback is
   `HEAD /health` (D-098).
 - Live: app https://flash-expense-tracker.vercel.app, API
@@ -53,6 +57,9 @@ unless marked private.
 | `totals --month 2026-11` | The month's totals (private) |
 | `merchant-review`, `reconcile-review`, `category-review`, `credit-review` | Terminal-only reviews and answers (private) |
 | `owner-load <file>`, `owner-export <file>` | Owner file into the owner tables, and back out (files in `D:\FlashPrivate\private\`) |
+| `payback-audit`, `--fix`, `--fix --apply` | Paybacks no owner answer confirmed (D-099): counts, dry run, repair |
+| `bank-survey`, `generic-preview` | Messages by bank, kind and parse status; what the generic parser would read (counts) |
+| `redact-sample --family <bank>`, `--approve <bank>` | A redacted sample of one bank to `D:\FlashPrivate\review\`, then into `data\sample\` (D-100) |
 | `scripts\redact_sms.py ... --verify` (from the repo root) | Makes the redacted sample; must end with `Leaks: 0` |
 | `powershell -ExecutionPolicy Bypass -File scripts\backup_db.ps1` (from the repo root) | Backs up the database to `D:\FlashPrivate\backups\` (Docker running) |
 
@@ -123,12 +130,12 @@ backend/            Render root
   app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py, owner_load.py (owner file -> owner tables), recompute.py (derive -> derived tables)
   app/importers/      sms_backup.py (streaming XML importer)
   app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals | category-stats | category-review | credit-review
-  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels, 0007 client_ops, 0008 people and the label limit
+  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels, 0007 client_ops, 0008 people and the label limit, 0009 owner checks
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
 frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login; identity from the stored session at boot), src/boot.ts (boot path, first-screen time, boot errors, watchdog), src/crash.ts (error boundary), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar), src/data (local.ts: the IndexedDB phone copy; store.ts: snapshot, refresh, freshness, timings; outbox.ts: owner actions, drain, markers), src/screens/Speed.tsx (Speed sheet), src/screens/People.tsx (person sheet)
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests); backup_db.ps1 (owner: pg_dump via Docker)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-098), design/phase-4e-people.md, design/logo-options.html, engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-103), design/phase-4e-people.md, design/logo-options.html, engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```
@@ -219,13 +226,16 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 1. Bank statement check (step 4A): one normal and one messy month against
    the statement, "match" or the difference in rupees. 4A also settles the
    unticked "merged refund" check in NOTES (one event or two, D-064).
-2. The owner picks a logo option (A, B or C in
-   `docs/design/logo-options.html`); then the wordmark and every app icon
-   are updated (PNGs rendered from the SVG with headless Edge, no package).
+2. After the 4F-A deploy the owner runs the counts in the NOTES cheat sheet
+   ("Other banks and paybacks"): `payback-audit`, `bank-survey`,
+   `generic-preview`, `redact-sample`. The planner decides on
+   `payback-audit --fix --apply`, a reparse and 4F-B. (Logo: C picked, C2
+   applied in 4F-A.)
 3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
 4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
-   Post, Kotak, PhonePe; add a parser, then reparse; step 4F) and 44
-   foreign-currency messages (D-035).
+   Post, Kotak, PhonePe) and 44 foreign-currency messages (D-035). Since
+   4F-A the generic parser reads the banks among them after a reparse (not
+   PhonePe, an app); `generic-preview` counts what it would read first.
 5. Close category colour pairs (OKLab distance about 4 to 5, such as card
    bill and uncategorised); icons and names carry identity (D-081).
 6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.

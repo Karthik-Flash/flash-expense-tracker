@@ -1101,3 +1101,78 @@ against it too.
 `GET /health` does with its small JSON. It is the fallback for the warm job
 when a client cannot send a non-browser User-Agent with GET.
 
+## D-099 Silent paybacks are repaired only by an owner command, dry run first (2026-11-20)
+
+Before 4E, "All from" on a person-like text made an app party of kind
+`person`, which confirmed that sender's credits as paybacks (lowering Net)
+although the owner never answered who sent them (against D-076). No answer
+was ever logged, so "silent" is judged from the party row: kind `person`, no
+income label, not from the owner file, and a default category. A Friend
+answer sets no category, so Friend parties without one are never touched;
+one that also got a category cannot be told apart and is listed too (one
+tap answers Friend again). `payback-audit` prints counts and IST month keys
+only; `--fix` is a dry run; `--fix --apply` sets those parties to kind
+`unsure` with source `terminal` (texts, names, category defaults and
+history kept) and recomputes. Their credits are then To confirm; Net never
+goes down. No migration changes owner data.
+
+## D-100 Bank survey and redacted samples for another bank (2026-11-20)
+
+`bank-survey` prints counts only: sender family (the bank of the sender
+code; sender codes are not private; a code with no money-like message is
+folded into "other senders") x kind (keyword heuristics) x parse status
+(dedicated, generic, not parsed), plus foreign-currency messages.
+`redact-sample --family <bank>` uses the Phase 1 shape rules (kept equal to
+`scripts/shape_survey.py` by a test) and is default-deny: every word not in
+a fixed bank-wording vocabulary becomes `{WORD}`. Equal shapes are written
+once with count, kind and status; never a message time or an original
+value. A leak scan refuses the whole file when a line still has 4+ digits,
+an @ handle or a capitalised word outside the vocabulary (counts per reason;
+the lines only on the owner's terminal). The file goes to
+`D:\FlashPrivate\review\` (a folder inside the repository is refused) with
+a vocabulary report; `--approve <bank>` scans again and copies it to the
+git-ignored `data/sample/`.
+
+## D-101 A generic parser for banks with no parser of their own (2026-11-20)
+
+`generic-1.0.0` reads messages from registered banks without a dedicated
+parser (never HDFC, never an app sender such as PhonePe). It accepts a
+message only with an INR amount (balance and limit amounts excluded; two
+different other amounts refused), a completed-action verb whose first
+occurrence gives the direction, and an anchor (account or card mask, a
+reference with 6+ digits, or a UPI ID). It first rejects OTPs, payment
+requests, promotions and loan offers, failed, declined or reversed
+attempts, mandate and AutoPay notices that are not executions, card bill
+reminders, anything due or scheduled, and balance-only alerts
+(`not_a_transaction` with the reason); a possible payment with something
+missing is `generic_unsure` and stays in "not counted yet". It never
+guesses a counterparty: a UPI ID when there is exactly one, else a name in
+an explicit slot before the bank's closing wording. The event time comes
+from the text only with a date and a time within 45 days before to 1 day
+after arrival. Dedupe: the reference when present (as for HDFC), else
+bank, direction, amount, account and event minute. Results carry hint
+`generic`: debits count as spend and ask the owner to check them; credits
+are never type refund, so they never lower Net by themselves (paybacks
+still need the owner); ATM withdrawals are spend under Cash. A card the
+text does not call a credit card is a debit card (a guess never lowers
+Net).
+
+## D-102 Stored rows from other engine versions are recomputed on the first read (2026-11-20)
+
+Every read route and the snapshot first compare the last done run's
+engine versions with the running ones. When they differ (after a deploy),
+the read runs one recompute (trigger `read`, migration `0009`) in its own
+transaction under the owner's lock, then serves fresh totals; the next read
+finds nothing to do. When that recompute fails or is stopped by a merchant
+engine change, it is logged by error type only, the read serves the stored
+rows with the "being updated" notice, and this process does not try again
+on every read (an owner write or a restart does).
+
+## D-103 "Not a payment" is an owner role, reversible (2026-11-20)
+
+Any transaction can be marked "Not a payment" in its sheet: an owner role
+`ignored` (`PUT /transactions/{id}/ignore`), in no total. "Count it again"
+(`DELETE`) removes that role and the engine decides again; it never removes
+another role the owner set (409). "Looks right" (`PUT
+/transactions/{id}/check`) records the owner's check of a generic row in
+`txn_checks` and changes no total. All three go through the outbox.
