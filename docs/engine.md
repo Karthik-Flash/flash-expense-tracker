@@ -121,11 +121,25 @@ prove that.
    `backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input data\sample\redacted_sample.json`
    It prints counts and the shapes of Unknown messages, never bodies.
 
+## SBI parser (`sbi-1.0.0`, D-108)
+
+`app/engine/parsers/sbi.py`: 14 templates, one per money shape in
+[templates/sbi.md](templates/sbi.md), over the normalised body. Amounts may
+lack a currency mark inside a template. The event time comes from the text
+as in the generic parser (a date followed by a time, near the arrival time),
+else the arrival time. No template: `hold` and `deposit_notice`, then the
+generic parser's reject reasons (not_a_transaction); an amount or a
+completed-action verb left over is `generic_unsure` with `no_template` (or
+`card_no_template`). On the redacted sample: 53 accepted, 2 unsure, 55
+refused (the generic parser: 24, 34, 52). S07, an outgoing NEFT, is a debit
+(the generic parser read "credited to Beneficiary" as a credit).
+
 ## Generic parser (`generic-1.0.0`, D-101)
 
 `app/engine/parsers/generic.py` reads banks in `senders.SENDER_BANKS` that
-have no dedicated parser (`parsers.GENERIC_BANKS`: today SBI, ICICI, AXIS,
-KOTAK, YES, INDIA_POST; never HDFC, never PhonePe, an app). It stays pure
+have no dedicated parser (`parsers.GENERIC_BANKS`: today ICICI, AXIS, KOTAK,
+YES, INDIA_POST; never HDFC or SBI, which have their own, never PhonePe, an
+app). It stays pure
 and never invents a value.
 
 1. **Foreign currency** (USD, EUR, ...): `foreign_currency_deferred`, as

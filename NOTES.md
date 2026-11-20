@@ -24,9 +24,10 @@ Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
 progress**: 4C (install and update prompt), 4B-1 (phone copy) and 4B-2
 (offline queue) done 19 Nov; 4B-3 (offline boot), 4E (people, faster
 To-do, logo options) and 4F-A (generic parser for other banks, payback
-audit, refresh after deploy, logo C2) done 20 Nov; next: the owner runs the
-4F-A counts, then 4F-B if needed, then Phase 5 and the pilot. A one-page
-tour:
+audit, refresh after deploy, logo C2) done 20 Nov; 4F-B (the CORS fix for
+blocked taps, a queue that cannot get stuck, SBI parser) done 21 Nov; next:
+the owner checks the update, runs the counts, then Phase 5 and the pilot. A
+one-page tour:
 [docs/OVERVIEW.md](docs/OVERVIEW.md).
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
@@ -118,7 +119,7 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
    The full file now lives in `D:\FlashPrivate\private\` (D-051).
 2. When the owner file changes (cheat sheet, "Owner data and recompute"):
    edit `D:\FlashPrivate\private\owner.json` (shape in
-   `docs\owner.example.json`), check that `alembic current` says `0009`,
+   `docs\owner.example.json`), check that `alembic current` says `0010`,
    run `owner-load`, then paste the `reconcile-stats` output.
 3. Vercel: `VITE_API_URL` is saved as a Secret. Change it to a plain
    variable with the same value, then redeploy with the build cache off.
@@ -456,6 +457,31 @@ then Home says "Totals are being updated".
 6. Logo: done (C picked; C2 applied in 4F-A).
 7. Paste to the planner only: counts (how many joins, whether any step
    failed). Never paste names or amounts.
+
+### After the 4F-B deploy: your check (phone)
+
+1. Open the app once the new build is live (close it fully first; the
+   version line on Home shows the new build).
+2. Within a minute the 22:42 Friend tap syncs: it says "Synced" for a moment
+   and leaves "Saved on phone"; Home stops saying "Totals are being updated".
+3. Speed sheet (tap the version line): the Sync block is at the top. Paste to
+   the planner: Saved on phone, Failed, Last attempt (time and result code),
+   Last success. They are counts, times and codes: safe to paste.
+4. Make one tap with Airplane mode on, then turn it off: it syncs within a
+   few seconds.
+
+### Cross-origin check (the test routine since 4F-B, D-104)
+
+```powershell
+cd frontend; node scripts/cross-origin-check.mjs   # needs backend\.venv and Edge; FAKE data
+```
+
+It builds the app into `frontend\dist-xo\` (git-ignored), serves it on
+`localhost:4174`, starts the API on `127.0.0.1:8765` with a throwaway
+SQLite file and a test key (no Supabase), and taps Friend online and
+offline-then-online in headless Edge. It prints every preflight and write
+with its status and ends with `CROSS-ORIGIN CHECK: PASS` (exit 0) or `FAIL`.
+Run it whenever headers, CORS or the outbox change.
 
 ### Other banks and paybacks: commands after the 4F-A deploy (from `backend\`)
 
@@ -848,6 +874,22 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-21: Phase 4F-B, blocked taps, SBI parser
+
+- Root cause of the phone's stuck tap: `allow_headers` in
+  `backend/app/main.py` lacked `Idempotency-Key` and `X-Defer-Recompute`
+  (sent by every outbox write since 4B-2): the cross-origin preflight got
+  400 and the browser never sent the PUT. Reproduced and fixed with the new
+  cross-origin check (D-104).
+- Outbox: codes, watchdog, caught errors, versioned entries (D-105);
+  "Saved on phone" wording and details (D-107).
+- Writes commit with a recompute mark; reads recompute (D-106, migration
+  `0010`).
+- payback-audit: explicit answers (`parties.answered_at`, stored app
+  answers) are never silent.
+- SBI parser `sbi-1.0.0` (D-108; `docs/templates/sbi.md`).
+- API request log (method, route template, status, duration).
 
 ### 2026-11-20: Phase 4F-A, other banks, payback safety, logo C2
 

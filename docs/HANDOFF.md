@@ -18,10 +18,17 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   deploy, bank survey and redacted samples, Not a payment, logo C2, D-099
   to D-103). Next: the owner runs the 4F-A counts (NOTES cheat sheet), then
   4F-B (a dedicated parser for the main other bank) if they show a need.
-- Engine versions: parsers `hdfc-1.1.1` and `generic-1.0.0` (other banks),
-  `merchant-1.1.1`, `reconcile-1.4.0`, `categorise-1.1.0`.
-- Alembic head: `0009` (owner checks, recompute trigger `read`).
-- Decisions: D-001 to D-103 ([DECISIONS.md](DECISIONS.md)).
+- 4F-B (21 Nov): the phone's writes were blocked by CORS (D-104, fixed and
+  checked cross-origin); the outbox cannot get stuck (D-105); writes commit
+  before the recompute (D-106); clearer sync wording (D-107); SBI parser
+  (D-108); payback-audit honours explicit answers.
+- Engine versions: parsers `hdfc-1.1.1`, `sbi-1.0.0` and `generic-1.0.0`
+  (other banks), `merchant-1.1.1`, `reconcile-1.4.0`, `categorise-1.1.0`.
+- Alembic head: `0010` (recompute marks, `parties.answered_at`).
+- Decisions: D-001 to D-108 ([DECISIONS.md](DECISIONS.md)).
+- Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
+  lint/typecheck/tests/build, and the cross-origin check
+  (`node scripts/cross-origin-check.mjs` from `frontend\`).
 - Cron: the warm job needs a non-browser User-Agent; its fallback is
   `HEAD /health` (D-098).
 - Live: app https://flash-expense-tracker.vercel.app, API
@@ -33,7 +40,7 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   D-087). Screens read one snapshot (`/api/v1/sync/snapshot`) kept on the
   phone in IndexedDB and open from it at once; every money figure comes
   from the server (D-088 to D-090). Every owner action goes through an
-  outbox on the phone with an Idempotency-Key, shown as "Waiting to sync"
+  outbox on the phone with an Idempotency-Key, shown as "Saved on phone · syncing"
   (D-091 to D-094; [design/phase-4b2-outbox.md](design/phase-4b2-outbox.md)).
   Launch never waits on the network: identity from the stored session, the
   phone copy at once, an error boundary, a 3 s watchdog, never a blank
@@ -130,12 +137,12 @@ backend/            Render root
   app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py, owner_load.py (owner file -> owner tables), recompute.py (derive -> derived tables)
   app/importers/      sms_backup.py (streaming XML importer)
   app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals | category-stats | category-review | credit-review
-  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels, 0007 client_ops, 0008 people and the label limit, 0009 owner checks
+  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels, 0007 client_ops, 0008 people and the label limit, 0009 owner checks, 0010 recompute marks
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
 frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login; identity from the stored session at boot), src/boot.ts (boot path, first-screen time, boot errors, watchdog), src/crash.ts (error boundary), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar), src/data (local.ts: the IndexedDB phone copy; store.ts: snapshot, refresh, freshness, timings; outbox.ts: owner actions, drain, markers), src/screens/Speed.tsx (Speed sheet), src/screens/People.tsx (person sheet)
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests); backup_db.ps1 (owner: pg_dump via Docker)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-103), design/phase-4e-people.md, design/logo-options.html, engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-108), design/phase-4e-people.md, design/logo-options.html, engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```
