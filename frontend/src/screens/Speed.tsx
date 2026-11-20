@@ -4,25 +4,27 @@ import { readBoot } from '../boot.ts'
 import { readTimings, type Timing } from '../data/local.ts'
 import { failedOps, useOutbox, waiting } from '../data/outbox.ts'
 import { speedRows } from '../data/store.ts'
-import { dayLabel, timeLabel } from '../lib/dates.ts'
+import { dayLabel, istTime, timeLabel } from '../lib/dates.ts'
 import { Sheet } from '../ui.tsx'
 
-/** The outbox: what waits, what failed, the last drain, the last error. */
+/** The outbox first (D-107): what is on the phone, what failed, the last try and success. */
 function SyncBlock() {
   const s = useOutbox()
-  const last = s.lastDrain
+  const attempt = s.lastAttempt
   return (
     <>
-      <h3 className="mt-4 text-xs font-medium text-muted">Sync</h3>
+      <h3 className="text-xs font-medium text-muted">Sync</h3>
       <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 tabular-nums">
-        <dt className="text-muted">Waiting</dt>
+        <dt className="text-muted">Saved on phone</dt>
         <dd>{waiting(s.ops)}</dd>
-        <dt className="text-muted">Couldn't save</dt>
+        <dt className="text-muted">Failed</dt>
         <dd>{failedOps(s.ops).length}</dd>
-        <dt className="text-muted">Last drain</dt>
-        <dd>{last ? `${when(last.at)}, ${last.sent} sent, ${(last.ms / 1000).toFixed(1)} s` : '–'}</dd>
+        <dt className="text-muted">Last attempt</dt>
+        <dd>{attempt ? `${istTime(attempt.at)}, ${attempt.result}` : '–'}</dd>
+        <dt className="text-muted">Last success</dt>
+        <dd>{istTime(s.lastSuccess)}</dd>
         <dt className="text-muted">Last error</dt>
-        <dd className="wrap-break-word">{s.signIn ? 'Sign in to sync' : s.lastError || '–'}</dd>
+        <dd className="wrap-break-word">{s.signIn ? 'needs_sign_in: sign in to sync' : s.lastError || '–'}</dd>
       </dl>
     </>
   )
@@ -71,7 +73,8 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet title="Speed" onClose={onClose}>
       <div className="px-4 py-3 text-sm">
-        <h3 className="text-xs font-medium text-muted">Targets</h3>
+        <SyncBlock />
+        <h3 className="mt-4 text-xs font-medium text-muted">Targets</h3>
         <ul className="mt-1 space-y-0.5">
           <li>Open from phone copy: 2 s or less</li>
           <li>Fresh data, server awake: 5 s or less</li>
@@ -119,7 +122,6 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
           </table>
         )}
         <BootBlock />
-        <SyncBlock />
         <p className="mt-4 text-xs text-muted">Measured on this phone and kept only here. Never sent anywhere.</p>
       </div>
     </Sheet>

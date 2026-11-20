@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import type { Category, Sender, Snapshot, Txn } from '../api/types.ts'
-import { actions, checksView, enqueue, personMark, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
+import { actions, checksView, discard, enqueue, personMark, retry, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { dayLabel } from '../lib/dates.ts'
 import { Button, Empty, Header, Loaded, Money, Section } from '../ui.tsx'
@@ -27,7 +27,7 @@ export function TodoScreen() {
             <>
               {t.senders.length === 0 && t.merchants.length === 0 && t.waiting.length === 0 && checks.length === 0 && <Empty>Nothing to do.</Empty>}
               {t.waiting.length > 0 && (
-                <Section title="Waiting to sync">
+                <Section title="Saved on phone">
                   {t.waiting.map((op) => <WaitingRow key={op.seq} op={op} />)}
                 </Section>
               )}
@@ -64,7 +64,8 @@ export function TodoScreen() {
   )
 }
 
-/** "Rohit V" over "Friend · Waiting to sync · Undo". */
+/** "Rohit V" over "Friend · Saved on phone · syncing · Undo". One the server answered with a
+ *  conflict shows the choice right here: try again or drop it (D-107). */
 function WaitingRow({ op }: { op: Op }) {
   return (
     <div className="px-4 py-2.5">
@@ -73,6 +74,15 @@ function WaitingRow({ op }: { op: Op }) {
         <span className="min-w-0 truncate">{op.choice}</span>
         <Pending op={op} />
       </span>
+      {op.state === 'failed' && (
+        <>
+          {op.message && <p className="text-xs text-muted wrap-break-word">{op.message}</p>}
+          <div className="mt-1 flex flex-wrap gap-2">
+            <Button onClick={() => void retry(op)}>Try again</Button>
+            <Button onClick={() => void discard(op)}>Drop this change</Button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

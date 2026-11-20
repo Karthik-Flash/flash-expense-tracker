@@ -87,11 +87,11 @@ def test_generic_preview_counts_without_writing(run, stored, db_engine) -> None:
 def test_redact_sample_writes_only_shapes_then_approve_copies(run, stored, monkeypatch) -> None:
     review, sample = stored / "review", stored / "sample"
     monkeypatch.setattr(sample_export, "SAMPLE_DIR", sample)
-    out = run("redact-sample", "--family", "sbi", "--review-dir", str(review))
-    assert "written to the review folder: sbi-sample.txt" in out
-    text = (review / "sbi-sample.txt").read_text("utf-8")
-    vocab = (review / "sbi-vocabulary.txt").read_text("utf-8")
-    assert text.startswith("# SBI sample: ") and "## 1 | " in text
+    out = run("redact-sample", "--family", "icici", "--review-dir", str(review))
+    assert "written to the review folder: icici-sample.txt" in out
+    text = (review / "icici-sample.txt").read_text("utf-8")
+    vocab = (review / "icici-vocabulary.txt").read_text("utf-8")
+    assert text.startswith("# ICICI sample: ") and "## 1 | " in text
     assert not re.search(r"\d{4}", re.sub(r"\{[A-Z]+\}", "", text.split("\n", 1)[1]))
     assert "@" not in text
     for word in ("TEST", "DEMO", "RAVI", "MEERA", "TESTMART", "KIRAN", "ANITA"):
@@ -100,18 +100,18 @@ def test_redact_sample_writes_only_shapes_then_approve_copies(run, stored, monke
     assert "words replaced by {WORD}:" in vocab
 
     assert "approved: leak scan clean" in run(
-        "redact-sample", "--approve", "SBI", "--review-dir", str(review)
+        "redact-sample", "--approve", "ICICI", "--review-dir", str(review)
     )
-    assert (sample / "sbi-sample.txt").read_text("utf-8") == text
+    assert (sample / "icici-sample.txt").read_text("utf-8") == text
 
 
 def test_a_deliberate_leak_is_refused_and_nothing_is_copied(run, stored, monkeypatch) -> None:
     review, sample = stored / "review", stored / "sample"
     monkeypatch.setattr(sample_export, "SAMPLE_DIR", sample)
-    run("redact-sample", "--family", "SBI", "--review-dir", str(review))
-    path = review / "sbi-sample.txt"
+    run("redact-sample", "--family", "ICICI", "--review-dir", str(review))
+    path = review / "icici-sample.txt"
     path.write_text(path.read_text("utf-8") + "Paid to Test Ravi 98765 via testravi@okaxis\n")
-    out = run("redact-sample", "--approve", "SBI", "--review-dir", str(review), code=1)
+    out = run("redact-sample", "--approve", "ICICI", "--review-dir", str(review), code=1)
     assert "refused: the leak scan found lines" in out
     counts = dict(re.findall(r"^  (4\+ digits|@ handle|capitalised word)\s+(\d+)$", out, re.M))
     assert counts == {"4+ digits": "1", "@ handle": "1", "capitalised word": "1"}
@@ -133,7 +133,7 @@ def test_the_scan_and_the_folder_rules() -> None:
 
 
 def test_review_folder_inside_the_repo_is_refused(run, stored) -> None:
-    out = run("redact-sample", "--family", "SBI", "--review-dir", str(REPO / "data"), code=2)
+    out = run("redact-sample", "--family", "ICICI", "--review-dir", str(REPO / "data"), code=2)
     assert "must be outside the repository" in out
 
 

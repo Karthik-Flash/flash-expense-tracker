@@ -4,6 +4,25 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 4F-B: taps that always sync, SBI parser (21 Nov 2026)
+
+- Fixed: since 4B-2 the browser blocked every change sent from the phone
+  (the API did not allow the Idempotency-Key header across origins), so
+  changes waited forever with "Could not reach the server". The API now
+  allows exactly the app's headers, from one shared list (D-104). Changes
+  already waiting on a phone are sent after the update.
+- The queue cannot get stuck: it restarts after a crash, tries every 30 s
+  while the app is open, and records why each try failed (D-105).
+- A tap is saved on the server at once; totals update on the next read
+  (D-106).
+- "Saved on phone · syncing"; after 2 minutes the reason, with details and
+  "Try now"; "Synced" when done; the Sync block leads the Speed sheet
+  (D-107).
+- SBI messages have their own parser: 53 of the 110 sample messages are read
+  (24 before), including amounts without "Rs" and outgoing NEFT (D-108).
+- payback-audit never calls an explicit Friend or Family answer silent.
+- The API logs one line per request (method, route, status, time).
+
 ## Phase 4F-A: other banks, payback safety, logo C2 (20 Nov 2026)
 
 - A careful generic parser reads the money messages of SBI, ICICI, Axis,

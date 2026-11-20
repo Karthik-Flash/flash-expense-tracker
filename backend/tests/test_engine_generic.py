@@ -132,13 +132,13 @@ def test_same_alert_twice_is_one_key_and_two_references_are_two() -> None:
     assert transaction_key(one, "r") != transaction_key(two, "r")  # D-069
 
 
-def _sbi_rows():
-    """Six SBI alerts that are six different payments (each with its own reference)."""
+def _icici_rows():
+    """Six ICICI alerts that are six different payments (each with its own reference)."""
     picks, seen = [], set()
     for f in ACCEPTED:
         e = f["expect"]
         key = (e["direction"], e["amount_paise"], e.get("reference"))
-        if f["sender"].endswith(("SBIINB", "SBIUPI", "CBSSBI")) and key[2] and key not in seen:
+        if f["sender"].endswith("ICICIT") and key[2] and key not in seen:
             seen.add(key)
             picks.append((f["sender"], f["body"], datetime.fromisoformat(f["received_at"])))
     return picks[:6]
@@ -147,7 +147,7 @@ def _sbi_rows():
 def test_first_parse_and_a_reparse_keep_transaction_ids(run, db_engine, tmp_path, monkeypatch):
     """Before the generic parser: no_parser_for_bank. After it: a reparse makes the
     transactions. A later generic version reparses them in place: the ids stay."""
-    rows = _sbi_rows()
+    rows = _icici_rows()
     monkeypatch.setattr(engine, "GENERIC_BANKS", frozenset())
     monkeypatch.setattr(engine.parsers, "GENERIC_BANKS", frozenset())
     run("import-sms", "--input", str(write_backup(tmp_path / "a.xml", rows)))

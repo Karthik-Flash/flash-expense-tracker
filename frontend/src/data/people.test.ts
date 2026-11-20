@@ -49,7 +49,7 @@ test('offline: name, same as, separate and clear name wait on their person, in o
   await startOutbox(s.api)
   await enqueue(actions.namePerson(masked, 'Test Kiran'))
   assert.equal(shownName(syncState().ops, masked), 'Test Kiran') // the new name shows at once
-  assert.equal(markText(personMark(syncState().ops, masked.key)!), 'Waiting to sync')
+  assert.equal(markText(personMark(syncState().ops, masked.key)!), 'Saved on phone · syncing')
   await enqueue(actions.joinPerson(masked, rohit, 'friend'))
   await enqueue(actions.separate(rohit, masked.identifiers[0]))
   await enqueue(actions.clearName(masked))

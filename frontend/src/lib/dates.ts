@@ -74,3 +74,10 @@ export function today(now: number = Date.now()): string {
 export function istToIso(year: number, month: number, day: number, hour = 0, minute = 0): string {
   return new Date(Date.UTC(year, month - 1, day, hour, minute) - IST_OFFSET_MS).toISOString()
 }
+
+/** A moment (ms) as day and time in IST, as the app shows it; '–' when there is none. */
+export function istTime(ms: number | null | undefined): string {
+  if (!ms) return '–'
+  const iso = new Date(ms).toISOString()
+  return `${dayLabel(iso)} ${timeLabel(iso)}`
+}

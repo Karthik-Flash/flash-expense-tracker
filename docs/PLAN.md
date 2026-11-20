@@ -5,9 +5,9 @@ refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
 **Status (20 Nov 2026):** Phases 0 to 3 done. **Phase 4 in progress**: 4C,
-4B-1, 4B-2, 4B-3, 4E and 4F-A done (logo C2 applied); next the owner runs the
-4F-A counts, then 4F-B if needed, then Phase 5, then the pilot. 4A, 4G and
-4D run during the pilot.
+4B-1, 4B-2, 4B-3, 4E, 4F-A and 4F-B done; next the owner checks that queued
+taps sync and runs the counts, then Phase 5, then the pilot. 4A, 4G and 4D
+run during the pilot.
 
 Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
@@ -175,6 +175,13 @@ PDF, into `D:\FlashPrivate`.
   generic-preview and pastes the counts; then 4F-B, a dedicated parser for
   the owner's main other bank if the counts show the generic parser misses
   much of it (for example SBI amounts without "Rs"); then Phase 5.
+  4F-B (21 Nov 2026, D-104 to D-108): the phone's writes were blocked by
+  CORS (fixed; a cross-origin check joins the test routine); the outbox
+  cannot get stuck; writes commit before the recompute; "Saved on phone"
+  wording with a reason after 2 minutes; payback-audit honours explicit
+  answers; SBI parser `sbi-1.0.0` (53 of 110 sample messages read, was 24).
+  Next (proposed): the owner updates, checks that the 22:42 tap syncs, runs
+  the counts; then Phase 5.
 - [ ] 4G Cash wallet, after 4F and before 4D: ATM withdrawals keep counting
   as Spent under "Cash"; logging a cash expense moves that amount into its
   category, so Spent never drops because a log is missing; the wallet shows

@@ -279,9 +279,9 @@ def test_merchant_category_covers_older_and_newer_payments(client, data, tmp_pat
     body = {"category": "groceries", "scope": "merchant"}
     response = put(client, f"/api/v1/transactions/{debit['id']}/category", body)
     assert response.status_code == 200, response.text
-    assert response.json()["recompute"]["status"] == "done"
+    assert response.json()["recompute"]["status"] == "deferred"  # D-106
     again = put(client, f"/api/v1/transactions/{debit['id']}/category", body)
-    assert again.json()["recompute"]["status"] == "unchanged"  # idempotent
+    assert again.json()["recompute"]["status"] == "deferred"  # idempotent: the read decides
     spends = [t for t in find(client, "Test Merchant") if t["role"] == "spend"]
     assert {(t["category"], t["category_basis"]) for t in spends} == {("groceries", "owner")}
 
@@ -417,7 +417,7 @@ def test_reset_sender_returns_it_to_confirm(client, data, db_engine) -> None:
     for s in (payback, other):
         response = client.delete(f"/api/v1/senders/{s['id']}", headers=bearer(token()))
         assert response.status_code == 200, response.text
-        assert response.json()["recompute"]["status"] == "done"
+        assert response.json()["recompute"]["status"] == "deferred"  # D-106
     assert get(client, "/api/v1/senders").json() == listed
     end = get(client, "/api/v1/summary", month="2026-01").json()
     assert {k: v for k, v in end.items() if k != "last_recompute_utc"} == {
@@ -426,7 +426,7 @@ def test_reset_sender_returns_it_to_confirm(client, data, db_engine) -> None:
     with sessionmaker(db_engine)() as s:  # the party made for the answer is gone
         assert not list(s.scalars(select(OwnerRole))) and not list(s.scalars(select(Party)))
     again = client.delete(f"/api/v1/senders/{payback['id']}", headers=bearer(token()))
-    assert again.json()["recompute"]["status"] == "unchanged"  # idempotent
+    assert again.json()["recompute"]["status"] == "deferred"  # idempotent: the read decides
     gone = client.delete("/api/v1/senders/s_unknown", headers=bearer(token()))
     assert gone.status_code == 404
     theirs = client.delete(f"/api/v1/senders/{payback['id']}", headers=bearer(token(SUB_B)))

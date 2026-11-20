@@ -1,12 +1,14 @@
 """Owner writes, once (D-091, D-092, D-094; docs/design/phase-4b2-outbox.md).
 
-Every owner-write route runs through `write()`. With an `Idempotency-Key` header the
-write, its recompute and the stored answer (table client_ops) commit in one transaction;
-the same key again gets the stored answer and writes nothing. Without the header nothing
-changes. `X-Defer-Recompute: 1` (with a key) skips the recompute and marks the row; every
-read runs `ensure_fresh()` first, so derived data never lags owner data. The same first read
-also recomputes when the stored rows were made by other engine versions, as after a deploy
-(D-102).
+Every owner-write route runs through `write()`. A write commits the owner data, its
+stored answer (table client_ops, with an `Idempotency-Key`) and a recompute mark (table
+recompute_marks) in one transaction, and answers at once: the engine never blocks a tap
+(D-106). The same key again gets the stored answer and writes nothing. Every read runs
+`ensure_fresh()` first: it recomputes when a write marked the owner, when an older deferred
+write did (D-094), or when the stored rows were made by other engine versions (D-102). A
+recompute that fails keeps the mark, logs the error type, and is not tried again for 5
+minutes; reads meanwhile serve the stored rows with the "being updated" notice.
+`X-Defer-Recompute` is still accepted; every write is deferred now.
 """
 
 import hashlib
@@ -16,7 +18,7 @@ import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -26,19 +28,17 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import current_owner
 from app.db import get_session
-from app.models import ClientOp, DeriveRun
+from app.models import ClientOp, DeriveRun, RecomputeMark
 from app.pipeline.owner_actions import ActionError
-from app.pipeline.recompute import VERSIONS, Outcome, OwnerDataError, owner_lock, recompute
+from app.pipeline.recompute import VERSIONS, OwnerDataError, owner_lock, recompute
 
 IN_PROGRESS = "in_progress"
 KEY_REUSED = "idempotency_key_reused"
-STOPPED = "recompute stopped: an engine change needs the owner's check"
+RETRY_AFTER = timedelta(minutes=5)  # a failed recompute is tried again after this
+DEFERRED = {"status": "deferred", "run": None}
 
 _running: set[tuple[uuid.UUID, uuid.UUID]] = set()  # keys being written in this process
 _running_guard = threading.Lock()
-# Owners whose version refresh failed in this process: not tried again on every read (the
-# rows keep their "being updated" notice; the next owner write or a restart tries again).
-_refresh_failed: set[uuid.UUID] = set()
 log = logging.getLogger(__name__)
 
 
@@ -75,11 +75,21 @@ def _hash(op: Op, body: dict | None) -> str:
 
 
 def _clear_pending(session: Session, owner: uuid.UUID) -> None:
+    """Inside a recompute's transaction: the derived rows now match the owner data."""
     session.execute(
         update(ClientOp)
         .where(ClientOp.owner_id == owner, ClientOp.recompute_pending)
         .values(recompute_pending=False)
     )
+    if (mark := session.get(RecomputeMark, owner)) is not None:
+        session.delete(mark)
+
+
+def mark(session: Session, owner: uuid.UUID) -> None:
+    """Inside a write's transaction: the next read recomputes (D-106)."""
+    row = session.get(RecomputeMark, owner) or RecomputeMark(owner_id=owner)
+    row.marked_at, row.failed_at, row.failure = datetime.now(UTC), None, None
+    session.add(row)
 
 
 def _error(exc: ActionError | OwnerDataError) -> tuple[int, str]:
@@ -98,7 +108,13 @@ def write(
     recomputes: bool = True,
     status: int = 200,
 ) -> dict | JSONResponse:
-    """Run one owner answer (and its recompute) under the owner's lock, all or nothing."""
+    """Commit one owner answer, its stored answer and a recompute mark, all or nothing.
+
+    Owner actions read derived rows (the party a transaction matches), so the recompute the
+    writes before this one left runs first, as a read would; if it fails, the answer is still
+    saved (D-106). This answer's own recompute is left to the next read.
+    """
+    ensure_fresh(session, owner)
     if op.key is None:
         return _plain(session, owner, action, recomputes)
     slot = (owner, op.key)
@@ -115,22 +131,17 @@ def write(
 
 
 def _plain(session: Session, owner: uuid.UUID, action, recomputes: bool) -> dict:
-    """As before 4B-2: no key, nothing stored."""
+    """No key: nothing stored about the request; the owner data and the mark commit."""
     with owner_lock(session, owner):
         try:
             result = action()
-            if not recomputes:
-                session.commit()
-                return result
-            outcome = recompute(
-                session, owner, "owner", before_commit=lambda _: _clear_pending(session, owner)
-            )
+            if recomputes:
+                mark(session, owner)
+            session.commit()
         except (ActionError, OwnerDataError) as exc:
             session.rollback()
             raise HTTPException(*_error(exc)) from None
-    if outcome.status == "stopped":
-        raise HTTPException(409, STOPPED)
-    return {"result": result, "recompute": {"status": outcome.status, "run": outcome.run_id}}
+    return {"result": result, "recompute": DEFERRED} if recomputes else result
 
 
 def _keyed(session, owner, op: Op, action, request_hash: str, recomputes: bool, status: int):
@@ -155,25 +166,13 @@ def _keyed(session, owner, op: Op, action, request_hash: str, recomputes: bool, 
         session.add(row)
         session.flush()
         result = action()
-        if not recomputes or op.defer:
-            # A write that needs no recompute answers its result as it is (POST /labels).
-            response = {"result": result, "recompute": {"status": "deferred", "run": None}}
-            response = response if recomputes else result
-            finish(status, response, pending=recomputes)
-            session.commit()
-            return JSONResponse(response, status_code=status)
-
-        def before_commit(outcome: Outcome) -> None:
-            _clear_pending(session, owner)
-            finish(status, {
-                "result": result, "recompute": {"status": outcome.status, "run": outcome.run_id}
-            })  # fmt: skip
-
-        outcome = recompute(session, owner, "owner", before_commit=before_commit)
-        if outcome.status == "stopped":
-            code, detail = 409, STOPPED
-        else:
-            return JSONResponse(row.response_body, status_code=status)
+        # A write that needs no recompute answers its result as it is (POST /labels).
+        response = {"result": result, "recompute": DEFERRED} if recomputes else result
+        finish(status, response, pending=recomputes)
+        if recomputes:
+            mark(session, owner)
+        session.commit()
+        return JSONResponse(response, status_code=status)
     except (ActionError, OwnerDataError) as exc:
         session.rollback()
         code, detail = _error(exc)
@@ -200,28 +199,40 @@ def other_versions(session: Session, owner: uuid.UUID) -> bool:
 
 
 def ensure_fresh(session: Session, owner: uuid.UUID) -> None:
-    """Before anything is read: run the recompute a deferred write skipped (D-094), or the
-    one a deploy of new engine versions needs (D-102). Either is one transaction.
+    """Before anything is read: recompute when a write marked the owner (D-106), an older
+    deferred write left a mark (D-094), or new engine versions run (D-102). One transaction.
 
-    A deferred recompute that fails fails the read, as before. A version refresh that fails
-    is logged and the read goes on with the stored rows, which say "being updated".
+    A recompute that fails (or stops for an engine change) is logged by error type only; the
+    mark keeps `failed_at`, so reads serve the stored rows ("being updated") and only a read
+    5 minutes later tries again. The owner data is never touched here.
     """
+    found = session.get(RecomputeMark, owner)
     pending = select(exists().where(ClientOp.owner_id == owner, ClientOp.recompute_pending))
-    if session.scalar(pending):
-        recompute(session, owner, "owner", before_commit=lambda _: _clear_pending(session, owner))
+    stale = found is not None or bool(session.scalar(pending)) or other_versions(session, owner)
+    if not stale:
         return
-    if owner in _refresh_failed or not other_versions(session, owner):
+    failed_at = found.failed_at if found is not None else None
+    if failed_at is not None and datetime.now(UTC) - failed_at < RETRY_AFTER:
         return
+    trigger = "read" if found is None else "owner"
     try:
-        outcome = recompute(session, owner, "read")
-    except Exception as exc:  # the message could hold data: log the type only
-        outcome, reason = None, type(exc).__name__
+        outcome = recompute(
+            session, owner, trigger, before_commit=lambda _: _clear_pending(session, owner)
+        )
+    except Exception as exc:  # the message could hold data: keep the type only
+        reason = type(exc).__name__
     else:
-        reason = "a transaction would lose its owner match" if outcome.status == "stopped" else ""
-    if reason:
-        session.rollback()
-        _refresh_failed.add(owner)
-        log.warning("version refresh on read failed (%s); serving stored rows", reason)
+        reason = "StoppedForEngineChange" if outcome.status == "stopped" else ""
+    if not reason:
+        return
+    session.rollback()
+    row = session.get(RecomputeMark, owner) or RecomputeMark(
+        owner_id=owner, marked_at=datetime.now(UTC)
+    )
+    row.failed_at, row.failure = datetime.now(UTC), reason[:40]
+    session.add(row)
+    session.commit()
+    log.warning("recompute on read failed (%s); serving stored rows", reason)
 
 
 def fresh_reads(

@@ -1116,6 +1116,13 @@ only; `--fix` is a dry run; `--fix --apply` sets those parties to kind
 history kept) and recomputes. Their credits are then To confirm; Net never
 goes down. No migration changes owner data.
 
+Corrected in 4F-B: a party the owner explicitly answered Friend or Family is
+never silent, even with a category. Explicit means `parties.answered_at`
+(set by every Friend or Family answer since 4F-B, migration `0010`) or a
+stored app answer (`client_ops` "PUT /api/v1/senders/<id>", 2xx) for the
+sender the party is now. A Friend answer from before 4B-2, or from the
+terminal, on a party that also has a category still cannot be told apart.
+
 ## D-100 Bank survey and redacted samples for another bank (2026-11-20)
 
 `bank-survey` prints counts only: sender family (the bank of the sender
@@ -1176,3 +1183,83 @@ Any transaction can be marked "Not a payment" in its sheet: an owner role
 another role the owner set (409). "Looks right" (`PUT
 /transactions/{id}/check`) records the owner's check of a generic row in
 `txn_checks` and changes no total. All three go through the outbox.
+
+## D-104 CORS allows exactly the app's headers, from one shared list (2026-11-21)
+
+The app (Vercel) and the API (Render) are on different origins, so the
+browser sends a preflight before every write and drops the write when the
+API does not allow one of its headers. Since 4B-2 writes send
+`Idempotency-Key` and `X-Defer-Recompute`, which the CORS settings did not
+allow: every write from the phone was blocked before it was sent, and the
+app reported "Could not reach the server" (the 4F-B bug). The app's request
+headers, methods and read response headers live in one list,
+`frontend/src/api/headers.ts`; `backend/app/main.py` allows exactly those
+(origins still only from `CORS_ORIGINS`, never "*", credentials unchanged),
+and `backend/tests/test_cors.py` reads the frontend file, so a header added on
+one side only fails the tests. `frontend/scripts/cross-origin-check.mjs`
+runs the production build and the API on different origins in headless Edge
+(FAKE data, a test key) and is part of the test routine. The API logs one
+line per request: method (OPTIONS too), route template, status, duration;
+never a body, an id, a query value or a token.
+
+## D-105 The outbox cannot get stuck (2026-11-21)
+
+- An op left "sending" (the page was killed) is "pending" again at boot.
+- The drain starts after the first paint on every boot, after every
+  snapshot (200 or 304), on the online event (also when hidden), on coming
+  to the foreground, and every 30 s while visible with anything waiting,
+  whatever the wait after a failure. A drain with no send for longer than a
+  request can take is abandoned and started again.
+- Every error inside the drain is caught and recorded on its op as a short
+  code with the time of the attempt; the drain is rescheduled and never
+  rejects.
+- Codes: `offline` (no attempt while the phone says offline),
+  `blocked_or_unreachable` (fetch refused while online), `blocked` (that,
+  twice in a row, while reads get through: shown as "the server refused the
+  request"), `timeout` (no answer, or 409 `in_progress`), `server_error`
+  (5xx), `needs_sign_in` (401, 403), `needs_choice` (any other 409: the
+  owner decides), `rejected` (any other 4xx), `app_error`.
+- Only 409 `in_progress` is retried among the 409s.
+- Stored ops carry a format version (`v: 2`). Entries written by an older
+  build are upgraded in place on first read: the choice, body and
+  Idempotency-Key never change, so they still send.
+
+## D-106 Writes commit before the recompute; the next read recomputes (2026-11-21)
+
+Every owner write commits its owner data, its `client_ops` answer and a
+recompute mark (`recompute_marks`, migration `0010`) in one transaction, and
+answers 2xx with `"recompute": {"status": "deferred"}`. The engine never
+blocks a tap. Every read recomputes first when the owner is marked (or for
+the D-094 marks and the D-102 version check). Owner actions read derived
+rows (the party of a transaction), so a write first brings the earlier
+writes' derived rows up to date the same way; if that fails the write is
+still saved. A recompute that fails (or stops for an engine change) keeps
+the mark with the error type and time; reads serve the stored rows with the
+"being updated" notice, and a read tries again after 5 minutes. The write
+paths no longer answer 409 for a stopped recompute.
+
+## D-107 What the phone says about a waiting change (2026-11-21)
+
+A queued change shows "Saved on phone · syncing"; the line under the month
+says "· 1 saved on phone, syncing". Still waiting 2 minutes after it was
+made: "Saved on phone · not synced yet: <reason>" with a plain reason (no
+connection, server didn't answer, server error, the server refused the
+request, needs sign-in, needs your choice); a tap opens its details: when
+it was saved, attempts, last try (IST), the reason, "Try now". A change that
+needs the owner's choice shows Try again and Drop this change where it is
+listed. Once confirmed it shows "Synced" for 2 s, then leaves. The Speed
+sheet starts with the Sync block: saved on phone, failed, last attempt
+(time, result code), last success, last error.
+
+## D-108 A dedicated SBI parser (2026-11-21)
+
+`sbi-1.0.0` has one template per SBI money shape in the redacted sample (14;
+`docs/templates/sbi.md`). Inside a template an amount may have no currency
+mark ("debited by 500.0"): the wording fixes what the number is. A
+counterparty is read only from an explicit slot. Anything no template reads
+is never guessed: SBI notices are refused with a reason (`hold`,
+`deposit_notice`, and the generic parser's reasons), and anything else with
+an amount stays "not counted yet" (`no_template`; a card message is
+`card_no_template`: no SBI card shape in the sample yet, and a credit card is
+never read as a debit card). SBI rows carry no check flag. The generic
+parser keeps serving the other registered banks; HDFC is unchanged.

@@ -169,6 +169,7 @@ def answer_sender(
             party.kind, party.income_label = "person", None
         else:
             party.income_label = income_label
+        party.answered_at = datetime.now(UTC)  # an explicit answer (D-099 as corrected)
         for txn_id in sender.txn_ids:  # an earlier "ignore" or role answer gives way
             row = session.get(OwnerRole, txn_id)
             if row is not None and row.role in ANSWER_ROLES:
@@ -200,6 +201,7 @@ def reset_sender(session: Session, owner_id: uuid.UUID, sender_id: str) -> Sende
         session.delete(party)
     elif party is not None:  # named, joined, with a category, or from a file: it stays
         party.kind, party.income_label = ("business" if party.source == "file" else "unsure"), None
+        party.answered_at = None
     session.flush()
     return sender
 
@@ -437,6 +439,8 @@ def join_person(
         fix = [*(mine.txn_ids if mine else ()), *(theirs.txn_ids if theirs else ())]
     else:  # the person keeps its answer; the joined credits follow it
         fix = list(mine.txn_ids if mine else ())
+    if chosen in ("friend", "income") and (role is not None or (old and old.answered_at)):
+        target.answered_at = datetime.now(UTC)  # the owner chose it, or it had an answer
     for txn in fix:
         row = session.get(OwnerRole, txn)
         if chosen == "ignore":

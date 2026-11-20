@@ -21,6 +21,7 @@ import {
   stopOutbox,
   syncLine,
   syncState,
+  timing,
   todoView,
   undo,
   unsynced,
@@ -87,6 +88,7 @@ const tap = (id: number) => actions.setCategory(txn(id), FOOD, 'transaction', 'T
 const states = () => syncState().ops.map((o) => o.state)
 
 afterEach(async () => {
+  timing.syncedMs = 2_000
   stopOutbox()
   await clearData()
   await wipeLocal()
@@ -120,9 +122,9 @@ test('an offline tap waits on its item; no total moves', async () => {
   assert.equal(op.state, 'pending')
   const mark = markFor(syncState().ops, txn(1)).category
   assert.equal(mark?.choice, 'Food & Drinks')
-  assert.equal(markText(mark!), 'Waiting to sync')
+  assert.equal(markText(mark!), 'Saved on phone · syncing')
   assert.equal(dataState().snapshot, before) // the snapshot (every total) is untouched
-  assert.deepEqual(syncLine(syncState().ops, false), { waiting: '1 waiting to sync', failed: '', signIn: false })
+  assert.deepEqual(syncLine(syncState().ops, false), { waiting: '1 saved on phone, syncing', failed: '', signIn: false })
   assert.ok(syncState().nextAttemptAt)
 })
 
@@ -200,7 +202,8 @@ test('a 4xx fails that op only; Retry keeps the op_id, Discard drops it', async 
   const third = await enqueue(tap(3))
   await drain()
   assert.deepEqual(states(), ['failed', 'confirmed', 'failed'])
-  assert.equal(syncState().ops[0].last_error, 'TEST 404')
+  assert.equal(syncState().ops[0].last_error, 'rejected')
+  assert.equal(syncState().ops[0].message, 'TEST 404')
   assert.deepEqual(syncLine(syncState().ops, false).failed, "2 couldn't save")
   await retry(syncState().ops[0])
   await drain()
@@ -236,6 +239,7 @@ test('Undo before sending; not once it is being sent', async () => {
 })
 
 test('a confirmed op stays until a snapshot asked for after it is applied', async () => {
+  timing.syncedMs = 0 // the 'Synced' moment is tested in sync.test.ts
   let answerSnapshot: (a: SnapshotAnswer) => void = () => {}
   const s = server(() => new Promise((r) => (answerSnapshot = r)))
   await startData(s.api, 'user-a') // a refresh is asked for now, before the tap

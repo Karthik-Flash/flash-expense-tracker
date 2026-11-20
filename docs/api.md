@@ -51,13 +51,21 @@ owner's transaction, label or sender is "404 not found".
 | DELETE | `/api/v1/transactions/{id}/ignore` | "Count it again": removes that role (no change when there is none; 409 when the owner set another role) |
 | HEAD | `/health` | 200, no body, no database (D-098): the warm job's fallback |
 
-**Writes** are saved with source `app`, are idempotent, and end with one
-recompute in the same database transaction, under the owner's lock: the
-answer and the derived rows are saved together or not at all. The response
-is `{"result": {...}, "recompute": {"status": "done" | "unchanged", "run": id}}`.
-Errors: 404 (not this owner's, or no such id), 422 (validation), 409 (owner
-data that cannot hold, a recompute stopped by an engine change, or a label
-name the owner already has).
+**Writes** are saved with source `app` and are idempotent. Since 4F-B
+(D-106) a write commits its owner data, its stored answer and a recompute
+mark in one transaction, under the owner's lock, and answers at once:
+`{"result": {...}, "recompute": {"status": "deferred", "run": null}}`. The
+next read recomputes. A write first brings the earlier writes' derived rows
+up to date (owner actions read them); if that fails, the write is still
+saved. Errors: 404 (not this owner's, or no such id), 422 (validation), 409
+(a conflict the owner decides, or a label name the owner already has).
+
+**CORS (D-104)**: the app is on another origin, so the browser sends a
+preflight first. The API allows exactly the headers and methods in
+`frontend/src/api/headers.ts` (Authorization, Accept, Content-Type,
+If-None-Match, Idempotency-Key, X-Defer-Recompute; GET, PUT, POST, DELETE)
+from the origins in `CORS_ORIGINS`, and exposes `ETag`. Every request is
+logged as one line: method, route template, status, duration.
 
 - `scope: merchant` sets the default on the merchant's party (made from the
   transaction's text if there is none, kind `unsure` since 4E, so a category
@@ -134,6 +142,11 @@ last. Every read route and the snapshot first run the recompute such a write
 left, so they never serve derived data out of step with owner data. A
 recompute stopped by an engine change leaves the mark; the read shows
 `stale` as before.
+
+**Recompute marks (D-106).** A write marks the owner; the first read
+recomputes and clears the mark. A recompute that fails keeps the mark with
+the error type; reads serve the stored rows (`stale: true`) and try again
+after 5 minutes.
 
 **New engine versions (D-102).** When the last done run was made by other
 engine versions than the running ones (after a deploy), the first read

@@ -268,7 +268,7 @@ wrap under their terms and buttons grow.
 - **Transaction sheet**: a Person line (name and identifier) with Rename,
   Same as… and Separate (when the person has more than one identifier).
 - **Offline**: each action waits in the outbox; the card or sheet shows the
-  new name or "Same as Rohit V" with "Waiting to sync" and Undo. Totals never
+  new name or "Same as Rohit V" with "Saved on phone · syncing" and Undo. Totals never
   move until the server's numbers arrive.
 - **See payments** (sender and merchant cards, the person sheet):
   Transactions of that person across all months, titled "Payments with
@@ -282,13 +282,13 @@ wrap under their terms and buttons grow.
 - **To-do, "Check these payments"**: rows the app read automatically from a
   bank with no parser of its own yet: name, amount, "date · Read
   automatically", then "Looks right" and "Not a payment". An answer leaves
-  the list at once and waits under "Waiting to sync" until it syncs. The To-do
+  the list at once and waits under "Saved on phone" until it syncs. The To-do
   badge counts these rows too.
 - **Transaction sheet**: a generic row shows "Read automatically" in small
   muted text under the amount. Quiet buttons under the main ones: "Looks
   right" (only while it asks), and "Not a payment" on any row except a
   duplicate, which becomes "Count it again" once the row is ignored. The
-  Counted line shows a waiting choice with "Waiting to sync" and Undo.
+  Counted line shows a waiting choice with "Saved on phone · syncing" and Undo.
 - Offline, all three wait in the outbox like every other answer (D-091).
 
 ## Label names
@@ -309,7 +309,7 @@ most 30 characters."); Create stays disabled until the name is fine.
   "Offline · showing data from 5 min ago". No spinner over the numbers, no
   banner. The screens show the phone copy at once (D-089).
 - **Owner actions** (4B-2) are saved on the phone first and sent in the
-  background, online or offline; see "Waiting to sync".
+  background, online or offline; see "Saved on phone".
 - **Speed sheet**: tap the version line on Home. The usual sheet: the two
   targets ("Open from phone copy: 2 s or less", "Fresh data, server awake:
   5 s or less"), the last launch (phone copy ms, fresh data s, request ms,
@@ -324,24 +324,31 @@ most 30 characters."); Create stays disabled until the name is fine.
   message), and a Boot column in the launches table ("–" for launches
   before 4B-3).
 
-## Waiting to sync (4B-2, D-091, D-093)
+## Saved on phone (4B-2, 4F-B: D-091, D-093, D-105, D-107)
 
 - **A tap is saved at once.** Every owner action goes to the outbox on the
   phone and is sent in the background, online or offline. No spinner, no
   banner, no toast per tap.
-- **Pending item**: the item shows the owner's choice with muted "Waiting
-  to sync" (and Undo while it has not started sending). A transaction row
-  shows the new category tile and name, or the label, then "· Waiting to
-  sync"; the sheet shows it under Category or Label. Once the server
-  confirms, the choice stays without the note until the fresh numbers
-  arrive. Totals, the ring, percentages, ledger sums and comparisons never
-  change for a pending tap (D-088).
+- **Pending item**: the item shows the owner's choice with muted "Saved on
+  phone · syncing" (and Undo while it has not started sending). A
+  transaction row shows the new category tile and name, or the label; the
+  sheet shows the note under Category, Label or Counted. Once the server
+  confirms, it says "Synced" for 2 s, then the choice stays without a note
+  until the fresh numbers arrive. Totals, the ring, percentages, ledger sums
+  and comparisons never change for a pending tap (D-088).
+- **After 2 minutes** still waiting: "Saved on phone · not synced yet: no
+  connection" (or: server didn't answer, server error, the server refused
+  the request, needs sign-in, needs your choice). Tapping it opens a small
+  sheet: when it was saved, attempts, last try (IST), the reason, "Try now"
+  (and Undo while it has not started sending).
 - **To-do**: a sender or merchant with an answer waiting leaves its list
-  and the tab's count, and shows in "Waiting to sync" at the top: "Rohit V",
-  then "Friend · Waiting to sync · Undo".
+  and the tab's count, and shows in "Saved on phone" at the top: "Rohit V",
+  then "Friend · Saved on phone · syncing · Undo". A change the server
+  answered with a conflict stays there with "Try again" and "Drop this
+  change".
 - **Labels**: a label being made shows at the top of the list with
   "Waiting to sync" and no totals.
-- **Sync line**: the freshness line gains "· 3 waiting to sync"; "1 couldn't
+- **Sync line**: the freshness line gains "· 3 saved on phone, syncing"; "1 couldn't
   save" is a link to the **Couldn't save** sheet (`?unsaved`): each refused
   change with what it was, its item, the server's reason, Retry and Discard.
   After a lasting 401, or when the server refused the stored session at
@@ -354,6 +361,10 @@ most 30 characters."); Create stays disabled until the name is fine.
   (primary) and "Sign out anyway".
 - **To-do merchant cards** say when, like sender cards: "1 payment · Tue 12
   Nov", "3 payments · last Tue 12 Nov".
+
+**Speed sheet**: the Sync block comes first: saved on phone, failed, last
+attempt (IST time and result code), last success, last error. Then the
+targets, the last launch, the launches table and the boot block.
 
 ## Update bar and version line
 
@@ -387,7 +398,7 @@ most 30 characters."); Create stays disabled until the name is fine.
   once instead of spinning.
 - **Session refused**: a 401 from the API, or a stored session the server
   refused, keeps the screen and shows "Sign in to sync" on the freshness
-  line (see "Waiting to sync"). Tapping it opens the login with "Sign in
+  line (see "Saved on phone"). Tapping it opens the login with "Sign in
   again to sync your changes."
 - **No access**: a 403 shows "This account has no access" and Sign out.
 - **Stale**: a quiet notice "Totals are being updated." above the numbers.
