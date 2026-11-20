@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { Txn } from '../api/types.ts'
-import { actions, enqueue, markFor, markText, personMark, shownName, undo, useOutbox, type Op } from '../data/outbox.ts'
+import { actions, enqueue, isStuck, markFor, markText, personMark, shownName, STUCK_MS, timing, undo, useOutbox, type Op } from '../data/outbox.ts'
+import { OpSheet } from './Sync.tsx'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { currentMonth, dayKey, dayLabel, fullLabel } from '../lib/dates.ts'
 import { useNav } from '../state.tsx'
@@ -325,13 +326,31 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
   )
 }
 
-/** "Waiting to sync" beside a choice still in the outbox, with Undo while it can be undone. */
+/** "Saved on phone · syncing" beside a choice still in the outbox, with Undo while it can be
+ *  undone; "Synced" a moment once it is on the server. After 2 minutes it says why, and a tap
+ *  opens its details (D-107). */
 export function Pending({ op }: { op: Op }) {
+  const [details, setDetails] = useState(false)
+  const [, setNow] = useState(0)
+  useEffect(() => {
+    // Re-render when "syncing" turns into "not synced yet", and when "Synced" goes.
+    const due = op.state === 'confirmed' ? timing.syncedMs : STUCK_MS - (Date.now() - Date.parse(op.created_at))
+    if (op.state === 'failed' || due < 0) return
+    const timer = setTimeout(() => setNow(Date.now()), due + 50)
+    return () => clearTimeout(timer)
+  }, [op.state, op.created_at])
   const text = markText(op)
   if (!text) return null
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 text-xs text-muted">
-      {text}
+      {isStuck(op) ? (
+        <button type="button" className="min-h-11 text-left text-xs text-muted underline" onClick={() => setDetails(true)}>
+          {text}
+        </button>
+      ) : (
+        text
+      )}
+      {details && <OpSheet op={op} onClose={() => setDetails(false)} />}
       {op.state === 'pending' && (
         <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => void undo(op)}>
           Undo

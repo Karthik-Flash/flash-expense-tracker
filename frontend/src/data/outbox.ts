@@ -2,15 +2,39 @@
 // on the phone first, shown on its item, and sent in order with its op_id as the
 // Idempotency-Key, so the server applies it once however often it is sent. Totals change
 // only when a fresh snapshot arrives. An action is never dropped without the owner's say.
+// The queue cannot get stuck (D-105): an op left "sending" goes back to "pending" at boot; the
+// drain starts after the first paint, after every snapshot, when the phone comes online or
+// to the foreground, and every 30 s while visible with anything waiting; every error inside it
+// is caught and recorded on its op as a short code; only a 409 "in_progress" is retried.
 
 import { useSyncExternalStore } from 'react'
 
 import { ApiError, type Api, type SendRequest } from '../api/client.ts'
 import type { Category, Person, PersonRole, Sender, SenderAnswer, Snapshot, Txn } from '../api/types.ts'
 import { deleteOp, putOp, readOutbox } from './local.ts'
-import { asksSoFar, onApplied, onReset, refresh } from './store.ts'
+import { asksSoFar, dataState, onApplied, onReset, refresh } from './store.ts'
 
 export type OpState = 'pending' | 'sending' | 'confirmed' | 'failed'
+
+/** Why an op is not on the server yet (D-105). Short codes, stored on the op. */
+export const CODES = [
+  'offline', // the phone says it is offline
+  'blocked_or_unreachable', // the request failed while online (network, or blocked: CORS)
+  'blocked', // twice in a row, while reads work: the server refused the request
+  'timeout', // no answer in time, or the server is still working on it (409 in_progress)
+  'server_error', // 5xx
+  'needs_sign_in', // 401 or 403
+  'needs_choice', // another 409: the owner decides
+  'rejected', // another 4xx
+  'app_error', // an error inside the app; it tries again
+] as const
+export type SyncCode = (typeof CODES)[number]
+/** The format of a stored op. Entries without `v` (written before 4F-B) are upgraded on read. */
+export const OP_VERSION = 2
+/** Still waiting this long after it was made: the item says why. */
+export const STUCK_MS = 120_000
+/** A confirmed op shows "Synced" this long before it leaves (tests set it to 0). */
+export const timing = { syncedMs: 2_000, tickMs: 30_000 }
 
 export interface Targets {
   txns?: number[]
@@ -43,17 +67,25 @@ export interface Op {
   targets: Targets
   state: OpState
   attempts: number
+  /** The last failure as a short code (SyncCode); '' when none. */
   last_error: string
   /** The server said 422 idempotency_key_reused: a retry needs a new op_id. */
   key_reused: boolean
   /** ms since the epoch. */
   confirmed_at: number | null
+  /** Format version (OP_VERSION). */
+  v?: number
+  /** The server's own words for a refusal, when it gave some. */
+  message?: string
+  /** ms since the epoch, of the last send attempt. */
+  last_attempt_at?: number | null
+  /** Write failures in a row that looked blocked, and since when (ms). */
+  unreachable?: { count: number; since: number } | null
 }
 
 export type NewOp = Pick<Op, 'kind' | 'item' | 'choice' | 'method' | 'path' | 'body' | 'targets'> & { slug?: string }
 
 const TIMEOUT_MS = 90_000
-const TICK_MS = 30_000
 /** Waits after a failed try: 5 s, 15 s, 60 s, then every 5 min. */
 export const BACKOFF_MS = [5_000, 15_000, 60_000, 300_000]
 export const backoffDelay = (failures: number) => BACKOFF_MS[Math.min(Math.max(failures, 1), BACKOFF_MS.length) - 1]
@@ -63,12 +95,17 @@ export interface SyncState {
   /** A lasting 401: the actions wait until the owner signs in again. */
   signIn: boolean
   lastDrain: { at: number; sent: number; ms: number } | null
+  /** The last failure: a short code, and the server's words when it gave some. */
   lastError: string
   /** When the next try is due after a failure (ms since the epoch), or null. */
   nextAttemptAt: number | null
+  /** The last send attempt and its result ('ok' or a SyncCode). */
+  lastAttempt: { at: number; result: string } | null
+  /** When an op last reached the server. */
+  lastSuccess: number | null
 }
 
-const EMPTY: SyncState = { ops: [], signIn: false, lastDrain: null, lastError: '', nextAttemptAt: null }
+const EMPTY: SyncState = { ops: [], signIn: false, lastDrain: null, lastError: '', nextAttemptAt: null, lastAttempt: null, lastSuccess: null }
 let sync = EMPTY
 let api: Api | null = null
 let refreshToken: () => Promise<boolean> = async () => false
@@ -78,7 +115,22 @@ let again = false
 let current: AbortController | null = null
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 let stopWatching = () => {}
+let lastSendAt = 0
 const listeners = new Set<() => void>()
+
+const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false
+/** After the first paint in a browser; at once elsewhere (tests). */
+const afterPaint = (work: () => void) =>
+  typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => setTimeout(work, 0)) : void Promise.resolve().then(work)
+
+/** An entry written by an older build, in today's format; its choice is never changed. */
+export function upgradeOp(op: Op): Op {
+  if (op.v === OP_VERSION) return op
+  const text = op.last_error || ''
+  const known = (CODES as readonly string[]).includes(text)
+  const code = !text || known ? text : /reach/i.test(text) ? 'blocked_or_unreachable' : /too long/i.test(text) ? 'timeout' : op.state === 'failed' ? 'rejected' : 'server_error'
+  return { ...op, v: OP_VERSION, last_error: code, message: op.message ?? (known ? '' : text), last_attempt_at: op.last_attempt_at ?? null, unreachable: op.unreachable ?? null }
+}
 
 function publish(patch: Partial<SyncState> = {}): void {
   sync = { ...sync, ...patch, ops: [...(patch.ops ?? sync.ops)] }
@@ -100,20 +152,22 @@ export async function startOutbox(client: Api, refresh_: () => Promise<boolean> 
   stopOutbox()
   api = client
   refreshToken = refresh_
-  let ops: Op[] = []
+  let stored: Op[] = []
   try {
-    ops = await readOutbox()
+    stored = await readOutbox()
   } catch {
     // no IndexedDB
   }
   if (api !== client) return
-  for (const op of ops.filter((o) => o.state === 'sending')) {
-    op.state = 'pending' // the app closed while it was being sent; the key makes a resend safe
-    await save(op)
+  const ops = stored.map(upgradeOp)
+  for (const [i, op] of ops.entries()) {
+    const old = op !== stored[i]
+    if (op.state === 'sending') op.state = 'pending' // closed while sending; the key makes a resend safe
+    if (old || stored[i].state === 'sending') await save(op)
   }
   publish({ ops })
   stopWatching = watch()
-  void drain()
+  afterPaint(() => void drain())
 }
 
 /** Stop in memory; what is stored stays (data/store.ts decides whether it is deleted). */
@@ -135,13 +189,26 @@ onReset(stopOutbox)
 // the screen never flips back to the old value. Request numbers order that exactly; a
 // confirmed op loaded from storage counts as confirmed before any request of this session.
 const confirmedAsk = new Map<number, number>()
-onApplied((ask) => {
-  const done = sync.ops.filter((o) => o.state === 'confirmed' && ask > (confirmedAsk.get(o.seq) ?? 0))
+let appliedAsk = 0
+let sweepTimer: ReturnType<typeof setTimeout> | undefined
+/** Drop confirmed ops the applied snapshot covers, once each has shown "Synced" a moment. */
+function sweep(): void {
+  const now = Date.now()
+  const covered = sync.ops.filter((o) => o.state === 'confirmed' && appliedAsk > (confirmedAsk.get(o.seq) ?? 0))
+  const done = covered.filter((o) => now - (o.confirmed_at ?? 0) >= timing.syncedMs)
   if (done.length) {
     for (const op of done) void safe(() => deleteOp(op.seq))
     publish({ ops: sync.ops.filter((o) => !done.includes(o)) })
   }
-  void drain()
+  if (done.length < covered.length) {
+    clearTimeout(sweepTimer)
+    sweepTimer = setTimeout(sweep, timing.syncedMs)
+  }
+}
+onApplied((ask) => {
+  appliedAsk = Math.max(appliedAsk, ask)
+  sweep()
+  void drain() // after every snapshot (D-105)
 })
 
 function watch(): () => void {
@@ -152,10 +219,19 @@ function watch(): () => void {
     void drain()
   }
   const visible = () => document.visibilityState === 'visible' && void drain()
-  const tick = () => document.visibilityState === 'visible' && waiting(sync.ops) > 0 && drainIfDue()
+  // Every 30 s while visible with anything waiting, whatever the wait after a failure. The
+  // watchdog: a drain with no send for longer than a request can take is abandoned.
+  const tick = () => {
+    if (document.visibilityState !== 'visible' || waiting(sync.ops) === 0) return
+    if (running && Date.now() - lastSendAt > TIMEOUT_MS + 30_000) {
+      current?.abort()
+      running = null
+    }
+    void drain()
+  }
   window.addEventListener('online', online)
   document.addEventListener('visibilitychange', visible)
-  const timer = setInterval(tick, TICK_MS)
+  const timer = setInterval(tick, timing.tickMs)
   return () => {
     window.removeEventListener('online', online)
     document.removeEventListener('visibilitychange', visible)
@@ -175,6 +251,10 @@ export async function enqueue(change: NewOp): Promise<Op> {
     last_error: '',
     key_reused: false,
     confirmed_at: null,
+    v: OP_VERSION,
+    message: '',
+    last_attempt_at: null,
+    unreachable: null,
   }
   publish({ ops: [...sync.ops, op] })
   await save(op)
@@ -198,56 +278,92 @@ export function drain(): Promise<void> {
       again = false
       await pass()
     } while (again && api && !sync.signIn && sync.nextAttemptAt === null)
-  })().finally(() => {
-    running = null
-  })
+  })()
+    .catch(() => {}) // pass() records its own errors; a drain never rejects
+    .finally(() => {
+      running = null
+    })
   return running
 }
 
-type Outcome = { kind: 'ok' } | { kind: 'retry' | 'failed' | 'sign-in'; message: string; reused?: boolean }
+type Outcome = { kind: 'ok' } | { kind: 'retry' | 'failed' | 'sign-in'; code: SyncCode; message: string; reused?: boolean }
+
+/** Wait, then drain again: 5 s, 15 s, 60 s, then every 5 min (sooner while visible). */
+function later(code: string, message = ''): void {
+  failures += 1
+  const delay = backoffDelay(failures)
+  clearTimeout(retryTimer)
+  retryTimer = setTimeout(drainIfDue, delay)
+  publish({ nextAttemptAt: Date.now() + delay, lastError: message ? `${code}: ${message}` : code })
+}
 
 async function pass(): Promise<void> {
   const started = Date.now()
   let sent = 0
   let confirmed = 0
-  while (api) {
-    const op = sync.ops.find((o) => o.state === 'pending')
-    if (!op) break
-    const more = sync.ops.some((o) => o.state === 'pending' && o.seq > op.seq)
-    op.state = 'sending'
-    op.attempts += 1
-    publish()
-    await save(op)
-    const outcome = await sendOnce(op, more)
-    sent += 1
-    if (outcome.kind === 'ok') {
-      Object.assign(op, { state: 'confirmed', confirmed_at: Date.now(), last_error: '' })
-      confirmedAsk.set(op.seq, asksSoFar())
-      confirmed += 1
-      failures = 0
-      clearTimeout(retryTimer)
-      publish({ nextAttemptAt: null, lastError: '' })
+  let op: Op | undefined
+  try {
+    while (api) {
+      op = sync.ops.find((o) => o.state === 'pending')
+      if (!op) break
+      if (!isOnline()) {
+        // No attempt while the phone says offline: the online event sends it.
+        op.last_error = 'offline'
+        await save(op)
+        publish({ lastAttempt: { at: Date.now(), result: 'offline' } })
+        later('offline')
+        break
+      }
+      const more = sync.ops.some((o) => o.state === 'pending' && o.seq > op!.seq)
+      Object.assign(op, { state: 'sending', attempts: op.attempts + 1, last_attempt_at: Date.now() })
+      lastSendAt = Date.now()
+      publish()
       await save(op)
-      continue
-    }
-    if (outcome.kind === 'failed') {
-      Object.assign(op, { state: 'failed', last_error: outcome.message, key_reused: Boolean(outcome.reused) })
-      publish({ lastError: outcome.message })
+      const outcome = await sendOnce(op, more)
+      sent += 1
+      const at = Date.now()
+      if (outcome.kind === 'ok') {
+        Object.assign(op, { state: 'confirmed', confirmed_at: at, last_error: '', message: '', unreachable: null })
+        confirmedAsk.set(op.seq, asksSoFar())
+        confirmed += 1
+        failures = 0
+        clearTimeout(retryTimer)
+        publish({ nextAttemptAt: null, lastError: '', lastAttempt: { at, result: 'ok' }, lastSuccess: at })
+        await save(op)
+        continue
+      }
+      let code = outcome.code
+      if (code === 'blocked_or_unreachable') {
+        // Twice in a row while reads get through: the server refuses this request (D-105).
+        const since = op.unreachable?.since ?? at
+        op.unreachable = { count: (op.unreachable?.count ?? 0) + 1, since }
+        if (op.unreachable.count >= 2 && (dataState().fetchedAt ?? 0) > since) code = 'blocked'
+      } else {
+        op.unreachable = null
+      }
+      Object.assign(op, { last_error: code, message: outcome.message })
+      publish({ lastAttempt: { at, result: code } })
+      if (outcome.kind === 'failed') {
+        Object.assign(op, { state: 'failed', key_reused: Boolean(outcome.reused) })
+        publish({ lastError: outcome.message ? `${code}: ${outcome.message}` : code })
+        await save(op)
+        continue
+      }
+      op.state = 'pending'
       await save(op)
-      continue
+      if (outcome.kind === 'sign-in') publish({ signIn: true, lastError: code })
+      else later(code)
+      break
     }
-    Object.assign(op, { state: 'pending', last_error: outcome.message })
-    await save(op)
-    if (outcome.kind === 'sign-in') {
-      publish({ signIn: true, lastError: outcome.message })
-    } else {
-      failures += 1
-      const delay = backoffDelay(failures)
-      clearTimeout(retryTimer)
-      retryTimer = setTimeout(drainIfDue, delay)
-      publish({ nextAttemptAt: Date.now() + delay, lastError: outcome.message })
+  } catch {
+    // Anything that went wrong in here: the op waits again and the drain is rescheduled.
+    if (op && op.state === 'sending') op.state = 'pending'
+    if (op) {
+      Object.assign(op, { last_error: 'app_error' })
+      await save(op)
     }
-    break
+    publish({ lastAttempt: { at: Date.now(), result: 'app_error' } })
+    later('app_error')
   }
   if (sent) publish({ lastDrain: { at: started, sent, ms: Date.now() - started } })
   if (confirmed) void refresh()
@@ -255,29 +371,44 @@ async function pass(): Promise<void> {
 
 async function sendOnce(op: Op, defer: boolean): Promise<Outcome> {
   const client = api
-  if (!client) return { kind: 'retry', message: 'Stopped.' }
+  if (!client) return { kind: 'retry', code: 'app_error', message: '' }
+  if (!isOnline()) return { kind: 'retry', code: 'offline', message: '' }
   const request: SendRequest = { op_id: op.op_id, method: op.method, path: op.path, body: op.body, defer }
   const controller = new AbortController()
   current = controller
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const words = (a: { message: string }) => a.message
   try {
     let answer = await client.send(request, controller.signal)
     if (answer.status === 401 || answer.status === 403) {
       // One token refresh, one more try; then the owner signs in again. Nothing is dropped.
-      if (!(await refreshToken())) return { kind: 'sign-in', message: answer.message }
+      if (!(await refreshToken())) return { kind: 'sign-in', code: 'needs_sign_in', message: words(answer) }
       answer = await client.send(request, controller.signal)
-      if (answer.status === 401 || answer.status === 403) return { kind: 'sign-in', message: answer.message }
+      if (answer.status === 401 || answer.status === 403) return { kind: 'sign-in', code: 'needs_sign_in', message: words(answer) }
     }
     if (answer.status >= 200 && answer.status < 300) return { kind: 'ok' }
-    if (answer.status >= 500 || (answer.status === 409 && answer.detail === 'in_progress')) return { kind: 'retry', message: answer.message }
-    return { kind: 'failed', message: answer.message, reused: answer.detail === 'idempotency_key_reused' }
+    if (answer.status === 409 && answer.detail === 'in_progress') return { kind: 'retry', code: 'timeout', message: '' }
+    if (answer.status >= 500) return { kind: 'retry', code: 'server_error', message: words(answer) }
+    if (answer.status === 409) return { kind: 'failed', code: 'needs_choice', message: words(answer) }
+    return { kind: 'failed', code: 'rejected', message: words(answer), reused: answer.detail === 'idempotency_key_reused' }
   } catch (e) {
-    if (controller.signal.aborted) return { kind: 'retry', message: 'The server took too long to answer.' }
-    return { kind: 'retry', message: e instanceof ApiError ? e.message : 'Could not reach the server.' }
+    if (controller.signal.aborted) return { kind: 'retry', code: 'timeout', message: '' }
+    if (!(e instanceof ApiError)) return { kind: 'retry', code: 'app_error', message: '' }
+    if (!isOnline()) return { kind: 'retry', code: 'offline', message: '' }
+    // fetch refused while online: no network, or the browser blocked it (CORS, D-104).
+    return { kind: 'retry', code: 'blocked_or_unreachable', message: '' }
   } finally {
     clearTimeout(timer)
     current = null
   }
+}
+
+/** "Try now" from an item's details: no wait, send at once. */
+export function tryNow(): Promise<void> {
+  failures = 0
+  clearTimeout(retryTimer)
+  publish({ nextAttemptAt: null })
+  return drain()
 }
 
 /** Remove an action that has not been sent yet. */
@@ -293,7 +424,7 @@ export async function undo(op: Op): Promise<boolean> {
 export async function retry(op: Op): Promise<void> {
   const mine = sync.ops.find((o) => o.seq === op.seq)
   if (!mine || mine.state !== 'failed') return
-  Object.assign(mine, { state: 'pending', last_error: '', key_reused: false, op_id: mine.key_reused ? crypto.randomUUID() : mine.op_id })
+  Object.assign(mine, { state: 'pending', last_error: '', message: '', key_reused: false, op_id: mine.key_reused ? crypto.randomUUID() : mine.op_id })
   failures = 0
   publish({ nextAttemptAt: null })
   await save(mine)
@@ -328,8 +459,31 @@ export const failedOps = (ops: Op[]) => ops.filter((o) => o.state === 'failed')
 /** What sign-out would lose. */
 export const unsynced = (ops: Op[]) => ops.filter((o) => o.state !== 'confirmed').length
 
-/** The muted text beside a shown choice. */
-export const markText = (op: Op) => (op.state === 'confirmed' ? '' : 'Waiting to sync')
+/** The plain reason an op is not on the server yet (D-107). */
+export const REASON: Record<SyncCode, string> = {
+  offline: 'no connection',
+  blocked_or_unreachable: "server didn't answer",
+  timeout: "server didn't answer",
+  server_error: 'server error',
+  blocked: 'the server refused the request',
+  needs_sign_in: 'needs sign-in',
+  needs_choice: 'needs your choice',
+  rejected: 'the server refused the request',
+  app_error: 'the app hit a problem; it tries again',
+}
+export const reasonText = (op: Pick<Op, 'last_error'>): string =>
+  REASON[op.last_error as SyncCode] ?? (isOnline() ? "server didn't answer" : 'no connection')
+
+/** Waiting for 2 minutes or more: the item says why and opens its details. */
+export const isStuck = (op: Op, now = Date.now()) =>
+  (op.state === 'pending' || op.state === 'sending') && now - Date.parse(op.created_at) >= STUCK_MS
+
+/** The muted text beside a shown choice (D-107). */
+export function markText(op: Op, now = Date.now()): string {
+  if (op.state === 'confirmed') return now - (op.confirmed_at ?? 0) < timing.syncedMs ? 'Synced' : ''
+  if (op.state === 'failed') return `Not saved · ${reasonText(op)}`
+  return isStuck(op, now) ? `Saved on phone · not synced yet: ${reasonText(op)}` : 'Saved on phone · syncing'
+}
 
 const isCheck = (o: Op) => o.path.endsWith('/check') || o.path.endsWith('/ignore')
 
@@ -380,9 +534,12 @@ export function todoView(todo: Snapshot['todo'], ops: Op[]) {
     senders: todo.senders.filter((s) => !senders.has(s.id)),
     answered: todo.answered.filter((s) => !senders.has(s.id)),
     merchants: todo.merchants.filter((m) => !merchants.has(m.name)),
-    waiting: live.filter(
-      (o) => o.targets.senders?.length || (o.targets.merchants?.length && o.kind.startsWith('All from')) || (isCheck(o) && o.method === 'PUT'),
-    ),
+    waiting: [
+      ...live.filter(
+        (o) => o.targets.senders?.length || (o.targets.merchants?.length && o.kind.startsWith('All from')) || (isCheck(o) && o.method === 'PUT'),
+      ),
+      ...ops.filter((o) => o.state === 'failed' && o.last_error === 'needs_choice'), // the choice, inline (D-107)
+    ],
   }
 }
 
@@ -390,7 +547,7 @@ export function todoView(todo: Snapshot['todo'], ops: Op[]) {
 export function syncLine(ops: Op[], signIn: boolean): { waiting: string; failed: string; signIn: boolean } {
   const n = waiting(ops)
   const f = failedOps(ops).length
-  return { waiting: n ? `${n} waiting to sync` : '', failed: f ? `${f} couldn't save` : '', signIn }
+  return { waiting: n ? `${n} saved on phone, syncing` : '', failed: f ? `${f} couldn't save` : '', signIn }
 }
 
 // --- The owner actions as outbox entries -------------------------------------------------
