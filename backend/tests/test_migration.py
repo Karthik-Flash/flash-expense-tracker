@@ -35,8 +35,9 @@ OWNER_TABLES = {
 DERIVED_TABLES = {"derive_runs", "txn_derived", "txn_links"}
 CATEGORY_TABLES = {"owner_categories", "labels", "txn_labels"}  # owner tables of 0006
 CLIENT_TABLES = {"client_ops"}  # 0007: answers to Idempotency-Key writes
+CHECK_TABLES = {"txn_checks"}  # 0009: the owner's "Looks right" (D-101)
 NEW_TABLES = (
-    PIPELINE_TABLES | OWNER_TABLES | DERIVED_TABLES | CATEGORY_TABLES | CLIENT_TABLES
+    PIPELINE_TABLES | OWNER_TABLES | DERIVED_TABLES | CATEGORY_TABLES | CLIENT_TABLES | CHECK_TABLES
 )  # every app table but heartbeat
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 BACKEND = Path(__file__).resolve().parent.parent
@@ -83,7 +84,11 @@ def test_upgrade_check_downgrade_upgrade(url: str) -> None:
     assert NEW_TABLES | {"heartbeat"} <= tables(url)
     command.check(cfg)  # models and migrations agree
 
-    command.downgrade(cfg, "0006")  # one step at a time: each downgrade works alone
+    command.downgrade(cfg, "0008")  # one step at a time: each downgrade works alone
+    assert not CHECK_TABLES & tables(url) and tables(url) >= CLIENT_TABLES
+    command.upgrade(cfg, "head")
+    assert tables(url) >= CHECK_TABLES
+    command.downgrade(cfg, "0006")
     assert not CLIENT_TABLES & tables(url) and tables(url) >= CATEGORY_TABLES
     command.upgrade(cfg, "head")
     assert tables(url) >= CLIENT_TABLES
@@ -271,6 +276,38 @@ def test_0008_stops_on_a_long_label_then_keeps_one_active_row_per_text(url: str)
         assert conn.execute(text("SELECT count(*) FROM party_texts")).scalar() == 1
         assert conn.execute(text("SELECT kind FROM parties")).scalar() == "business"
         assert conn.execute(text("SELECT name FROM labels")).scalar() == "T" * 30
+    command.upgrade(cfg, "head")
+    command.check(cfg)
+    engine.dispose()
+
+
+def test_0009_checks_table_and_read_trigger(url: str) -> None:
+    """D-101: txn_checks holds the owner's "Looks right". D-102: a recompute a read ran is
+    recorded with trigger "read"; going back to 0008 records it as "owner"."""
+    cfg = alembic_config()
+    command.upgrade(cfg, "head")
+    engine = create_engine(url)
+    owner = "0000000000000000000000000000000a"
+    run = text(
+        "INSERT INTO derive_runs (owner_id, started_at, status, trigger, versions, counts)"
+        " VALUES (:o, '2026-11-20T00:00:00+00:00', 'done', :t, '{}', '{}')"
+    )
+    with engine.begin() as conn:
+        conn.execute(run, {"o": owner, "t": "read"})
+    with pytest.raises(sqlalchemy.exc.IntegrityError), engine.begin() as conn:
+        conn.execute(run, {"o": owner, "t": "later"})
+    with pytest.raises(sqlalchemy.exc.IntegrityError), engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO txn_checks (transaction_id, owner_id, checked_at, source)"
+                " VALUES (1, :o, '2026-11-20T00:00:00+00:00', 'robot')"
+            ),
+            {"o": owner},
+        )
+    command.downgrade(cfg, "0008")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT trigger FROM derive_runs")).scalar() == "owner"
+    assert "txn_checks" not in tables(url)
     command.upgrade(cfg, "head")
     command.check(cfg)
     engine.dispose()

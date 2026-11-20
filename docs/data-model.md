@@ -343,6 +343,20 @@ Additive. RLS on the three new tables.
   `display_name`; the restore takes both. Ended rows are not exported (the
   pg_dump backup keeps them).
 
+## Checks and the read trigger (migration `0009`, D-101, D-102)
+
+| Table / column | What |
+| -------------- | ---- |
+| `txn_checks` | Owner data: the owner's "Looks right" on a generic row. One row per transaction (`transaction_id` primary key), `owner_id`, `checked_at`, `source`. Row level security on, no policies |
+| `derive_runs.trigger` | Also `read`: the first read after a deploy recomputed (D-102) |
+
+- The downgrade drops `txn_checks` and records `read` runs as `owner`.
+- Generic transactions are ordinary transactions with hint `generic`;
+  parser version `generic-1.0.0` on their parse results. Unknown reasons
+  `not_a_transaction` and `generic_unsure` (detail: the reason) need no
+  migration (`unknown_reason` has no CHECK).
+- "Not a payment" is an `owner_roles` row with role `ignored` (D-103).
+
 ## Client operations (migration `0007`, D-092)
 
 `client_ops` keeps the final answer of each owner write sent with an

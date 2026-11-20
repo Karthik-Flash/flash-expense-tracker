@@ -14,6 +14,10 @@
   category-stats
   category-review [--uncategorised] [--list]
   credit-review [--list]
+  payback-audit [--fix [--apply]]
+  bank-survey
+  generic-preview
+  redact-sample --family <bank> [--review-dir DIR] | --approve <bank> [--review-dir DIR]
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
@@ -73,6 +77,7 @@ from app.models import (
     TxnLabel,
     TxnLink,
 )
+from app.pipeline import payback_audit, sample_export, survey
 from app.pipeline.owner_actions import ActionError, answer_sender, senders
 from app.pipeline.owner_load import (
     OwnerFileError,
@@ -1066,6 +1071,111 @@ def cmd_credit_review(session: Session, args: argparse.Namespace) -> int:
     return code
 
 
+def cmd_payback_audit(session: Session, args: argparse.Namespace) -> int:
+    """D-099. Counts and IST month keys only; --fix is a dry run, --fix --apply changes."""
+    if args.apply and not args.fix:
+        print("--apply needs --fix (run --fix first: it is a dry run)", file=sys.stderr)
+        return 2
+    found = payback_audit.audit(session, settings.owner_id)
+    print("payback-audit (counts only)")
+    print(payback_audit.RULE)
+    line("silent person parties", len(found.parties))
+    line("credits in Paid back", found.credits)
+    line("months affected", len(found.months))
+    if found.months:
+        print("  " + ", ".join(found.months))
+    if not args.fix:
+        print("Next: --fix shows what would change (a dry run).")
+        return 0
+    n = len(found.parties)
+    party = "party" if n == 1 else "parties"
+    if not args.apply:
+        print(
+            f"dry run: would change {n} {party} to kind unsure (texts, names and categories "
+            f"kept); {found.credits} credit(s) would move from Paid back to To confirm. "
+            "Nothing saved. To change them: --fix --apply"
+        )
+        return 0
+    changed = payback_audit.fix(session, settings.owner_id)
+    print(f"changed {changed} {'party' if changed == 1 else 'parties'} to kind unsure")
+    return run_recompute(session, "owner")
+
+
+def cmd_bank_survey(session: Session, args: argparse.Namespace) -> int:
+    """D-100. Counts only, by sender family (not private), kind and parse status."""
+    found = survey.bank_survey(session, settings.owner_id)
+    print("bank-survey (counts only): family / kind / dedicated, generic, not parsed")
+    for family in sorted(found["table"], key=lambda f: (f == survey.OTHER, f)):
+        kinds = found["table"][family]
+        total = sum(sum(c.values()) for c in kinds.values())
+        print(f"{family}  ({total} messages, {found['foreign'][family]} foreign currency)")
+        for kind in sorted(kinds):
+            c = kinds[kind]
+            print(f"  {kind:<10}" + "".join(f"{c[s]:>12}" for s in survey.STATUSES))
+    return 0
+
+
+def cmd_generic_preview(session: Session, args: argparse.Namespace) -> int:
+    """D-101. What the generic parser would accept and refuse. Counts only, writes nothing."""
+    found = survey.generic_preview(session, settings.owner_id)
+    print("generic-preview (counts only, nothing written)")
+    if not found:
+        print("no stored message from a bank without a dedicated parser")
+    for family in sorted(found):
+        print(family)
+        for group in ("accepted", "refused", "unsure", "foreign currency"):
+            for what, n in sorted(found[family][group].items()):
+                line(f"{group}: {what}", n, 2)
+    return 0
+
+
+PRIVATE_ROOT = Path("D:/FlashPrivate")  # the owner's private folder (CLAUDE.md)
+
+
+def _leaks(reasons: Counter, lines: list[str]) -> None:
+    print("refused: the leak scan found lines that may hold private data", file=sys.stderr)
+    for reason in sample_export.LEAK_REASONS:
+        line(reason, reasons[reason], 2)
+    if lines and is_terminal():
+        print("PRIVATE (your screen only, never paste):", file=sys.stderr)
+        for text in lines[:20]:
+            print("  " + text.replace("\n", " "), file=sys.stderr)
+
+
+def cmd_redact_sample(session: Session, args: argparse.Namespace) -> int:
+    """D-100. A redacted sample of one bank, written to the owner's review folder."""
+    review = args.review_dir or PRIVATE_ROOT / "review"
+    if sample_export.inside_repo(review):
+        print("refused: the review folder must be outside the repository", file=sys.stderr)
+        return 2
+    if args.approve:
+        reasons, lines, target = sample_export.approve(args.approve, review)
+        if reasons is None:
+            print(f"no file {sample_export.sample_name(args.approve)} in the review folder")
+            return 2
+        if target is None:
+            _leaks(reasons, lines)
+            return 1
+        print(f"approved: leak scan clean; copied to data/sample/{target.name} (git-ignored)")
+        return 0
+    export = sample_export.build(session, settings.owner_id, args.family)
+    print(f"redact-sample {export.family} (counts only)")
+    line("messages", export.messages)
+    line("shapes", len(export.shapes))
+    line("template words kept", sum(export.kept.values()))
+    line("words replaced by {WORD}", export.replaced)
+    if not export.messages:
+        print("nothing to write: no stored message of this family")
+        return 2
+    reasons, lines, path = sample_export.write(export, review)
+    if path is None:
+        _leaks(reasons, lines)
+        return 1
+    print(f"written to the review folder: {path.name} and {export.family.lower()}-vocabulary.txt")
+    print(f"PRIVATE: read both files, then run: redact-sample --approve {export.family}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1106,6 +1216,34 @@ def build_parser() -> argparse.ArgumentParser:
     cat.add_argument("--list", action="store_true", help="show the merchants, ask nothing")
     cr = sub.add_parser("credit-review", help="owner only: confirm who sent credits")
     cr.add_argument("--list", action="store_true", help="show the senders, ask nothing")
+    pa = sub.add_parser(
+        "payback-audit",
+        help="counts of person parties whose credits count as Paid back with no owner answer",
+        description=payback_audit.__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    pa.add_argument("--fix", action="store_true", help="dry run: what the repair would change")
+    pa.add_argument("--apply", action="store_true", help="with --fix: make the change")
+    sub.add_parser(
+        "bank-survey",
+        help="counts of messages by sender family, kind and parse status",
+        description=survey.__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub.add_parser(
+        "generic-preview",
+        help="counts of what the generic parser would accept and refuse (writes nothing)",
+    )
+    rs = sub.add_parser(
+        "redact-sample",
+        help="a redacted sample of one bank, to the private review folder",
+        description=sample_export.__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    which = rs.add_mutually_exclusive_group(required=True)
+    which.add_argument("--family", help="the bank, as bank-survey names it (e.g. SBI)")
+    which.add_argument("--approve", metavar="FAMILY", help="scan again, copy to data/sample/")
+    rs.add_argument("--review-dir", type=Path, help="default D:/FlashPrivate/review")
     return parser
 
 
@@ -1124,6 +1262,10 @@ COMMANDS = {
     "category-stats": cmd_category_stats,
     "category-review": cmd_category_review,
     "credit-review": cmd_credit_review,
+    "payback-audit": cmd_payback_audit,
+    "bank-survey": cmd_bank_survey,
+    "generic-preview": cmd_generic_preview,
+    "redact-sample": cmd_redact_sample,
 }
 
 

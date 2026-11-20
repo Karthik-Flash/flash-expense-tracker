@@ -355,7 +355,7 @@ def test_i21_commands_print_counts_only(
         run("reparse"),
     ]
     with sessionmaker(db_engine)() as s:  # two owner texts with one merchant key
-        party = s.scalars(select(Party.id)).first()
+        party = s.scalars(select(Party.id).order_by(Party.id)).first()
         s.add(PartyText(owner_id=OWNER, party_id=party, text="person-900", source="app"))
         s.commit()
     outputs += [run("recompute", code=1), run("reconcile-stats", code=1)]
@@ -547,7 +547,7 @@ def test_owner_data_that_cannot_hold_writes_nothing(
     run("owner-load", write(tmp_path, OWNER_FILE))
     before = derived_rows(db_engine)
     with sessionmaker(db_engine)() as s:  # past the loader: one text in two places
-        party = s.scalars(select(Party.id)).first()
+        party = s.scalars(select(Party.id).order_by(Party.id)).first()
         s.add(PartyText(owner_id=OWNER, party_id=party, text="Person 900", source="app"))
         s.commit()
     out = run("recompute", code=1)

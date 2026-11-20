@@ -15,7 +15,7 @@ from app.engine.parsers.hdfc import PARSER_VERSION
 from app.engine.reconcile import RECONCILE_VERSION, ROLES, RULES
 from app.importers import sms_backup
 from app.models import DuplicateCandidate, Transaction
-from tests.smsdata import FIXTURES, NEVER_STORED, SBI_ROW, WHEN, write_backup
+from tests.smsdata import FIXTURES, NEVER_STORED, NO_PARSER_ROW, WHEN, write_backup
 
 
 def secrets() -> set[str]:
@@ -26,7 +26,7 @@ def secrets() -> set[str]:
         values |= {exp.get("counterparty_raw"), exp.get("reference"), exp.get("account_last4")}
         values |= set(re.findall(r"(?:Rs\.?|INR) ?[\d,]+(?:\.\d+)?", fx["body"]))
         values |= {line for line in fx["body"].splitlines() if len(line) > 12}
-    for _, body, _ in [*NEVER_STORED, SBI_ROW]:
+    for _, body, _ in [*NEVER_STORED, NO_PARSER_ROW]:
         values.add(body)
     return {v for v in values if v}
 
@@ -57,7 +57,7 @@ def test_dry_run_then_import_then_stats_print_counts_only(run, backup: Path) -> 
 
 
 def test_progress_line_every_5000_messages(run, tmp_path: Path) -> None:
-    rows = [("+919000000001", f"hello {i}", SBI_ROW[2]) for i in range(10_000)]
+    rows = [("+919000000001", f"hello {i}", NO_PARSER_ROW[2]) for i in range(10_000)]
     out = run("import-sms", "--input", str(write_backup(tmp_path / "big.xml", rows)))
     assert out.count("messages, ") == 2 and "10,000 messages" in out
     assert "hello" not in out

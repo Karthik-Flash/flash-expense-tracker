@@ -46,6 +46,9 @@ owner's transaction, label or sender is "404 not found".
 | DELETE | `/api/v1/people/{txn}/name` | Clear that name (404 when there is none) |
 | PUT | `/api/v1/people/{txn}/join` | `{"into": txn, "role"?}`: "Same as": the person of `txn` joins the person of `into` |
 | DELETE | `/api/v1/people/{txn}/join` | "Separate": the identifier of `txn` leaves its person |
+| PUT | `/api/v1/transactions/{id}/check` | "Looks right" on a row the generic parser read (D-101): clears `check`, no recompute (422 on any other row) |
+| PUT | `/api/v1/transactions/{id}/ignore` | "Not a payment" (D-103): owner role `ignored`, in no total |
+| DELETE | `/api/v1/transactions/{id}/ignore` | "Count it again": removes that role (no change when there is none; 409 when the owner set another role) |
 | HEAD | `/health` | 200, no body, no database (D-098): the warm job's fallback |
 
 **Writes** are saved with source `app`, are idempotent, and end with one
@@ -132,6 +135,13 @@ left, so they never serve derived data out of step with owner data. A
 recompute stopped by an engine change leaves the mark; the read shows
 `stale` as before.
 
+**New engine versions (D-102).** When the last done run was made by other
+engine versions than the running ones (after a deploy), the first read
+recomputes first (trigger `read`) and serves fresh totals; later reads do
+nothing extra. If that recompute fails, the read serves the stored rows
+with `stale: true` ("Totals are being updated") and the error type is
+logged; the process does not retry on every read.
+
 ## Snapshot (D-088)
 
 `GET /api/v1/sync/snapshot`, the app's only read. Send `Accept:
@@ -177,7 +187,9 @@ HTML page) and, after the first answer, `If-None-Match: <ETag>`.
   "category": "people",
   "category_name": "People",
   "category_basis": "engine",
-  "label": null
+  "label": null,
+  "generic": false,
+  "check": false
 }
 ```
 
@@ -192,6 +204,9 @@ HTML page) and, after the first answer, `If-None-Match: <ETag>`.
 - `identifier`: on a named person's row, the identifier it came from as the
   bank wrote it (a name or a UPI ID, maybe masked), when it differs from
   `display_name`; else `null`.
+- `generic`: read by the generic parser (another bank, D-101). `check`: a
+  generic row the owner has not checked yet and that is not ignored or a
+  duplicate; the app lists it under "Check these payments".
 
 A sender also carries `income_label`: the label of a confirmed income
 sender, else `null`. `status` is `to_confirm`, `confirmed` or `ignored`

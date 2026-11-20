@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 from sqlalchemy import delete, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.engine.parsers import PARSERS
@@ -292,5 +292,10 @@ def test_a_label_of_31_characters_is_refused_by_the_database_too(db_engine) -> N
         s.add(Label(owner_id=OWNER_A, name="T" * 30, source="app"))
         s.commit()
         s.add(Label(owner_id=OWNER_A, name="T" * 31, source="app"))
-        with pytest.raises(IntegrityError):
+        # Postgres stops at VARCHAR(30) (DataError); SQLite ignores the length, so the CHECK
+        # refuses it (IntegrityError). Either way nothing is written.
+        with pytest.raises((DataError, IntegrityError)):
             s.commit()
+        s.rollback()
+        assert s.scalar(select(func.count()).select_from(Label)) == 1
+        assert s.scalar(select(func.max(func.length(Label.name)))) == 30

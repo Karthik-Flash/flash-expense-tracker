@@ -151,21 +151,26 @@ and List stays the default view, so a screen reader meets the list first.
 
 ## Logo
 
-An original mark, drawn as paths with no font: the **$ mark** is three
-horizontal bars joined by two half circles, with a stub above and below,
-monoline with round ends (`frontend/src/brand.tsx`). It is not slanted and
-not on a green tile, to stay clear of well-known dollar-sign app icons, and
-it is not a lightning bolt. The **wordmark** "FLA$H" uses the same geometry
-for the S, slanted 10 degrees for speed: letters in the text colour, the $ in
-the accent. The wordmark sits at the top of Home and on the login screen.
+Logo **C2** (4F-A; the owner picked option C of 4E,
+`docs/design/logo-options.html` shows C next to C2). An original mark drawn
+as paths with no font (`frontend/src/brand.tsx`): a flat-topped lightning
+bolt slanted 10 degrees like the wordmark, with the app's $ (three bars
+joined by half circles, a stub above and below) cut through it, centred on
+the bolt's centre of area. The cut is a fixed share of the bolt, so it stays
+open at 48 px. One colour on a dark tile; no gradient, glow or outline. The
+**wordmark** "FLA$H" uses the same bolt, cut the same way, as its S: letters
+in the text colour, the bolt in the accent. It sits at the top of Home and on
+the login screen.
 
-The app icon is the $ mark in `#7cc4bb` on a `#16191b` tile (8.7:1), which
-reads on light and dark launchers and browser tabs: `favicon.svg`,
-`pwa-192x192.png` and `pwa-512x512.png` (rounded tile),
-`maskable-512x512.png` (full bleed, mark inside the safe circle) and
-`apple-touch-icon.png` (180 px, full bleed). The PNGs were rendered from
-the same path with headless Edge. `#/dev/logos` (local demo only) shows
-them all in light and dark. Not checked against a trademark register.
+The app icon is the bolt in `#7cc4bb` on a `#16191b` tile (8.7:1), the $ cut
+in the tile colour: `pwa-192x192.png` and `pwa-512x512.png` (rounded tile),
+`maskable-512x512.png` (full bleed; the bolt stays inside the safe circle,
+radius 0.395 of 512) and `apple-touch-icon.png` (180 px, full bleed), all
+rendered from the SVG with headless Edge (no package). `favicon.svg` uses the
+same bolt larger (a tab has no launcher mask), so it reads at 16 to 24 px.
+The manifest `id` and `start_url` are unchanged. `#/dev/logos` (local demo
+only) shows them in light and dark. Not checked against a trademark
+register.
 
 ## Never
 
@@ -271,6 +276,20 @@ wrap under their terms and buttons grow.
 - **Merchant cards**: up to four one-tap category chips (the owner's most
   used categories, by how many rows they set, then all rows; never by money)
   and "More…" for the full list. A chip means "All from" that merchant.
+
+## Checks (4F-A, D-101, D-103)
+
+- **To-do, "Check these payments"**: rows the app read automatically from a
+  bank with no parser of its own yet: name, amount, "date · Read
+  automatically", then "Looks right" and "Not a payment". An answer leaves
+  the list at once and waits under "Waiting to sync" until it syncs. The To-do
+  badge counts these rows too.
+- **Transaction sheet**: a generic row shows "Read automatically" in small
+  muted text under the amount. Quiet buttons under the main ones: "Looks
+  right" (only while it asks), and "Not a payment" on any row except a
+  duplicate, which becomes "Count it again" once the row is ignored. The
+  Counted line shows a waiting choice with "Waiting to sync" and Undo.
+- Offline, all three wait in the outbox like every other answer (D-091).
 
 ## Label names
 

@@ -178,6 +178,9 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
   const person = usePeople().find(txn.person_id)
   const personNote = person && personMark(ops, person.key)
   const here = person?.identifiers.find((i) => i.txn_id === txn.id || i.name === (txn.identifier ?? txn.display_name))
+  // Not a payment (D-103) as it will be once a waiting action syncs.
+  const pendingCount = mark.counted && mark.counted.kind !== 'Looks right' ? mark.counted : undefined
+  const ignoredNow = pendingCount ? pendingCount.kind === 'Not a payment' : txn.role === 'ignored'
 
   // Saved on the phone at once and sent in the background (D-091): the sheet just closes.
   const save = (change: Parameters<typeof enqueue>[0]) => {
@@ -195,9 +198,10 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
           <p className="text-3xl font-semibold">
             <Money paise={txn.amount_paise} credit={isCredit(txn)} exact />
           </p>
+          {txn.generic && <p className="mt-1 text-xs text-muted">Read automatically</p>}
           <dl className="mt-4 space-y-3 text-sm">
             <Item term="When" value={fullLabel(txn.time_utc)} />
-            <Item term="Counted" value={roleText(txn)} />
+            <Item term="Counted" value={mark.counted ? mark.counted.choice : roleText(txn)} mark={mark.counted} />
             <Item term="Category" value={category} mark={mark.category} />
             <Item term="Label" value={label} mark={mark.label} />
             {person && (
@@ -228,6 +232,24 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
             <Button onClick={() => setStep({ kind: 'label' })}>Label</Button>
           </div>
           {!counts && <p className="mt-2 text-xs text-muted">Only spending has a category to change.</p>}
+          <div className="mt-2 flex flex-wrap justify-end gap-x-3">
+            {txn.check && !mark.counted && (
+              <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => save(actions.looksRight(txn, item))}>
+                Looks right
+              </button>
+            )}
+            {ignoredNow ? (
+              <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => save(actions.countAgain(txn, item))}>
+                Count it again
+              </button>
+            ) : (
+              txn.role !== 'duplicate' && (
+                <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => save(actions.notAPayment(txn, item))}>
+                  Not a payment
+                </button>
+              )
+            )}
+          </div>
         </div>
       )}
       {step.kind === 'category' && (

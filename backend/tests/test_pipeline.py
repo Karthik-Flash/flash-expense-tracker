@@ -25,7 +25,7 @@ from app.models import (
     TransactionSource,
 )
 from app.pipeline.reparse import reparse
-from tests.smsdata import NEVER_STORED, SBI_ROW, WHEN, full_rows, hdfc_rows, write_backup
+from tests.smsdata import NEVER_STORED, NO_PARSER_ROW, WHEN, full_rows, hdfc_rows, write_backup
 
 OWNER = settings.owner_id
 ALL_TABLES = (ImportBatch, RawMessage, ParseResult, Transaction, TransactionSource)
@@ -195,7 +195,7 @@ def test_i4_reparse_after_version_bump(
     assert count(factory, ParseResult) == results  # dry run saves nothing
     counts = run_reparse(factory)
     hdfc_raws = count(factory, RawMessage, RawMessage.sender_core.in_(["HDFCBK", "HDFCBN"]))
-    assert counts.reparsed == dry.reparsed == hdfc_raws  # SBI stays at "none"
+    assert counts.reparsed == dry.reparsed == hdfc_raws  # the app sender stays at "none"
     assert counts.transactions["new"] == 2  # the two H17 messages now parse
 
     # Nothing deleted; one new result per reparsed message; ids stable per event.
@@ -296,8 +296,8 @@ def test_i6_otp_promotional_and_unregistered_are_never_stored(
         bodies = set(s.scalars(select(RawMessage.body)))
         cores = set(s.scalars(select(RawMessage.sender_core)))
     assert not bodies & {body for _, body, _ in NEVER_STORED}
-    assert SBI_ROW[1] in bodies  # known bank without a parser: stored for a later reparse
-    assert cores == {"HDFCBK", "HDFCBN", "SBIBNK"}
+    assert NO_PARSER_ROW[1] in bodies  # known sender without a parser: kept for a later reparse
+    assert cores == {"HDFCBK", "HDFCBN", "PHONPE"}
 
 
 # --- I7 ---------------------------------------------------------------------
@@ -377,7 +377,7 @@ def test_batch_row_records_versions_counts_and_fingerprint(
     with factory() as s:
         batch = s.get(ImportBatch, batch_id)
     assert batch.status == "done" and batch.finished_at >= batch.started_at
-    assert batch.parser_versions == {"HDFC": HDFC.version}
+    assert batch.parser_versions == {"HDFC": HDFC.version, "other banks": "generic-1.0.0"}
     assert re.fullmatch(r"[0-9a-f]{64}", batch.input_fingerprint)
     assert backup.name not in batch.input_fingerprint
     assert {k: v for k, v in batch.counts.items() if k != "seconds"} == counts.as_dict()

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.engine.categorise import CATEGORIES
 from app.engine.credits import SENDER_ROLES, CreditRow, Sender, credit_senders
 from app.engine.merchant import normalise_merchant
+from app.engine.parsers.generic import HINT as GENERIC
 from app.models import (
     LABEL_MAX,
     Label,
@@ -26,6 +27,7 @@ from app.models import (
     Party,
     PartyText,
     Transaction,
+    TxnCheck,
     TxnDerived,
     TxnLabel,
 )
@@ -266,6 +268,41 @@ def clear_label(session: Session, owner_id: uuid.UUID, txn_id: int) -> None:
 
 # The checked transaction, for a route that must fail before writing anything else.
 transaction_of = _transaction
+
+
+# --- Checks of generic-parsed payments (D-101, D-103) -----------------------------------
+
+
+def looks_right(session: Session, owner_id: uuid.UUID, txn_id: int, source: str) -> None:
+    """The owner checked a payment the generic parser read: its "check" flag goes. No total
+    changes. Only a generic payment has a flag to clear."""
+    t = _transaction(session, owner_id, txn_id)
+    if GENERIC not in (t.hints or ()):
+        raise ActionError("invalid", "only a payment read automatically needs a check")
+    row = session.get(TxnCheck, txn_id) or TxnCheck(transaction_id=txn_id, owner_id=owner_id)
+    row.checked_at, row.source = datetime.now(UTC), source
+    session.add(row)
+    session.flush()
+
+
+def not_a_payment(session: Session, owner_id: uuid.UUID, txn_id: int, source: str) -> None:
+    """D-103: any transaction can be left out of every total (role ignored), by the owner."""
+    _transaction(session, owner_id, txn_id)
+    _role(session, owner_id, txn_id, "ignored", source)
+    session.flush()
+
+
+def count_again(session: Session, owner_id: uuid.UUID, txn_id: int) -> None:
+    """Undo "Not a payment": the engine decides again. Another role the owner set stays: that
+    is a conflict, not something to undo here."""
+    _transaction(session, owner_id, txn_id)
+    row = session.get(OwnerRole, txn_id)
+    if row is None:
+        return
+    if row.role != "ignored":
+        raise ActionError("conflict", "this payment is not marked as not a payment")
+    session.delete(row)
+    session.flush()
 
 
 # --- People: names and joins (D-096) ---------------------------------------------------

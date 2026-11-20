@@ -4,6 +4,26 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 4F-A: other banks, payback safety, logo C2 (20 Nov 2026)
+
+- A careful generic parser reads the money messages of SBI, ICICI, Axis,
+  Kotak, YES and India Post until each has its own parser: only with an INR
+  amount, a completed action and an account, card, reference or UPI ID; OTPs,
+  requests, offers, failed or scheduled payments, mandate notices, bill
+  reminders and balance alerts are left out. HDFC results do not change.
+  Its rows say "Read automatically" and ask "Looks right?" in To-do (D-101).
+- "Not a payment" on any transaction, undone with "Count it again" (D-103).
+- After a deploy, the first read brings the totals up to date by itself
+  (D-102, migration `0009`).
+- Owner commands, counts only: `payback-audit` (paybacks no answer
+  confirmed; repair with `--fix --apply` after a dry run, D-099),
+  `bank-survey`, `generic-preview`, and `redact-sample` with a leak scan
+  (D-100).
+- Logo C2: the slanted bolt with the $ cut through it, in the header and
+  every icon.
+- Tests run on local Postgres 17 as well as SQLite; one test fixed for
+  Postgres.
+
 ## Phase 4E: people, faster To-do, logo options (20 Nov 2026)
 
 - Name a person and join identifiers on the phone, offline too: "Same as…"

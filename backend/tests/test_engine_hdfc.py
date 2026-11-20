@@ -106,7 +106,8 @@ def test_unknown_sender() -> None:
 
 
 def test_no_parser_for_bank() -> None:
-    assert parse_message("VM-SBIBNK", "Rs 33 debited", WHEN) == Unknown("no_parser_for_bank", "SBI")
+    no_parser = Unknown("no_parser_for_bank", "PHONEPE")  # an app, never read (D-101)
+    assert parse_message("VM-PHONPE", "Rs 33 debited", WHEN) == no_parser
 
 
 def test_foreign_currency_deferred() -> None:

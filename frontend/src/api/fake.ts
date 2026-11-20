@@ -73,6 +73,8 @@ interface Row {
   basis: Basis
   engineCategory: string
   label: number | null
+  /** Read by the generic parser (another bank, D-101). */
+  generic?: boolean
 }
 
 /** Small deterministic generator: the same demo every time. */
@@ -152,6 +154,11 @@ function build(): Row[] {
   credit([2026, 11, 16, 22, 5], 1250, 'Rohit V', 'payback', 'engine')
   credit([2026, 11, 17, 9, 40], 300, '*k77@okhdfcbank', 'payback', 'engine') // a masked UPI ID
   add([2026, 11, 7, 17, 0], 750, 'Meera S', 'gifts_donations', { label: 2, basis: 'owner' })
+  // A second bank with no parser of its own yet: read automatically, to check (D-101).
+  const other = { generic: true }
+  add([2026, 11, 12, 13, 20], 340, 'Campus Bookshop', 'uncategorised', other)
+  add([2026, 11, 15, 10, 5], 2000, null, 'cash', other)
+  add([2026, 11, 14, 19, 30], 500, 'Priya N', 'other', { ...other, direction: 'credit', role: 'uncertain' })
 
   return rows
     .sort((a, b) => a.time.localeCompare(b.time))
@@ -183,6 +190,8 @@ export class FakeApi implements Api {
   private names = new Map<string, string>()
   private joins = new Map<string, string>()
   private parties = 0
+  // Checks (4F-A): rows the owner said "Looks right" about.
+  private checked = new Set<number>()
 
   setState(state: DemoState): void {
     this.state = state
@@ -244,6 +253,8 @@ export class FakeApi implements Api {
       category_name: NAME[category],
       category_basis: basis,
       label: row.label ? { id: row.label, name: this.labelNames.get(row.label) ?? '' } : null,
+      generic: Boolean(row.generic),
+      check: Boolean(row.generic) && !this.checked.has(row.id) && role !== 'ignored' && role !== 'duplicate',
     }
   }
 
@@ -489,6 +500,8 @@ export class FakeApi implements Api {
     const b = (body ?? {}) as Record<string, string | number | undefined>
     const person = /^\/people\/(\d+)\/(name|join)$/.exec(path)
     if (person) return this.person(Number(person[1]), method, person[2], b)
+    const check = /^\/transactions\/(\d+)\/(check|ignore)$/.exec(path)
+    if (check) return this.check(Number(check[1]), check[2], method)
     const sender = /^\/senders\/([^/]+)$/.exec(path)
     const txn = /^\/transactions\/(\d+)\/(category|label)$/.exec(path)
     if (sender && method === 'PUT') return this.answerSender(decodeURIComponent(sender[1]), b as unknown as SenderAnswer)
@@ -501,6 +514,21 @@ export class FakeApi implements Api {
     }
     if (txn?.[2] === 'label' && method === 'DELETE') return this.clearLabel(Number(txn[1]))
     throw new ApiError(404, 'Not found.')
+  }
+
+  /** As owner_actions.looks_right, not_a_payment and count_again (D-101, D-103). */
+  private check(txnId: number, what: string, method: string): void {
+    const row = this.rows.find((r) => r.id === txnId)
+    if (!row) throw new ApiError(404, 'No such transaction.')
+    if (what === 'check') {
+      if (!row.generic) throw new ApiError(422, 'Only a payment read automatically needs a check.')
+      this.checked.add(txnId)
+    } else if (method === 'PUT') {
+      this.roleAnswer.set(txnId, 'ignored')
+    } else if (this.roleAnswer.has(txnId)) {
+      if (this.roleAnswer.get(txnId) !== 'ignored') throw new ApiError(409, 'This payment is not marked as not a payment.')
+      this.roleAnswer.delete(txnId)
+    }
   }
 
   private answerSender(id: string, answer: SenderAnswer): void {

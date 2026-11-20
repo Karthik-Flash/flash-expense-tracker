@@ -22,9 +22,11 @@ HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
 Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
 `phase-1-done`, `phase-2-done`. **Phase 3 done** (18 Nov 2026). **Phase 4 in
 progress**: 4C (install and update prompt), 4B-1 (phone copy) and 4B-2
-(offline queue) done 19 Nov; 4B-3 (offline boot) and 4E (people, faster
-To-do, logo options) done 20 Nov; next 4F, then Phase 5 and the pilot. A
-one-page tour:
+(offline queue) done 19 Nov; 4B-3 (offline boot), 4E (people, faster
+To-do, logo options) and 4F-A (generic parser for other banks, payback
+audit, refresh after deploy, logo C2) done 20 Nov; next: the owner runs the
+4F-A counts, then 4F-B if needed, then Phase 5 and the pilot. A one-page
+tour:
 [docs/OVERVIEW.md](docs/OVERVIEW.md).
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
@@ -116,7 +118,7 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
    The full file now lives in `D:\FlashPrivate\private\` (D-051).
 2. When the owner file changes (cheat sheet, "Owner data and recompute"):
    edit `D:\FlashPrivate\private\owner.json` (shape in
-   `docs\owner.example.json`), check that `alembic current` says `0007`,
+   `docs\owner.example.json`), check that `alembic current` says `0009`,
    run `owner-load`, then paste the `reconcile-stats` output.
 3. Vercel: `VITE_API_URL` is saved as a Secret. Change it to a plain
    variable with the same value, then redeploy with the build cache off.
@@ -451,9 +453,42 @@ then Home says "Totals are being updated".
 4. "See payments" on a card shows that person's payments across months;
    Back returns to To-do. On merchant cards, a chip sets "All from".
 5. Separate one identifier in the sheet: it is on its own again.
-6. Open `docs/design/logo-options.html` and tell the planner A, B or C.
+6. Logo: done (C picked; C2 applied in 4F-A).
 7. Paste to the planner only: counts (how many joins, whether any step
    failed). Never paste names or amounts.
+
+### Other banks and paybacks: commands after the 4F-A deploy (from `backend\`)
+
+Render runs migration `0009`. The first time the phone (or any read) asks
+after the deploy, the server recomputes once by itself; no "Totals are being
+updated" wait. Run these in order; each prints counts only unless marked.
+
+```powershell
+# 1. Paybacks the old "All from" confirmed without your answer (SAFE TO PASTE: counts, months)
+.\.venv\Scripts\python.exe -m app.cli payback-audit
+# 2. What the repair would change (dry run, SAFE TO PASTE)
+.\.venv\Scripts\python.exe -m app.cli payback-audit --fix
+# 3. Only after the planner says so: make the change (counts; ends with a recompute)
+.\.venv\Scripts\python.exe -m app.cli payback-audit --fix --apply
+# 4. Your messages by bank, kind and parse status (SAFE TO PASTE: sender codes and counts)
+.\.venv\Scripts\python.exe -m app.cli bank-survey
+# 5. What the generic parser would read, before any reparse (SAFE TO PASTE: counts)
+.\.venv\Scripts\python.exe -m app.cli generic-preview
+# 6. A redacted sample of your main other bank, to D:\FlashPrivate\review\ (counts on screen)
+.\.venv\Scripts\python.exe -m app.cli redact-sample --family SBI
+#    PRIVATE: read sbi-sample.txt and sbi-vocabulary.txt there; never paste them
+# 7. After reading both: scan again and copy into data\sample\ (git-ignored)
+.\.venv\Scripts\python.exe -m app.cli redact-sample --approve SBI
+# 8. Only after the planner says so: read the other banks' stored messages
+.\.venv\Scripts\python.exe -m app.cli reparse --dry-run
+.\.venv\Scripts\python.exe -m app.cli reparse
+```
+
+If `redact-sample` says "refused", paste only the counts per reason; the
+lines it shows on your screen are PRIVATE. After a reparse, To-do lists the
+new rows under "Check these payments": "Looks right" or "Not a payment".
+Android may take up to a day to show the new C2 icon on an installed app;
+reinstalling shows it at once.
 
 ### Which build is on the phone
 
@@ -752,13 +787,16 @@ gh repo view --web                                # open the repo in the browser
 1. Bank statement check (step 4A): one normal and one messy month against
    the statement, "match" or the difference in rupees. 4A also settles the
    unticked "merged refund" check in NOTES (one event or two, D-064).
-2. The owner picks a logo option (A, B or C in
-   `docs/design/logo-options.html`); then the wordmark and every app icon
-   are updated (PNGs rendered from the SVG with headless Edge, no package).
+2. After the 4F-A deploy the owner runs the counts in the NOTES cheat sheet
+   ("Other banks and paybacks"): `payback-audit`, `bank-survey`,
+   `generic-preview`, `redact-sample`. The planner decides on
+   `payback-audit --fix --apply`, a reparse and 4F-B. (Logo: C picked, C2
+   applied in 4F-A.)
 3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
 4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
-   Post, Kotak, PhonePe; add a parser, then reparse; step 4F) and 44
-   foreign-currency messages (D-035).
+   Post, Kotak, PhonePe) and 44 foreign-currency messages (D-035). Since
+   4F-A the generic parser reads the banks among them after a reparse (not
+   PhonePe, an app); `generic-preview` counts what it would read first.
 5. Close category colour pairs (OKLab distance about 4 to 5, such as card
    bill and uncategorised); icons and names carry identity (D-081).
 6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.
@@ -810,6 +848,22 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-20: Phase 4F-A, other banks, payback safety, logo C2
+
+- CI fix (Part 0): the 31-character label test accepts Postgres's
+  DataError or SQLite's IntegrityError and checks no row was written; two
+  test lookups got ORDER BY. Backend now also run locally on Postgres 17.
+- D-102: the first read after a deploy recomputes when the stored rows were
+  made by other engine versions (trigger `read`, migration `0009`).
+- D-099: `payback-audit` (counts), `--fix` (dry run), `--fix --apply`.
+- D-100: `bank-survey`; `redact-sample --family` / `--approve` with a leak
+  scan.
+- D-101: generic parser `generic-1.0.0` for SBI, ICICI, Axis, Kotak, YES and
+  India Post; `generic-preview`; To-do "Check these payments".
+- D-103: "Not a payment" / "Count it again" on every transaction.
+- Logo C2 in the header and every icon; `docs/design/logo-options.html`
+  shows C next to C2.
 
 ### 2026-11-20: Phase 4E, people, faster To-do, logo options
 
