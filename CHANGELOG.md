@@ -4,6 +4,22 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 4E: people, faster To-do, logo options (20 Nov 2026)
+
+- Name a person and join identifiers on the phone, offline too: "Same as…"
+  joins a masked UPI ID to the friend's name, "Separate" undoes it (history
+  kept), a name shows everywhere with the identifier under it (D-096). One
+  People ledger row, one To-do card and one To confirm sender per person.
+  When the two have different answers, the app asks which one stays.
+- A category default no longer answers who someone is: "All from" on a
+  person-like text keeps their credits to confirm.
+- To-do: "See payments" on every card, up to four one-tap category chips.
+- One label limit of 30 characters in the app, API and database (D-097,
+  migration `0008`). `HEAD /health` (D-098). Sign-out clears the boot
+  record.
+- Three logo options (A, B, C) for the owner to pick:
+  `docs/design/logo-options.html`.
+
 ## Phase 4B-3: offline boot (20 Nov 2026)
 
 - The app never opens blank. Signed in on this phone, the phone copy shows

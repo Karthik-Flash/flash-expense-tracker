@@ -1071,3 +1071,33 @@ app to the login, hiding the phone copy. Now:
   start" with Reload after 3 s.
 - The boot path, the time to the first screen and the last 5 boot errors
   stay on the device (localStorage `flash-boot`) for the Speed sheet.
+
+## D-096 Person names and joins are owner data, never automatic, reversible with history (2026-11-20)
+
+A person is an owner party. The owner names it (`parties.display_name`,
+shown over the label) and joins identifiers to it ("Same as": its texts
+move to the other party), on the phone through the outbox. The engine never
+names or joins anyone; it reads parties as before, matching texts by
+merchant key at every recompute, so names and joins survive reparse
+(D-065). A join that ends (Separate, or a move) keeps its `party_texts` row
+with `ended_at`; rows are never deleted and one text has one active row. A
+party made only for a name, a join or a category has kind `unsure` (no
+answer: the engine's rules decide). When both sides have different answers
+the owner must pick the one the person keeps; nothing is decided silently.
+Texts from the owner file stay with the file. Senders group by party, so a
+joined person is one To-do card and one To confirm sender.
+
+## D-097 One label limit of 30 characters (2026-11-20)
+
+A label name has 1 to 30 characters after trimming, in the app, the API and
+the database (`labels.name` VARCHAR(30) with a CHECK, migration `0008`,
+which stops before changing anything if a stored label is longer). The same
+rule covers income labels and person names. Owner-export labels are checked
+against it too.
+
+## D-098 /health accepts HEAD (2026-11-20)
+
+`HEAD /health` answers 200 with no body and never touches the database, as
+`GET /health` does with its small JSON. It is the fallback for the warm job
+when a client cannot send a non-browser User-Agent with GET.
+

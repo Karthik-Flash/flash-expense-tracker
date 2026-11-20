@@ -432,6 +432,15 @@ merchants by transaction count with their category, the owner picks one,
 which is saved on a party (source `terminal`), then one recompute.
 `totals --month` also prints Spent by category.
 
+## People (`reconcile-1.4.0`, `categorise-1.1.0`, D-096)
+
+The engine never names or joins anyone; it reads the owner's parties as
+before. A party of kind **unsure** (named or joined in the app, no answer
+yet) gives no owner opinion: its credits follow the merchant rules
+(`CR_person_signal`, `CR_name_only`, ...) and its debits are People only when
+the merchant engine says person. Senders group by party when one matches,
+else by merchant key. Nothing changes for data without unsure parties.
+
 ## Paybacks, senders and inferred accounts (`reconcile-1.3.0`)
 
 - **Only confirmed paybacks lower Net** (D-076). `totals()` puts a payback

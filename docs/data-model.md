@@ -166,8 +166,8 @@ policies, as on every table.
 | ----- | ----------- | ----------- |
 | `own_accounts` | `label`, `kind` (bank_account, credit_card, wallet, fd), `bank`, `source` | UNIQUE (`owner_id`, `label`) |
 | `own_identifiers` | `own_account_id`, `kind` (last4, text), `value`, `source` | UNIQUE (`owner_id`, `kind`, `value`, `own_account_id`) |
-| `parties` | `label`, `kind` (person, business), `income_label` (null: not an income source), `source` | UNIQUE (`owner_id`, `label`) |
-| `party_texts` | `party_id`, `text`, `source` | UNIQUE (`owner_id`, `text`) |
+| `parties` | `label`, `kind` (person, business; unsure since `0008`), `income_label` (null: not an income source), `display_name` (`0008`), `source` | UNIQUE (`owner_id`, `label`) |
+| `party_texts` | `party_id`, `text`, `source`; `created_at`, `ended_at` since `0008` | one active row per (`owner_id`, `text`) since `0008` |
 | `owner_link_decisions` | `kind` (duplicate, self_transfer, card_bill, refund, fd), `txn_a`, `txn_b`, `verdict` (same, different), `decided_at`, `source` | UNIQUE (`owner_id`, `kind`, `txn_a`, `txn_b`); CHECK `txn_a < txn_b` |
 | `owner_roles` | `transaction_id` (primary key), `role` (every role except duplicate), `decided_at`, `source` | |
 
@@ -321,6 +321,27 @@ Additive. RLS on the three new tables.
 | I25 | Recompute twice changes nothing | `test_i25_*` |
 | I26 | Corrections survive reparse | `test_i26_*` |
 | I27 | A transaction imported after a merchant correction gets that category | `test_i27_*` |
+
+## People and the label limit (migration `0008`, D-096, D-097)
+
+| Column | What |
+| ------ | ---- |
+| `parties.display_name` | The owner's name for a person, from the app (30 characters). Shown over the label; the label stays the entry's key |
+| `parties.kind` | Also `unsure`: named or joined, no answer yet. The engine's own rules decide its credits and People category |
+| `party_texts.created_at`, `.ended_at` | A join that ends (Separate, or a move by Same as) sets `ended_at`; the row is never deleted. Recompute, owner-load and owner-export read active rows only |
+| `uq_party_text_active` | Unique index (`owner_id`, `text`) where `ended_at` is null; it replaces the unique constraint `uq_party_text` |
+| `labels.name` | 30 characters (was 80) and CHECK `length(name) <= 30` (SQLite holds it too) |
+
+- The upgrade counts labels over 30 characters first and stops with
+  "0008 stopped: N label(s) are longer than 30 characters" before changing
+  anything. The downgrade deletes ended rows, turns `unsure` into `business`
+  and drops the names.
+- Reparse keeps transaction ids and recompute matches texts by merchant key,
+  so names and joins survive both (D-065).
+- `owner-export` writes a party's texts of another source than the party
+  under `more_texts` (`{"text", "source"}`) and its app name as
+  `display_name`; the restore takes both. Ended rows are not exported (the
+  pg_dump backup keeps them).
 
 ## Client operations (migration `0007`, D-092)
 
