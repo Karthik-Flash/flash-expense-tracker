@@ -6,8 +6,10 @@
 - Transaction level (money results only): with a reference, the key is
   ("ref", bank, direction, amount, reference), without the account so email
   and statements can merge later; without one, or when the reference is a
-  mandate ID (hint "mandate_reference"), ("raw", content_hash). No fuzzy
-  merging.
+  mandate ID (hint "mandate_reference"), ("raw", content_hash). A generic
+  result without a reference (D-101) has ("gen", bank, direction, amount,
+  account, event minute), so the same alert arriving twice is one payment.
+  No fuzzy merging.
 - Fuzzy candidates are only recorded, never merged: Reconcile decides.
 """
 
@@ -16,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from app.engine import ParsedMessage
+from app.engine.parsers.generic import HINT as GENERIC
 
 SEP = "\x1f"  # unit separator: cannot occur in sender IDs, never ambiguous
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -47,6 +50,11 @@ def transaction_key(parsed: ParsedMessage, raw_hash: str) -> str | None:
         return None
     if parsed.reference and MANDATE_REFERENCE not in parsed.hints:
         return _sha("ref", parsed.bank, parsed.direction, parsed.amount_paise, parsed.reference)
+    if GENERIC in parsed.hints:
+        minute = epoch_ms(parsed.txn_time_utc) // 60_000
+        return _sha(
+            "gen", parsed.bank, parsed.direction, parsed.amount_paise, parsed.account_last4, minute
+        )
     return _sha("raw", raw_hash)
 
 

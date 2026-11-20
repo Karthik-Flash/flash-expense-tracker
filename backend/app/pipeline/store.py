@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.engine import ParsedMessage, Unknown, parse_message
-from app.engine.parsers import PARSERS
+from app.engine.parsers import PARSERS, generic, parser_version
 from app.models import DuplicateCandidate, ParseResult, RawMessage, Transaction, TransactionSource
 from app.pipeline.dedupe import (
     CANDIDATE_RULE,
@@ -57,12 +57,12 @@ class Counts:
 
 
 def parser_versions() -> dict[str, str]:
-    return {bank: p.version for bank, p in sorted(PARSERS.items())}
+    versions = {bank: p.version for bank, p in sorted(PARSERS.items())}
+    return versions | {"other banks": generic.GENERIC_VERSION}
 
 
 def current_version(bank: str | None) -> str:
-    parser = PARSERS.get(bank) if bank else None
-    return parser.version if parser else NO_PARSER
+    return parser_version(bank) or NO_PARSER
 
 
 def parse_raw(raw: RawMessage) -> ParsedMessage | Unknown:

@@ -150,7 +150,7 @@ def build(session, owner) -> dict:
     """The snapshot document, without `generated_at`."""
     stale, last = v1.freshness(session, owner)
     query = v1._items(owner).order_by(Transaction.txn_time_utc.desc(), Transaction.id.desc())
-    items = [v1._item(owner, t, d, lab) for t, d, lab in session.execute(query)]
+    items = [v1._item(owner, *row) for row in session.execute(query)]
     by_month: dict[str, list[dict]] = defaultdict(list)
     for item in items:
         by_month[_ist_month(item["time_utc"])].append(item)

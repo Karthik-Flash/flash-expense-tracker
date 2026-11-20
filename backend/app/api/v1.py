@@ -25,6 +25,7 @@ from app.db import get_session
 from app.engine.categorise import CATEGORIES, SPENDING_ROLES, UNCATEGORISED, breakdown, label_view
 from app.engine.credits import sender_id
 from app.engine.merchant import channel_for, normalise_merchant
+from app.engine.parsers.generic import HINT as GENERIC
 from app.engine.reconcile import IST, ist_month, totals
 from app.models import (
     Label,
@@ -33,6 +34,7 @@ from app.models import (
     PartyText,
     RawMessage,
     Transaction,
+    TxnCheck,
     TxnDerived,
     TxnLabel,
 )
@@ -44,7 +46,7 @@ Owner = Annotated[uuid.UUID, Depends(current_owner)]
 Db = Annotated[Session, Depends(get_session)]
 Month = Annotated[str, Query(pattern=r"^\d{4}-\d{2}$", description="IST month, YYYY-MM")]
 Fresh = [Depends(ops.fresh_reads)]  # every read: a deferred recompute runs first
-NOT_COUNTED = ("foreign_currency_deferred", "no_parser_for_bank")
+NOT_COUNTED = ("foreign_currency_deferred", "no_parser_for_bank", "generic_unsure")
 
 
 class Body(BaseModel):
@@ -153,7 +155,10 @@ def _identifier(t: Transaction, d: TxnDerived) -> str | None:
     return name if name != d.display_name else None
 
 
-def _item(owner: uuid.UUID, t: Transaction, d: TxnDerived, lab: Label | None) -> dict:
+def _item(
+    owner: uuid.UUID, t: Transaction, d: TxnDerived, lab: Label | None, checked: int | None
+) -> dict:
+    generic = GENERIC in (t.hints or ())  # read by the generic parser (D-101)
     return {
         "id": t.id,
         "time_utc": _iso(t.txn_time_utc),
@@ -168,15 +173,19 @@ def _item(owner: uuid.UUID, t: Transaction, d: TxnDerived, lab: Label | None) ->
         "category_name": CATEGORIES.get(d.category, d.category),
         "category_basis": d.category_basis,
         "label": {"id": lab.id, "name": lab.name} if lab else None,
+        "generic": generic,
+        # Asks the owner "Looks right?" until answered, or until it is not a payment.
+        "check": generic and checked is None and d.role not in ("ignored", "duplicate"),
     }
 
 
 def _items(owner: uuid.UUID):
     return (
-        select(Transaction, TxnDerived, Label)
+        select(Transaction, TxnDerived, Label, TxnCheck.transaction_id)
         .join(TxnDerived, TxnDerived.transaction_id == Transaction.id)
         .outerjoin(TxnLabel, TxnLabel.transaction_id == Transaction.id)
         .outerjoin(Label, Label.id == TxnLabel.label_id)
+        .outerjoin(TxnCheck, TxnCheck.transaction_id == Transaction.id)
         .where(Transaction.owner_id == owner, Transaction.status == "active")
     )
 
@@ -308,7 +317,7 @@ def transactions(
         )
     query = query.order_by(Transaction.txn_time_utc.desc(), Transaction.id.desc()).limit(limit + 1)
     rows = list(session.execute(query))
-    items = [_item(owner, t, d, lab) for t, d, lab in rows[:limit]]
+    items = [_item(owner, *row) for row in rows[:limit]]
     next_cursor = None
     if len(rows) > limit:
         last = rows[limit - 1][0]
@@ -422,6 +431,39 @@ def set_category(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: Ca
         return {"id": txn_id, "category": body.category, "scope": body.scope}
 
     return ops.write(session, owner, op, action, body.model_dump())
+
+
+@router.put("/transactions/{txn_id}/check")
+def looks_right(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+    """Looks right: clears the check flag of a payment read automatically (D-101)."""
+
+    def action() -> dict:
+        owner_actions.looks_right(session, owner, txn_id, "app")
+        return {"id": txn_id, "check": False}
+
+    return ops.write(session, owner, op, action, recomputes=False)
+
+
+@router.put("/transactions/{txn_id}/ignore")
+def not_a_payment(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+    """Not a payment: the owner role ignored, in no total (D-103)."""
+
+    def action() -> dict:
+        owner_actions.not_a_payment(session, owner, txn_id, "app")
+        return {"id": txn_id, "ignored": True}
+
+    return ops.write(session, owner, op, action)
+
+
+@router.delete("/transactions/{txn_id}/ignore")
+def count_again(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+    """Count it again: undoes Not a payment (D-103)."""
+
+    def action() -> dict:
+        owner_actions.count_again(session, owner, txn_id)
+        return {"id": txn_id, "ignored": False}
+
+    return ops.write(session, owner, op, action)
 
 
 @router.post("/labels", status_code=201)

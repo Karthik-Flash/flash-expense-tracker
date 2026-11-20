@@ -18,7 +18,8 @@ MESSAGES = [
         "date_utc": "2026-01-05T07:00:00+00:00",
         "body": "Paid Rs.44\nTo TEST SECRET STORE\nOn 05/01/26\nRef 000000000009",
     },
-    {"sender": "SBIBNK", "date_utc": "2026-01-05T08:00:00+00:00", "body": "Rs 77 debited"},
+    # A known sender no parser reads (an app; banks without a parser have the generic one).
+    {"sender": "PHONPE", "date_utc": "2026-01-05T08:00:00+00:00", "body": "Rs 77 debited"},
 ]
 
 

@@ -18,14 +18,15 @@ def hdfc_rows() -> list[Row]:
     return [(f["sender"], f["body"], datetime.fromisoformat(f["received_at"])) for f in FIXTURES]
 
 
-# Messages that must never be stored, plus one known bank without a parser.
+# Messages that must never be stored, plus one known sender that no parser reads (an app;
+# a bank with no dedicated parser has the generic one since 4F-A).
 NEVER_STORED: list[Row] = [
     ("VM-HDFCBK-S", "123456 is your OTP for txn of Rs 33 at TEST STORE", WHEN),
     ("VM-HDFCBK-P", "Get 10% cashback on TEST OFFER. Apply now", WHEN),
     ("+919000000001", "Sent Rs 33 to you. Ref 000000000099", WHEN),
     ("AB-TESTCO-S", "Your TEST CO order is on the way", WHEN),
 ]
-SBI_ROW: Row = ("VM-SBIBNK-S", "Rs 33 debited from A/c XX0009 on 20-01-26", WHEN)
+NO_PARSER_ROW: Row = ("VM-PHONPE-S", "Rs 33 debited from A/c XX0009 on 20-01-26", WHEN)
 
 
 def epoch_ms(moment: datetime) -> int:
@@ -47,4 +48,4 @@ def write_backup(path: Path, rows: list[Row], mms: int = 0) -> Path:
 
 
 def full_rows() -> list[Row]:
-    return hdfc_rows() + NEVER_STORED + [SBI_ROW]
+    return hdfc_rows() + NEVER_STORED + [NO_PARSER_ROW]

@@ -91,7 +91,8 @@ OWNER_ROLES = (
 )  # every role except duplicate, which is decided as a link
 # Derived data (Phase 3C)
 RUN_STATUSES = ("running", "done", "failed")
-RUN_TRIGGERS = ("import", "reparse", "owner", "manual")
+# read: the first read after a deploy found rows made by other engine versions (D-102)
+RUN_TRIGGERS = ("import", "reparse", "owner", "manual", "read")
 MERCHANT_KINDS = ("business", "person", "unsure", "none")
 ROLES = (*OWNER_ROLES, "duplicate")
 DECIDERS = ("engine", "owner")
@@ -402,6 +403,22 @@ class OwnerCategory(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
     category: Mapped[str] = mapped_column(String(40))
     decided_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    source: Mapped[str] = mapped_column(String(10))
+
+
+class TxnCheck(Base):
+    """The owner said "Looks right" about a transaction the generic parser read (D-101).
+
+    One row per transaction; it only clears the "check" flag and changes no total."""
+
+    __tablename__ = "txn_checks"
+    __table_args__ = (CheckConstraint(_in("source", OWNER_SOURCES), name="ck_txn_check_source"),)
+
+    transaction_id: Mapped[int] = mapped_column(
+        BigId, ForeignKey("transactions.id"), primary_key=True, autoincrement=False
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    checked_at: Mapped[datetime] = mapped_column(UtcDateTime)
     source: Mapped[str] = mapped_column(String(10))
 
 

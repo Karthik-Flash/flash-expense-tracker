@@ -4,11 +4,14 @@ Every owner-write route runs through `write()`. With an `Idempotency-Key` header
 write, its recompute and the stored answer (table client_ops) commit in one transaction;
 the same key again gets the stored answer and writes nothing. Without the header nothing
 changes. `X-Defer-Recompute: 1` (with a key) skips the recompute and marks the row; every
-read runs `ensure_fresh()` first, so derived data never lags owner data.
+read runs `ensure_fresh()` first, so derived data never lags owner data. The same first read
+also recomputes when the stored rows were made by other engine versions, as after a deploy
+(D-102).
 """
 
 import hashlib
 import json
+import logging
 import threading
 import uuid
 from collections.abc import Callable
@@ -23,9 +26,9 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import current_owner
 from app.db import get_session
-from app.models import ClientOp
+from app.models import ClientOp, DeriveRun
 from app.pipeline.owner_actions import ActionError
-from app.pipeline.recompute import Outcome, OwnerDataError, owner_lock, recompute
+from app.pipeline.recompute import VERSIONS, Outcome, OwnerDataError, owner_lock, recompute
 
 IN_PROGRESS = "in_progress"
 KEY_REUSED = "idempotency_key_reused"
@@ -33,6 +36,10 @@ STOPPED = "recompute stopped: an engine change needs the owner's check"
 
 _running: set[tuple[uuid.UUID, uuid.UUID]] = set()  # keys being written in this process
 _running_guard = threading.Lock()
+# Owners whose version refresh failed in this process: not tried again on every read (the
+# rows keep their "being updated" notice; the next owner write or a restart tries again).
+_refresh_failed: set[uuid.UUID] = set()
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -181,11 +188,40 @@ def _keyed(session, owner, op: Op, action, request_hash: str, recomputes: bool, 
     return JSONResponse({"detail": detail}, status_code=code)
 
 
+def other_versions(session: Session, owner: uuid.UUID) -> bool:
+    """The last done run was made by other engine versions than the running ones."""
+    versions = session.scalar(
+        select(DeriveRun.versions)
+        .where(DeriveRun.owner_id == owner, DeriveRun.status == "done")
+        .order_by(DeriveRun.id.desc())
+        .limit(1)
+    )
+    return versions is not None and dict(versions) != VERSIONS
+
+
 def ensure_fresh(session: Session, owner: uuid.UUID) -> None:
-    """Run the recompute a deferred write skipped, before anything is read (D-094)."""
+    """Before anything is read: run the recompute a deferred write skipped (D-094), or the
+    one a deploy of new engine versions needs (D-102). Either is one transaction.
+
+    A deferred recompute that fails fails the read, as before. A version refresh that fails
+    is logged and the read goes on with the stored rows, which say "being updated".
+    """
     pending = select(exists().where(ClientOp.owner_id == owner, ClientOp.recompute_pending))
     if session.scalar(pending):
         recompute(session, owner, "owner", before_commit=lambda _: _clear_pending(session, owner))
+        return
+    if owner in _refresh_failed or not other_versions(session, owner):
+        return
+    try:
+        outcome = recompute(session, owner, "read")
+    except Exception as exc:  # the message could hold data: log the type only
+        outcome, reason = None, type(exc).__name__
+    else:
+        reason = "a transaction would lose its owner match" if outcome.status == "stopped" else ""
+    if reason:
+        session.rollback()
+        _refresh_failed.add(owner)
+        log.warning("version refresh on read failed (%s); serving stored rows", reason)
 
 
 def fresh_reads(

@@ -20,6 +20,8 @@ UnknownReason = Literal[
     "no_template",
     "foreign_currency_deferred",
     "ambiguous",
+    "not_a_transaction",  # generic parser: not a payment (detail: the reason, D-101)
+    "generic_unsure",  # generic parser: may be a payment; stays "not counted yet"
 ]
 
 
