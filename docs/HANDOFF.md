@@ -5,16 +5,21 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
 [PLAN.md](PLAN.md).
 
-## Current state (Phase 4, 19 Nov 2026)
+## Current state (Phase 4, 20 Nov 2026)
 
-- Phases 0 to 3 are done. Phase 4 runs as 4C, 4B, 4E, 4F, 4D, with 4A (the
-  bank statement check carried from Phase 3) done before 4D
-  ([PLAN.md](PLAN.md)). 4C (install and update prompt), 4B-1 (phone
-  copy and instant open) and 4B-2 (offline queue) are done; next 4E.
+- Phases 0 to 3 are done. Order from here ([PLAN.md](PLAN.md)): 4E (done),
+  4F (second bank), then Phase 5 (pilot-ready Android app: multi-user with
+  invites, per-user data, delete account; Capacitor shell; Kotlin SMS
+  reading, history and live, uploaded through the outbox; onboarding,
+  privacy policy, pilot invites; pilot fixes; 8-day target), then the
+  pilot. 4A, 4G and 4D run during the pilot. Done: 4C, 4B-1, 4B-2, 4B-3,
+  4E (people, faster To-do, logo options, D-096 to D-098).
 - Engine versions: parser `hdfc-1.1.1`, `merchant-1.1.1`,
-  `reconcile-1.3.0`, `categorise-1.0.0`.
-- Alembic head: `0007` (client_ops).
-- Decisions: D-001 to D-095 ([DECISIONS.md](DECISIONS.md)).
+  `reconcile-1.4.0`, `categorise-1.1.0`.
+- Alembic head: `0008` (people and the label limit).
+- Decisions: D-001 to D-098 ([DECISIONS.md](DECISIONS.md)).
+- Cron: the warm job needs a non-browser User-Agent; its fallback is
+  `HEAD /health` (D-098).
 - Live: app https://flash-expense-tracker.vercel.app, API
   https://flash-expense-tracker.onrender.com (more under "Live URLs").
 - The app: real login (Supabase Auth) and data (`/api/v1`), every screen,
@@ -28,7 +33,9 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   (D-091 to D-094; [design/phase-4b2-outbox.md](design/phase-4b2-outbox.md)).
   Launch never waits on the network: identity from the stored session, the
   phone copy at once, an error boundary, a 3 s watchdog, never a blank
-  screen (D-095).
+  screen (D-095). The owner names people and joins a name and a UPI ID into
+  one person, offline too (D-096;
+  [design/phase-4e-people.md](design/phase-4e-people.md)).
 
 ### Owner commands
 
@@ -116,12 +123,12 @@ backend/            Render root
   app/pipeline/       dedupe.py (pure rules), store.py (per-message ingest), reparse.py, owner_load.py (owner file -> owner tables), recompute.py (derive -> derived tables)
   app/importers/      sms_backup.py (streaming XML importer)
   app/cli.py          python -m app.cli import-sms | reparse | stats | merchant-stats | merchant-review | reconcile-stats | owner-load | recompute | reconcile-review | owner-export | totals | category-stats | category-review | credit-review
-  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels, 0007 client_ops
+  alembic/versions/   0001 heartbeat, 0002 import pipeline tables, 0003 keepalive.ping(), 0004 owner tables, 0005 derived tables, 0006 categories and labels, 0007 client_ops, 0008 people and the label limit
   tests/              pytest; conftest forces a throwaway SQLite DATABASE_URL
-frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login; identity from the stored session at boot), src/boot.ts (boot path, first-screen time, boot errors, watchdog), src/crash.ts (error boundary), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar), src/data (local.ts: the IndexedDB phone copy; store.ts: snapshot, refresh, freshness, timings; outbox.ts: owner actions, drain, markers), src/screens/Speed.tsx (Speed sheet)
+frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.ts real adapter, fake.ts demo adapter for VITE_DEMO=1 in dev), src/auth.ts (Supabase login; identity from the stored session at boot), src/boot.ts (boot path, first-screen time, boot errors, watchdog), src/crash.ts (error boundary), src/screens (Ring.tsx chart), src/brand.tsx ($ mark, FLA$H wordmark), src/lib (money, IST dates), src/view.ts (URL state), src/icons (Lucide SVGs), src/pwa.ts (manifest and service worker options, build id), src/update.ts (update bar), src/data (local.ts: the IndexedDB phone copy; store.ts: snapshot, refresh, freshness, timings; outbox.ts: owner actions, drain, markers), src/screens/Speed.tsx (Speed sheet), src/screens/People.tsx (person sheet)
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests); backup_db.ps1 (owner: pg_dump via Docker)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
-docs/               PLAN, DECISIONS (D-001..D-095), engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
+docs/               PLAN, DECISIONS (D-001..D-098), design/phase-4e-people.md, design/logo-options.html, engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
 mobile/             placeholder for the Capacitor Android shell
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```
@@ -212,10 +219,9 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 1. Bank statement check (step 4A): one normal and one messy month against
    the statement, "match" or the difference in rupees. 4A also settles the
    unticked "merged refund" check in NOTES (one event or two, D-064).
-2. Joining one person seen under a name and a UPI ID, in the app (step 4E).
-   Today only the owner file can list both texts on one party (D-079). 4E
-   gives each To-do sender card "See payments", "Name this person" and
-   "Same as…" (the person join).
+2. The owner picks a logo option (A, B or C in
+   `docs/design/logo-options.html`); then the wordmark and every app icon
+   are updated (PNGs rendered from the SVG with headless Edge, no package).
 3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
 4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
    Post, Kotak, PhonePe; add a parser, then reparse; step 4F) and 44
@@ -233,18 +239,22 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
    (GHSA-g3hv-75wg-m249), via vite-plugin-pwa 2.0.0 and workbox-build 7.4.1,
    the newest releases. No patched release in the same major, so no
    override. Recheck when Workbox ships a fix; never `npm audit fix --force`.
-8. The labels column allows 80 characters, the API 30; owner-file labels
-   may be longer than the app allows (step 4E).
+8. After the 4E deploy: Render runs migration `0008` (it stops if a label is
+   longer than 30 characters; the live table has none). The first owner
+   write, or `python -m app.cli recompute`, rewrites the derived rows for
+   `reconcile-1.4.0` and `categorise-1.1.0`; until then Home says "Totals
+   are being updated".
 9. The Supabase free plan has no backups; the owner runs
    `scripts/backup_db.ps1` (D-084).
 10. The owner's To-do backlog (about 100 items) to work through on the
-    phone (a faster To-do is step 4E).
+    phone, now with chips, "See payments", Name and Same as… (4E).
 11. The owner doubts the October People total: verify it person by person.
 12. Vercel: `VITE_API_URL` is saved as a Secret. The owner changes it to a
     plain variable and redeploys with the build cache off.
 13. HDFC UPI credit SMS carry only a VPA, sometimes masked with "*" by the
-    bank (22 of 22 in the redacted sample; 6 masked). Payer names come from
-    the statement (4A) or from the owner naming the person (4E).
+    bank (22 of 22 in the redacted sample; 6 masked). Since 4E the owner
+    names the person and joins the VPA to their name on the phone (D-096);
+    the statement (4A) can confirm who sent what.
 14. Later list: a friendlier Home, still minimal; revisit with 4D.
 
 Known limits: HDFC and INR only; the card bill pair rule waits for credit

@@ -60,6 +60,15 @@ export function bootPath(): BootPath | null {
   return painted
 }
 
+/** Sign-out or another login: this device's boot record goes with the phone copy (4E). */
+export function clearBoot(): void {
+  try {
+    localStorage.removeItem(KEY)
+  } catch {
+    // Storage blocked: nothing was kept.
+  }
+}
+
 export function noteBootError(message: string): void {
   const log = readBoot()
   write({ ...log, errors: [{ at: Date.now(), message: message.slice(0, 300) }, ...log.errors].slice(0, KEEP_ERRORS) })

@@ -44,7 +44,7 @@ decorative (`aria-hidden`); the text beside them names them.
 Everything the owner sees is in the URL hash, so a reload restores it and a
 link opens it from cold (`frontend/src/view.ts`, tested both ways):
 
-`#/<tab>/<detail>?m=<month>&cat=<slug>&label=<id>&q=<search>&txn=<id>`
+`#/<tab>/<detail>?m=<month>&cat=<slug>&label=<id>&q=<search>&txn=<id>&who=<person>&person=<person>&do=<step>`
 
 | Part | Meaning |
 | ---- | ------- |
@@ -53,9 +53,14 @@ link opens it from cold (`frontend/src/view.ts`, tested both ways):
 | `m` | the month, `2026-11`; none means the current IST month |
 | `cat`, `label`, `q` | Transactions: category filter, label filter, name search |
 | `txn` | the transaction whose sheet is open |
+| `who` | Transactions of one person, every month ("See payments", 4E) |
+| `person`, `do` | the person sheet, opened at `name` or `join` (4E) |
 
 - Opening a layer (a detail or a sheet) adds a history entry. Back closes the
-  topmost layer: the sheet, then the detail, then the tab's root. The same
+  topmost layer: an app-wide sheet, the person sheet, the transaction sheet,
+  one person's payments, then the detail, then the tab's root. "See
+  payments" opens as a layer, so Back returns to the To-do card or sheet it
+  came from. The same
   holds for the app's back control, the sheet's Done and Escape, the browser
   button and Android back.
 - A link opened from cold gets the layers under it in history, so Back steps
@@ -203,7 +208,8 @@ link on every row, ads, promo cards.
    their totals, biggest first ("Paid to"); tap one for its transactions.
 4. **People ledger** (People's category detail): one row per person (the
    API's `person_id`) with Net, and Sent and Got back under it, biggest Sent
-   first. Sent is People spending to them; Got back is their confirmed
+   first. A named person shows its identifiers in small muted text under the
+   name. A row opens the **person sheet** (see "People", 4E). Sent is People spending to them; Got back is their confirmed
    paybacks (they count as Paid back); paybacks still to confirm show as "To
    confirm" and never lower Net. A person's view shows Sent, Got back, To
    confirm and Net, then both directions by day; money in is marked "+" in
@@ -234,6 +240,37 @@ link on every row, ads, promo cards.
 
 Sheets were checked at 360 px and at 200 % text: the panel scrolls, values
 wrap under their terms and buttons grow.
+
+## People (4E, D-096)
+
+- **A name and its identifiers**: wherever a named person appears (To-do,
+  the ledger, transaction rows and the sheet) the owner's name is shown,
+  with the identifier the bank used ("Rohit V", "*r203@okhdfcbank") in small
+  muted text under it, or after it on a transaction row.
+- **To-do sender card**: under Friend / Family / Ignore, quiet text buttons
+  "Name", "Same as…" and "See payments".
+- **Person sheet** (`?person=`): the name, "Answer: Friend", the identifiers
+  (each with Separate when the person has more than one; "From the owner
+  file" instead when the file set it), then Rename (Name), Same as…, Clear
+  name, See payments; from the ledger also "This month with <name>" (the
+  month's Sent, Got back and rows). A footnote: "Names and joins are yours:
+  they change no amount, only who is who."
+- **Same as…**: a list of everyone (search by name or UPI ID), each with its
+  answer. Picking one joins at once, unless both have different answers:
+  then "Rohit V is Friend; *k77@okhdfcbank is Ignore. Which answer does the
+  person keep?" with "Keep Friend" (primary: the person joined into), "Use
+  Ignore" and Cancel. Nothing is chosen silently.
+- **Transaction sheet**: a Person line (name and identifier) with Rename,
+  Same as… and Separate (when the person has more than one identifier).
+- **Offline**: each action waits in the outbox; the card or sheet shows the
+  new name or "Same as Rohit V" with "Waiting to sync" and Undo. Totals never
+  move until the server's numbers arrive.
+- **See payments** (sender and merchant cards, the person sheet):
+  Transactions of that person across all months, titled "Payments with
+  <name>" with "Show all" instead of the month switcher.
+- **Merchant cards**: up to four one-tap category chips (the owner's most
+  used categories, by how many rows they set, then all rows; never by money)
+  and "More…" for the full list. A chip means "All from" that merchant.
 
 ## Label names
 

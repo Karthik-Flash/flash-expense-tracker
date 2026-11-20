@@ -2,10 +2,13 @@
 
 One shared function for the CLI (credit-review) and the API (/senders). Pure.
 
-A sender groups the credits of one merchant key; a credit with no key is its own sender.
+A sender groups the credits of one owner party (a person the owner named or joined, D-096),
+else of one merchant key; a credit with no key is its own sender.
 A sender is "to_confirm" while any of its credits is uncertain or a payback the engine
 guessed (D-076); "ignored" when the owner ignored every one; otherwise "confirmed". Its
-id is opaque and stable: a hash of the key with a per-owner salt, never the key itself.
+id is opaque and stable: a hash of the key with a per-owner salt, never the key itself. A
+party's sender takes the id of the smallest merchant key among its credits, so a party with
+one text keeps the id its key had.
 """
 
 import hashlib
@@ -59,12 +62,19 @@ def to_confirm(row: CreditRow) -> bool:
 
 def credit_senders(rows: Iterable[CreditRow], salt: str) -> list[Sender]:
     """Senders of payback, uncertain and income credits, largest total first."""
-    groups: dict[str, list[CreditRow]] = {}
+    groups: dict[tuple, list[CreditRow]] = {}
     for row in sorted(rows, key=lambda r: r.id):
         if row.role in SENDER_ROLES:
-            groups.setdefault(sender_id(salt, row.merchant_key, row.id), []).append(row)
+            group = (
+                ("party", row.party_id)
+                if row.party_id is not None
+                else ("key", row.merchant_key or row.id)
+            )
+            groups.setdefault(group, []).append(row)
     out = []
-    for sid, mine in groups.items():
+    for mine in groups.values():
+        keys = sorted({r.merchant_key for r in mine if r.merchant_key})
+        sid = sender_id(salt, keys[0] if keys else None, mine[0].id)
         roles = Counter(r.role for r in mine if r.role != "ignored") or Counter(["ignored"])
         if any(to_confirm(r) for r in mine):
             status = "to_confirm"
@@ -81,7 +91,7 @@ def credit_senders(rows: Iterable[CreditRow], salt: str) -> list[Sender]:
                 status=status,
                 last_time_utc=max(r.txn_time_utc for r in mine),
                 txn_ids=tuple(r.id for r in mine),
-                merchant_key=mine[0].merchant_key,
+                merchant_key=keys[0] if keys else None,
                 party_id=mine[-1].party_id,
             )
         )

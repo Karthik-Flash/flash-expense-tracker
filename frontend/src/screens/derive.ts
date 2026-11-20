@@ -1,7 +1,7 @@
 // Pure helpers the screens use on the snapshot (docs/ui-spec.md). They filter, sort and
 // search; every money figure comes from the server (D-088).
 
-import type { MonthData, Snapshot, Txn } from '../api/types.ts'
+import type { Category, MonthData, Person, Snapshot, Txn } from '../api/types.ts'
 import { dayLabel, monthOf } from '../lib/dates.ts'
 import { nameOf } from './common.ts'
 
@@ -45,6 +45,25 @@ export function paymentsText(count: number, lastIso?: string): string {
   const n = `${count} ${count === 1 ? 'payment' : 'payments'}`
   if (!lastIso) return n
   return `${n} · ${count === 1 ? '' : 'last '}${dayLabel(lastIso)}`
+}
+
+/** The owner's most used categories, for one-tap chips on To-do merchant cards: by the number
+ *  of rows the owner set (then of all spending rows), never by money. */
+export function topCategories(txns: Txn[], cats: Category[], n = 4): Category[] {
+  const score = new Map<string, number>()
+  for (const t of txns) {
+    if (!countsInSpent(t) || t.category === 'uncategorised') continue
+    score.set(t.category, (score.get(t.category) ?? 0) + (t.category_basis === 'owner' ? 1000 : 1))
+  }
+  return cats
+    .filter((c) => score.has(c.slug))
+    .sort((a, b) => score.get(b.slug)! - score.get(a.slug)! || a.name.localeCompare(b.name))
+    .slice(0, n)
+}
+
+/** The identifiers under a named person, as the bank wrote them: "Rohit V · *r203@okhdfcbank". */
+export function identifiersText(p: Person | undefined): string {
+  return p?.named ? p.identifiers.map((i) => i.name ?? '').filter(Boolean).join(' · ') : ''
 }
 
 /** Name search: every word must appear in the name, any case. */

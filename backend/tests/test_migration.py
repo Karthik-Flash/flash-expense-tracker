@@ -228,3 +228,49 @@ def test_keepalive_ping_as_anon(url: str) -> None:
         gone = conn.execute(text("SELECT to_regnamespace('keepalive') IS NULL"))
         assert gone.scalar_one() is True
     engine.dispose()
+
+
+def test_0008_stops_on_a_long_label_then_keeps_one_active_row_per_text(url: str) -> None:
+    """D-097: a label over 30 characters stops 0008 before it changes anything. D-096: a
+    text has one active row; ended rows are history (dropped only by a downgrade)."""
+    cfg = alembic_config()
+    command.upgrade(cfg, "0007")
+    engine = create_engine(url)
+    owner = "0000000000000000000000000000000a"
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO labels (owner_id, name, source) VALUES (:o, :n, 'app')"),
+            {"o": owner, "n": "T" * 31},
+        )
+    with pytest.raises(RuntimeError, match=r"1 label\(s\) are longer than 30"):
+        command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0007"
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE labels SET name = :n"), {"n": "T" * 30})
+    command.upgrade(cfg, "head")
+
+    insert = text(
+        "INSERT INTO party_texts (owner_id, party_id, text, source, ended_at)"
+        " VALUES (:o, 1, 'TEST FRIEND', 'app', :e)"
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO parties (id, owner_id, label, kind, source)"
+                " VALUES (1, :o, 'T', 'unsure', 'app')"
+            ),
+            {"o": owner},
+        )
+        conn.execute(insert, {"o": owner, "e": "2026-11-20T00:00:00+00:00"})  # an ended join
+        conn.execute(insert, {"o": owner, "e": None})  # the same text, active again
+    with pytest.raises(sqlalchemy.exc.IntegrityError), engine.begin() as conn:
+        conn.execute(insert, {"o": owner, "e": None})  # a second active row: refused
+    command.downgrade(cfg, "0007")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM party_texts")).scalar() == 1
+        assert conn.execute(text("SELECT kind FROM parties")).scalar() == "business"
+        assert conn.execute(text("SELECT name FROM labels")).scalar() == "T" * 30
+    command.upgrade(cfg, "head")
+    command.check(cfg)
+    engine.dispose()

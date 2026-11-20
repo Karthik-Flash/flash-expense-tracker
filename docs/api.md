@@ -42,6 +42,11 @@ owner's transaction, label or sender is "404 not found".
 | PUT | `/api/v1/transactions/{id}/category` | `{"category": slug, "scope": "merchant" \| "transaction"}` |
 | PUT | `/api/v1/transactions/{id}/label` | `{"label_id"}`, or `{"new_label": name}` to make a label and attach it in one write (409 when the name exists): at most one label per transaction |
 | DELETE | `/api/v1/transactions/{id}/label` | Remove the label (also when there is none) |
+| PUT | `/api/v1/people/{txn}/name` | `{"name"}`: name the person of transaction `txn` (D-096) |
+| DELETE | `/api/v1/people/{txn}/name` | Clear that name (404 when there is none) |
+| PUT | `/api/v1/people/{txn}/join` | `{"into": txn, "role"?}`: "Same as": the person of `txn` joins the person of `into` |
+| DELETE | `/api/v1/people/{txn}/join` | "Separate": the identifier of `txn` leaves its person |
+| HEAD | `/health` | 200, no body, no database (D-098): the warm job's fallback |
 
 **Writes** are saved with source `app`, are idempotent, and end with one
 recompute in the same database transaction, under the owner's lock: the
@@ -52,7 +57,8 @@ data that cannot hold, a recompute stopped by an engine change, or a label
 name the owner already has).
 
 - `scope: merchant` sets the default on the merchant's party (made from the
-  transaction's text if there is none): every past and future payment to it.
+  transaction's text if there is none, kind `unsure` since 4E, so a category
+  never answers who someone is): every past and future payment to it.
   This transaction's own one-off, if any, is removed. A transaction with no
   merchant text (an ATM withdrawal) answers 422; use `scope: transaction`.
 - `friend` makes the sender's party a person (a payback, confirmed);
@@ -60,12 +66,44 @@ name the owner already has).
   `ignored` on its current credits. A sender with no text gets role
   decisions instead of a party. An ignored sender can be answered again.
 - `DELETE /senders/{id}` removes the sender's role decisions. A party the app
-  made only for the answer is removed too. A party that also holds a default
-  category, or comes from the owner file, keeps it and becomes a business,
-  so its credits are to confirm (`CR_business`).
-- **Names** (a label, an income label): trimmed, inner runs of spaces joined
-  into one, then 1 to 30 characters. The client applies the same rules
+  made only for the answer is removed too. Any other party stays (see
+  People), so its credits are to confirm again.
+- Senders group by person (D-096): a joined person is one sender; its id is
+  the id of its smallest merchant key, so a one-text party keeps its id.
+  Each sender also has `person_id` and `txn_id` (a transaction to name or
+  join it by).
+- **Names** (a label, an income label, a person's name): trimmed, inner runs
+  of spaces joined into one, then 1 to 30 characters (D-097: the database
+  holds the same limit for labels). The client applies the same rules
   (`frontend/src/screens/derive.ts`).
+
+### People (D-096)
+
+A person is an owner party; every route names it by one of its
+transactions (`txn`), so a queue of taps made offline lands right.
+
+- **Name**: sets the party's `display_name`, making a party (kind `unsure`:
+  no answer, the engine's rules keep deciding) from the transaction's text
+  when there is none. The name shows everywhere the person appears; each
+  transaction item then carries its `identifier` (below). Naming changes no
+  role, category or amount.
+- **Same as**: every active text of the person of `txn` moves to the person
+  of `into` (the old rows end, the new ones are source `app`). The person
+  keeps its name, or the name it is shown by. When both sides have an answer
+  (Friend, Family, Ignore, or to confirm) and they differ, `role` must be one
+  of the two (`friend`, `income`, `ignore`, `none`): without it 409 and
+  nothing is written; another value 422. The chosen answer is applied to
+  every credit of the person, as the To-do answer would be. 409 when they
+  are already one person.
+- **Separate**: ends the row of the identifier of `txn`; it is on its own
+  again (engine rules; its per-transaction role decisions stay). 409 for a
+  person's only identifier; 404 when it is not part of a person.
+- A text from the owner file is moved or separated only in the file: 409
+  "this identifier is set in the owner file". The app may name a file party
+  and join other texts to it.
+- `DELETE /senders/{id}` keeps a party that is named or joined (and one with
+  a category or from the owner file): it loses its answer (kind `unsure`,
+  file parties `business`), so its credits are to confirm again.
 
 ### Idempotency-Key (D-091, D-092)
 
@@ -107,7 +145,8 @@ HTML page) and, after the first answer, `If-None-Match: <ETag>`.
 | `owner_id`, `engine_versions` | Whose data, made with which engines |
 | `months[]` | Every IST month with transactions, oldest first: `month`; `summary` (exactly the `/summary` answer); `changes` (`spent_paise` and per category slug, against `summary.previous`); `chart` (`total_paise` and at most 6 slices plus one `slug: null` "Other (n)"); `merchants` (per category slug, `name`, `total_paise`, `count`, biggest first); `people` (the People ledger: `key`, `name`, `sent_paise`, `got_back_paise`, `to_confirm_paise`, `net_paise`) |
 | `transactions[]` | Every transaction item (below), newest first |
-| `todo` | `senders` (to confirm), `answered` (confirmed or ignored), `merchants` (uncategorised spending by name: `name`, `total_paise`, `count`, `txn_id`), `unnamed` |
+| `todo` | `senders` (to confirm), `answered` (confirmed or ignored), `merchants` (uncategorised spending by name: `name`, `total_paise`, `count`, `txn_id`, `last_time_utc`), `unnamed` |
+| `people[]` | 4E: everyone the owner can name or join, by name: `key` (as `person_id`), `name`, `named`, `txn_id`, `role` (`friend`, `income`, `ignore`, `none`, or null with no credits), `identifiers` (newest first: `name` as the bank wrote it, `txn_id`, `from_file`). No money |
 | `labels[]` | `/labels/{id}` for every label, by name |
 | `categories[]` | `/categories` |
 
@@ -131,6 +170,7 @@ HTML page) and, after the first answer, `If-None-Match: <ETag>`.
   "amount_paise": 10000000,
   "direction": "debit",
   "display_name": "Person_901",
+  "identifier": null,
   "person_id": "s_3f9a0c1d2e4b5a6c7d8e",
   "role": "spend",
   "role_basis": "engine",
@@ -146,9 +186,12 @@ HTML page) and, after the first answer, `If-None-Match: <ETag>`.
 - `person_id`: who the money went to or came from. `p_<n>` when the text
   matches an owner party, else the sender id of the text (`s_...`, the same
   id as in `/senders`), else `null` (no counterparty text, such as an ATM
-  withdrawal). One person seen under a name and a UPI ID gets one id only
-  once the owner lists both texts on one party (owner file); the app cannot
-  join them yet.
+  withdrawal). One person seen under a name and a UPI ID gets one id once the
+  owner joins them ("Same as", D-096) or lists both texts on one party in
+  the owner file.
+- `identifier`: on a named person's row, the identifier it came from as the
+  bank wrote it (a name or a UPI ID, maybe masked), when it differs from
+  `display_name`; else `null`.
 
 A sender also carries `income_label`: the label of a confirmed income
 sender, else `null`. `status` is `to_confirm`, `confirmed` or `ignored`

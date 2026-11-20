@@ -3,17 +3,23 @@
 Each function writes owner rows with the caller's source and does not commit: the caller
 runs one recompute, which commits the answer and the derived rows together (or nothing).
 Errors never hold a value from the data.
+
+People (D-096): a person is a party. Naming sets its display name; "same as" moves texts
+from one party to another, ending the old rows; "separate" ends one text's row. Rows are
+never deleted for a join, and texts from the owner file are left to the file.
 """
 
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.engine.categorise import CATEGORIES
 from app.engine.credits import SENDER_ROLES, CreditRow, Sender, credit_senders
+from app.engine.merchant import normalise_merchant
 from app.models import (
+    LABEL_MAX,
     Label,
     OwnerCategory,
     OwnerRole,
@@ -26,8 +32,10 @@ from app.models import (
 
 ANSWERS = ("friend", "income", "ignore")
 SCOPES = ("merchant", "transaction")
-MAX_NAME = 30  # a label or income label, after trimming and joining spaces (docs/ui-spec.md)
+MAX_NAME = LABEL_MAX  # a label, income label or name, trimmed, spaces joined (D-097)
 ANSWER_ROLES = ("ignored", "payback", "income")  # the role decisions a sender answer writes
+PERSON_ROLES = ("friend", "income", "ignore", "none")  # a person's answer; none: to confirm
+FROM_FILE = "this identifier is set in the owner file: change it there"
 
 
 class ActionError(Exception):
@@ -108,12 +116,10 @@ def party_for(session: Session, owner_id: uuid.UUID, txn_id: int, source: str) -
     while label.casefold() in labels:
         n += 1
         label = f"{base} ({n})"
-    party = Party(
-        owner_id=owner_id,
-        label=label,
-        kind="person" if d.merchant_kind == "person" else "business",
-        source=source,
-    )
+    # No role answer yet (D-096): the merchant rules keep deciding its credits until the
+    # owner answers. (Before 4E a person-like text got kind person here, which silently
+    # confirmed its credits as paybacks when only a category was set.)
+    party = Party(owner_id=owner_id, label=label, kind="unsure", source=source)
     session.add(party)
     session.flush()
     session.add(
@@ -182,7 +188,7 @@ def reset_sender(session: Session, owner_id: uuid.UUID, sender_id: str) -> Sende
         if row is not None and row.role in ANSWER_ROLES:
             session.delete(row)
     party = session.get(Party, sender.party_id) if sender.party_id is not None else None
-    if party is not None and party.source == "app" and party.category is None:
+    if party is not None and _plain(session, party):
         session.execute(delete(PartyText).where(PartyText.party_id == party.id))
         session.execute(
             TxnDerived.__table__.update()
@@ -190,10 +196,18 @@ def reset_sender(session: Session, owner_id: uuid.UUID, sender_id: str) -> Sende
             .values(party_id=None)
         )
         session.delete(party)
-    elif party is not None:
-        party.kind, party.income_label = "business", None
+    elif party is not None:  # named, joined, with a category, or from a file: it stays
+        party.kind, party.income_label = ("business" if party.source == "file" else "unsure"), None
     session.flush()
     return sender
+
+
+def _plain(session: Session, party: Party) -> bool:
+    """A party the app made only to hold an answer: one text ever, no name, no category."""
+    texts = session.scalar(select(func.count()).where(PartyText.party_id == party.id))
+    return (
+        party.source == "app" and party.category is None and not party.display_name and texts <= 1
+    )
 
 
 def set_category(
@@ -252,3 +266,165 @@ def clear_label(session: Session, owner_id: uuid.UUID, txn_id: int) -> None:
 
 # The checked transaction, for a route that must fail before writing anything else.
 transaction_of = _transaction
+
+
+# --- People: names and joins (D-096) ---------------------------------------------------
+
+
+def _derived(session: Session, owner_id: uuid.UUID, txn_id: int) -> tuple[Transaction, TxnDerived]:
+    t = _transaction(session, owner_id, txn_id)
+    d = session.get(TxnDerived, txn_id)
+    if d is None:
+        raise ActionError("invalid", "the transaction has no derived data yet: recompute first")
+    return t, d
+
+
+def _active(session: Session, party_id: int) -> list[PartyText]:
+    query = select(PartyText).where(PartyText.party_id == party_id, PartyText.ended_at.is_(None))
+    return list(session.scalars(query.order_by(PartyText.id)))
+
+
+def text_key(text: str) -> str | None:
+    """How the engine matches a text to transactions (reconcile._text_index)."""
+    return normalise_merchant(text, "other").merchant_key
+
+
+def person_role(sender: Sender | None) -> str | None:
+    """friend, income, ignore or none (to confirm); None with no credits."""
+    if sender is None:
+        return None
+    if sender.status == "ignored":
+        return "ignore"
+    if sender.status == "to_confirm":
+        return "none"
+    return "income" if sender.role == "income" else "friend"
+
+
+def sender_of(everyone: list[Sender], d: TxnDerived) -> Sender | None:
+    """The sender of a transaction's person, if any: by party, else by merchant key."""
+    for s in everyone:
+        if d.party_id is not None and s.party_id == d.party_id:
+            return s
+        unpartied = d.party_id is None and s.party_id is None
+        if unpartied and d.merchant_key and s.merchant_key == d.merchant_key:
+            return s
+    return None
+
+
+def name_person(
+    session: Session, owner_id: uuid.UUID, txn_id: int, name: str, source: str
+) -> Party:
+    """The owner's name for the person of this transaction, shown everywhere it appears."""
+    name = clean_name(name, "a name")
+    party = party_for(session, owner_id, txn_id, source)
+    party.display_name = name
+    session.flush()
+    return party
+
+
+def clear_name(session: Session, owner_id: uuid.UUID, txn_id: int) -> None:
+    _, d = _derived(session, owner_id, txn_id)
+    party = session.get(Party, d.party_id) if d.party_id is not None else None
+    if party is None or party.display_name is None:
+        raise ActionError("not_found", "this person has no name to clear")
+    party.display_name = None
+    session.flush()
+
+
+def join_person(
+    session: Session,
+    owner_id: uuid.UUID,
+    txn_id: int,
+    into_txn_id: int,
+    role: str | None,
+    source: str,
+) -> Party:
+    """Same as: the person of `txn_id` becomes the person of `into_txn_id`. Every active text
+    moves (the old rows end). When both sides have an answer and they differ, `role` must
+    say which one the person keeps; nothing is chosen silently."""
+    if role is not None and role not in PERSON_ROLES:
+        raise ActionError("invalid", "role must be friend, income, ignore or none")
+    t, d = _derived(session, owner_id, txn_id)
+    _, into = _derived(session, owner_id, into_txn_id)
+    if not d.merchant_key or not t.counterparty_raw:
+        raise ActionError("invalid", "the transaction has no merchant text")
+    one_party = d.party_id is not None and d.party_id == into.party_id
+    one_key = d.party_id is None and into.party_id is None and d.merchant_key == into.merchant_key
+    if one_party or one_key:
+        raise ActionError("conflict", "these are already the same person")
+    moving = _active(session, d.party_id) if d.party_id is not None else []
+    if any(row.source == "file" for row in moving):
+        raise ActionError("conflict", FROM_FILE)
+
+    everyone = senders(session, owner_id)
+    mine, theirs = sender_of(everyone, d), sender_of(everyone, into)
+    rs, rt = person_role(mine), person_role(theirs)
+    if rs is not None and rt is not None and rs != rt:
+        if role is None:
+            raise ActionError(
+                "conflict", "the two have different answers: choose the one the person keeps"
+            )
+        if role not in (rs, rt):
+            raise ActionError("invalid", "role must be the answer of one of the two")
+        chosen = role
+    else:
+        chosen = rt if rt is not None else rs
+
+    target = party_for(session, owner_id, into_txn_id, source)
+    old = session.get(Party, d.party_id) if d.party_id is not None else None
+    income = target.income_label or (old.income_label if old else None)
+    texts = [row.text for row in moving] or [t.counterparty_raw[:200]]
+    now = datetime.now(UTC)
+    for row in moving:
+        row.ended_at = now
+    if old is not None:
+        target.display_name = target.display_name or old.display_name
+        target.category = target.category or old.category
+    if not target.display_name and target.source != "file" and into.display_name:
+        # "Same as Rohit V": the person keeps the name it is shown by (the owner's words).
+        target.display_name = into.display_name[:MAX_NAME]
+    session.flush()
+    for text in texts:
+        session.add(PartyText(owner_id=owner_id, party_id=target.id, text=text, source=source))
+    session.flush()
+
+    if chosen is None:
+        return target
+    if chosen != rt:  # the person takes the joined side's answer, on every credit
+        if chosen == "friend":
+            target.kind, target.income_label = "person", None
+        elif chosen == "income":
+            target.income_label = income
+        else:
+            target.kind, target.income_label = "unsure", None
+        fix = [*(mine.txn_ids if mine else ()), *(theirs.txn_ids if theirs else ())]
+    else:  # the person keeps its answer; the joined credits follow it
+        fix = list(mine.txn_ids if mine else ())
+    for txn in fix:
+        row = session.get(OwnerRole, txn)
+        if chosen == "ignore":
+            _role(session, owner_id, txn, "ignored", source)
+        elif row is not None and row.role in ANSWER_ROLES:
+            session.delete(row)
+    session.flush()
+    return target
+
+
+def separate_person(session: Session, owner_id: uuid.UUID, txn_id: int) -> None:
+    """End the join of this transaction's identifier: it is on its own again. Its row stays,
+    with an end time. A person's only identifier, or one from the owner file, stays."""
+    _, d = _derived(session, owner_id, txn_id)
+    if d.party_id is None:
+        raise ActionError("not_found", "this identifier is not part of a person")
+    active = _active(session, d.party_id)
+    mine = [row for row in active if text_key(row.text) == d.merchant_key]
+    if not mine:
+        raise ActionError("not_found", "this identifier is not part of a person")
+    if any(row.source == "file" for row in mine):
+        raise ActionError("conflict", FROM_FILE)
+    if len(mine) == len(active):
+        raise ActionError("conflict", "this is the person's only identifier")
+    now = datetime.now(UTC)
+    for row in mine:
+        row.ended_at = now
+    session.flush()

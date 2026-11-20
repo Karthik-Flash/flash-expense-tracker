@@ -22,7 +22,8 @@ HDFC parser engine, schema, import pipeline, dedupe, reparse. Real data is in
 Supabase (917 messages, 678 transactions). Tags `phase-0-done`,
 `phase-1-done`, `phase-2-done`. **Phase 3 done** (18 Nov 2026). **Phase 4 in
 progress**: 4C (install and update prompt), 4B-1 (phone copy) and 4B-2
-(offline queue) done 19 Nov; 4B-3 (offline boot) done 20 Nov; next 4E. A
+(offline queue) done 19 Nov; 4B-3 (offline boot) and 4E (people, faster
+To-do, logo options) done 20 Nov; next 4F, then Phase 5 and the pilot. A
 one-page tour:
 [docs/OVERVIEW.md](docs/OVERVIEW.md).
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
@@ -238,6 +239,9 @@ header `Accept: application/json`. `/health`
 never touches the database (`backend/app/api/health.py`). It uses about 560
 of Render's 750 free hours a month. The 03:30 IST Supabase heartbeat above
 is unchanged and still the only thing that keeps Supabase from pausing.
+The job needs a non-browser User-Agent (cron-job.org's own is fine); if a
+browser-like one ever gets the waking page again, switch the job to
+`HEAD /health` (200, no body, no database, D-098).
 
 ### Flow 3: you push code
 
@@ -337,6 +341,7 @@ All commands run from the repo root in PowerShell unless noted.
 ```powershell
 $u = "https://flash-expense-tracker.onrender.com"
 Invoke-RestMethod "$u/health"                                            # status ok, no token needed
+(Invoke-WebRequest "$u/health" -Method Head -UseBasicParsing).StatusCode  # 200, no body (D-098)
 $t = Read-Host "PING_TOKEN"
 Invoke-RestMethod "$u/health/db" -Headers @{ "X-Ping-Token" = $t }       # db ok + latency_ms
 ```
@@ -428,6 +433,27 @@ Render runs migration `0007` on deploy (`alembic current` says `0007`).
    to the first screen in ms; Boot errors should be "None".
 5. Paste to the planner only: the Boot path, the ms, the boot error count
    and whether any step showed a blank screen. Never paste names or amounts.
+
+### People: your check list after the 4E deploy
+
+Render runs migration `0008`. Then run `python -m app.cli recompute` once
+(or make any change on the phone) so the new engine versions apply; until
+then Home says "Totals are being updated".
+
+1. To-do: on a sender card with a masked UPI ID, tap "Same as…" and pick the
+   friend it belongs to. If both have different answers, the app asks which
+   one stays. The card merges into the friend's; the People ledger shows
+   one row for them.
+2. Tap that row: the person sheet lists both identifiers. Tap "Name" and
+   give a short name; it shows everywhere, with the UPI ID in small text.
+3. Airplane mode: rename someone; it says "Waiting to sync". Airplane mode
+   off: it syncs.
+4. "See payments" on a card shows that person's payments across months;
+   Back returns to To-do. On merchant cards, a chip sets "All from".
+5. Separate one identifier in the sheet: it is on its own again.
+6. Open `docs/design/logo-options.html` and tell the planner A, B or C.
+7. Paste to the planner only: counts (how many joins, whether any step
+   failed). Never paste names or amounts.
 
 ### Which build is on the phone
 
@@ -726,10 +752,9 @@ gh repo view --web                                # open the repo in the browser
 1. Bank statement check (step 4A): one normal and one messy month against
    the statement, "match" or the difference in rupees. 4A also settles the
    unticked "merged refund" check in NOTES (one event or two, D-064).
-2. Joining one person seen under a name and a UPI ID, in the app (step 4E).
-   Today only the owner file can list both texts on one party (D-079). 4E
-   gives each To-do sender card "See payments", "Name this person" and
-   "Same as…" (the person join).
+2. The owner picks a logo option (A, B or C in
+   `docs/design/logo-options.html`); then the wordmark and every app icon
+   are updated (PNGs rendered from the SVG with headless Edge, no package).
 3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
 4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
    Post, Kotak, PhonePe; add a parser, then reparse; step 4F) and 44
@@ -750,18 +775,22 @@ gh repo view --web                                # open the repo in the browser
    (GHSA-g3hv-75wg-m249), via vite-plugin-pwa 2.0.0 and workbox-build 7.4.1,
    the newest releases. No patched release in the same major, so no
    override. Recheck when Workbox ships a fix; never `npm audit fix --force`.
-8. The labels column allows 80 characters, the API 30; owner-file labels
-   may be longer than the app allows (step 4E).
+8. After the 4E deploy: Render runs migration `0008` (it stops if a label is
+   longer than 30 characters; the live table has none). The first owner
+   write, or `python -m app.cli recompute`, rewrites the derived rows for
+   `reconcile-1.4.0` and `categorise-1.1.0`; until then Home says "Totals
+   are being updated".
 9. The Supabase free plan has no backups; the owner runs
    `scripts/backup_db.ps1` (D-084).
 10. The owner's To-do backlog (about 100 items) to work through on the
-    phone (a faster To-do is step 4E).
+    phone, now with chips, "See payments", Name and Same as… (4E).
 11. The owner doubts the October People total: verify it person by person.
 12. Vercel: `VITE_API_URL` is saved as a Secret. The owner changes it to a
     plain variable and redeploys with the build cache off.
 13. HDFC UPI credit SMS carry only a VPA, sometimes masked with "*" by the
-    bank (22 of 22 in the redacted sample; 6 masked). Payer names come from
-    the statement (4A) or from the owner naming the person (4E).
+    bank (22 of 22 in the redacted sample; 6 masked). Since 4E the owner
+    names the person and joins the VPA to their name on the phone (D-096);
+    the statement (4A) can confirm who sent what.
 14. Later list: a friendlier Home, still minimal; revisit with 4D.
 
 Known limits: HDFC and INR only; the card bill pair rule waits for credit
@@ -781,6 +810,25 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-20: Phase 4E, people, faster To-do, logo options
+
+- People (D-096): a person is an owner party; Name, Same as…, Separate
+  (rows kept with `ended_at`), role conflicts asked explicitly, new party
+  kind `unsure`, senders grouped by person, `people` in the snapshot.
+  Routes `/api/v1/people/{txn}/name|join`. Engine `reconcile-1.4.0`,
+  `categorise-1.1.0` (no change for existing data).
+- Fixed: "All from" on a person-like text no longer confirms their credits
+  as paybacks (the party it makes has no answer).
+- To-do: "See payments" (`?who=`), up to 4 category chips, Name and Same
+  as… on sender cards; the person sheet (`?person=`).
+- Migration `0008`: label limit 30 everywhere with a stop guard (D-097),
+  `parties.display_name`, party text history. `HEAD /health` (D-098).
+  Sign-out clears `flash-boot`.
+- Logo options A, B, C: `docs/design/logo-options/` and
+  `docs/design/logo-options.html`.
+- Tests: backend 722 on SQLite (3 Postgres-only skipped), scripts 89,
+  frontend 76. Demo checked in headless Edge at 390 px. Not pushed.
 
 ### 2026-11-20: Phase 4B-3, offline boot
 

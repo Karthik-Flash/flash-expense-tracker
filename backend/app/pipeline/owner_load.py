@@ -13,8 +13,12 @@ Format (docs/data-model.md, "Owner file"; example in docs/owner.example.json):
 
 An export (owner-export) has the same shape plus "format", a "source" on every
 entry, and the decisions ("roles", "links"), each naming its transactions by id
-and dedupe key. It is restored only into empty owner tables; ids are mapped by
-dedupe key, so a rebuilt database takes it back.
+and dedupe key. A party in an export may also hold "display_name" (the app's name
+for it) and "more_texts": [{"text", "source"}] for texts of another source than
+the party (a text the app joined to a file party, D-096). Only active texts are
+exported; ended joins stay in the database (pg_dump keeps them). It is restored
+only into empty owner tables; ids are mapped by dedupe key, so a rebuilt database
+takes it back.
 """
 
 import json
@@ -32,6 +36,7 @@ from app.engine.merchant import normalise_merchant
 from app.engine.senders import SENDER_BANKS
 from app.models import (
     ACCOUNT_KINDS,
+    LABEL_MAX,
     OWNER_LINK_KINDS,
     OWNER_ROLES,
     OWNER_SOURCES,
@@ -60,6 +65,7 @@ ROLE_KEYS = ("transaction", "dedupe_key", "role", "decided_at", "source")
 LINK_KEYS = ("kind", "a", "a_key", "b", "b_key", "verdict", "decided_at", "source")
 ACCOUNT_KEYS = ("label", "kind", "bank", "last4", "texts")
 PARTY_KEYS = ("label", "kind", "income", "category", "texts")
+PARTY_EXPORT_KEYS = ("display_name", "more_texts")  # export only (D-096)
 MAX_LABEL, MAX_TEXT = 80, 200  # column sizes
 LAST4 = re.compile(r"\d{4}")
 
@@ -129,7 +135,8 @@ def parse_owner_file(raw: str) -> OwnerFile:
             if not isinstance(item, dict):
                 errors.append(f"{path}: must be an object")
                 continue
-            _unknown_keys(item, path, (*keys, "source") if out.export else keys, errors)
+            extra = ("source", *(PARTY_EXPORT_KEYS if name == "parties" else ()))
+            _unknown_keys(item, path, (*keys, *extra) if out.export else keys, errors)
             label = _string(item.get("label"), f"{path}.label", MAX_LABEL, errors)
             if label and labels.setdefault(label.casefold(), path) != path:
                 errors.append(f"{path}.label: same label as {labels[label.casefold()]}")
@@ -163,6 +170,8 @@ def parse_owner_file(raw: str) -> OwnerFile:
                 columns["source"] = _choice(
                     item.get("source"), f"{path}.source", OWNER_SOURCES, errors
                 )
+                if name == "parties":
+                    _export_party(item, path, columns, out.text_paths, errors)
             target.append((label or "", columns, children))
     if out.export:
         out.roles = _decisions(data, "roles", ROLE_KEYS, errors)
@@ -178,6 +187,31 @@ def parse_owner_file(raw: str) -> OwnerFile:
     if errors:
         raise OwnerFileError(errors)
     return out
+
+
+def _export_party(item: dict, path: str, columns: dict, seen: dict, errors: list[str]) -> None:
+    """An export party's app name and its texts of another source (D-096)."""
+    if item.get("display_name") is not None:
+        columns["display_name"] = _string(
+            item["display_name"], f"{path}.display_name", LABEL_MAX, errors
+        )
+    more = item.get("more_texts", [])
+    if not isinstance(more, list):
+        errors.append(f"{path}.more_texts: must be a list")
+        return
+    texts, sources = [], []
+    for n, entry in enumerate(more):
+        here = f"{path}.more_texts[{n}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{here}: must be an object")
+            continue
+        _unknown_keys(entry, here, ("text", "source"), errors)
+        texts.append(entry.get("text"))
+        sources.append(_choice(entry.get("source"), f"{here}.source", OWNER_SOURCES, errors))
+    kept = _texts(texts, f"{path}.more_texts", seen, errors)
+    columns["more_texts"] = [
+        (text, source) for text, source in zip(texts, sources, strict=True) if text in kept
+    ]
 
 
 def _choice(value: object, path: str, allowed: tuple[str, ...], errors: list[str]) -> str:
@@ -207,7 +241,7 @@ def _decisions(data: dict, name: str, keys: tuple[str, ...], errors: list[str]) 
             elif key.endswith("key"):
                 _string(value, f"{path}.{key}", 64, errors)
             elif key == "name":
-                _string(value, f"{path}.name", MAX_LABEL, errors)
+                _string(value, f"{path}.name", LABEL_MAX, errors)  # a label (D-097)
             elif key == "transactions":
                 if not isinstance(value, list):
                     errors.append(f"{path}.transactions: must be a list")
@@ -333,7 +367,11 @@ def _check_against_other_rows(session: Session, owner_id: uuid.UUID, owner_file:
             )
         ),
         *session.scalars(
-            select(PartyText.text).where(PartyText.owner_id == owner_id, PartyText.source != "file")
+            select(PartyText.text).where(
+                PartyText.owner_id == owner_id,
+                PartyText.source != "file",
+                PartyText.ended_at.is_(None),
+            )
         ),
     ]
     for key in {text_key(t) for t in texts} & owner_file.text_paths.keys():
@@ -365,7 +403,10 @@ def _sync(
     }
     children: dict[int, dict[tuple[str, ...], object]] = defaultdict(dict)
     not_from_file: Counter[int] = Counter()
-    for child in session.scalars(select(child_model).where(child_model.owner_id == owner_id)):
+    query = select(child_model).where(child_model.owner_id == owner_id)
+    if child_model is PartyText:  # an ended join is history, not a child (D-096)
+        query = query.where(PartyText.ended_at.is_(None))
+    for child in session.scalars(query):
         if child.source == "file":
             children[getattr(child, link)][tuple(getattr(child, c) for c in columns)] = child
         else:
@@ -446,17 +487,18 @@ def export_owner(session: Session, owner_id: uuid.UUID) -> tuple[dict, Counter]:
         (Party, PartyText, "party_id", parties),
     ):
         children = defaultdict(list)
-        for row in session.scalars(
-            select(child).where(child.owner_id == owner_id).order_by(child.id)
-        ):
+        query = select(child).where(child.owner_id == owner_id).order_by(child.id)
+        if child is PartyText:
+            query = query.where(PartyText.ended_at.is_(None))
+        for row in session.scalars(query):
             children[getattr(row, link)].append(row)
         for row in session.scalars(
             select(model).where(model.owner_id == owner_id).order_by(model.id)
         ):
             mine = children[row.id]
-            # ponytail: one source per entry; nothing writes a child with another source
-            # yet. Give children their own source in the format when the app does.
-            if any(c.source != row.source for c in mine):
+            # ponytail: an account's identifiers all share its source (nothing else writes
+            # them); a party's texts may not, since the app joins texts to it (D-096).
+            if model is OwnAccount and any(c.source != row.source for c in mine):
                 raise OwnerFileError(
                     ["an owner entry has rows from two sources; not exportable yet"]
                 )
@@ -472,7 +514,14 @@ def export_owner(session: Session, owner_id: uuid.UUID) -> tuple[dict, Counter]:
                     entry["income"] = row.income_label
                 if row.category:
                     entry["category"] = row.category
-                entry["texts"] = [c.text for c in mine]
+                entry["texts"] = [c.text for c in mine if c.source == row.source]
+                more = [
+                    {"text": c.text, "source": c.source} for c in mine if c.source != row.source
+                ]
+                if more:
+                    entry["more_texts"] = more
+                if row.display_name:
+                    entry["display_name"] = row.display_name
                 counts["texts"] += len(mine)
             entry["source"] = row.source
             target.append(entry)
@@ -592,9 +641,14 @@ def restore(session: Session, owner_id: uuid.UUID, owner_file: OwnerFile) -> Cou
         (Party, PartyText, "party_id", owner_file.parties),
     ):
         for label, columns, children in entries:
+            more = columns.pop("more_texts", [])
             parent = model(owner_id=owner_id, label=label, **columns)
             session.add(parent)
             session.flush()
+            for text, source in more:
+                session.add(
+                    PartyText(owner_id=owner_id, party_id=parent.id, text=text, source=source)
+                )
             for key in sorted(children):
                 values = dict(
                     zip(("kind", "value") if model is OwnAccount else ("text",), key, strict=True)
@@ -604,7 +658,7 @@ def restore(session: Session, owner_id: uuid.UUID, owner_file: OwnerFile) -> Cou
                         owner_id=owner_id, source=columns["source"], **{link: parent.id}, **values
                     )
                 )
-            counts["identifiers" if model is OwnAccount else "texts"] += len(children)
+            counts["identifiers" if model is OwnAccount else "texts"] += len(children) + len(more)
         counts["accounts" if model is OwnAccount else "parties"] += len(entries)
     for d in owner_file.roles:
         txn = ids[d["dedupe_key"]]

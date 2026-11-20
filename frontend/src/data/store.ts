@@ -5,8 +5,8 @@
 import { useSyncExternalStore } from 'react'
 
 import type { Api } from '../api/client.ts'
-import { bootPath } from '../boot.ts'
-import { SCHEMA_VERSION, type Snapshot } from '../api/types.ts'
+import { bootPath, clearBoot } from '../boot.ts'
+import { SCHEMA_VERSION, type Person, type Snapshot } from '../api/types.ts'
 import { dayLabel, timeLabel, today } from '../lib/dates.ts'
 import { addTiming, dropSnapshot, readLocal, saveLocal, touchLocal, wipeLocal, type Meta, type Timing } from './local.ts'
 
@@ -237,9 +237,11 @@ export function pauseData(): void {
   for (const hook of resetHooks) hook()
 }
 
-/** Sign-out or another login: stop, forget, and delete the phone copy and the outbox. */
+/** Sign-out or another login: stop, forget, and delete the phone copy, the outbox and the
+ *  boot record (localStorage "flash-boot"). */
 export async function clearData(): Promise<void> {
   pauseData()
+  clearBoot()
   await safe(wipeLocal)
 }
 
@@ -264,6 +266,13 @@ export function useSnapshot(): [Load<Snapshot>, () => void] {
   if (d.snapshot) return [{ status: 'ready', data: d.snapshot }, retry]
   if (d.failed && !d.refreshing) return [{ status: 'error', message: d.error }, retry]
   return [{ status: 'loading', slow: d.slow }, retry]
+}
+
+/** The people of the snapshot (4E, D-096), and one of them by key. */
+export function usePeople(): { people: Person[]; find: (key: string | null | undefined) => Person | undefined } {
+  const d = useData()
+  const people = d.snapshot?.people ?? []
+  return { people, find: (key) => (key ? people.find((p) => p.key === key) : undefined) }
 }
 
 /** "just now", "5 min ago", "2 h ago", "yesterday 21:40", "Tue 17 Nov 21:40" (IST). */

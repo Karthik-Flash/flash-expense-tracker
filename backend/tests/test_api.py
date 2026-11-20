@@ -46,7 +46,7 @@ from tests.test_storage import OWNER_FILE, stored
 def test_every_data_route_needs_a_login(client) -> None:
     paths = app.openapi()["paths"]
     data_routes = [(m, p) for p, ops in paths.items() if p.startswith("/api/v1") for m in ops]
-    assert len(data_routes) == 14
+    assert len(data_routes) == 18  # 4E: people name, clear name, join, separate
     for method, path in data_routes:
         url = re.sub(r"\{[^}]+\}", "1", path)
         response = client.request(method.upper(), url, json={})
@@ -240,8 +240,8 @@ def test_transactions_pages_filters_and_never_shows_message_text(client, data, d
     times = [(t["time_utc"], t["id"]) for t in items]
     assert times == sorted(times, reverse=True)
     assert set(items[0]) == {
-        "id", "time_utc", "amount_paise", "direction", "display_name", "person_id", "role",
-        "role_basis", "category", "category_name", "category_basis", "label",
+        "id", "time_utc", "amount_paise", "direction", "display_name", "identifier",
+        "person_id", "role", "role_basis", "category", "category_name", "category_basis", "label",
     }  # fmt: skip
     for t in items[:5]:  # one transaction by id: the same item
         assert get(client, f"/api/v1/transactions/{t['id']}").json() == t
@@ -432,7 +432,8 @@ def test_reset_sender_returns_it_to_confirm(client, data, db_engine) -> None:
 
 
 def test_reset_sender_keeps_a_category_default(client, data) -> None:
-    """A party that also holds the owner's category keeps it; its credits are to confirm."""
+    """A party that also holds the owner's category keeps it; its credits are to confirm:
+    the party has no answer any more (kind unsure), so the engine's own guess is back."""
     payback = next(s for s in get(client, "/api/v1/senders").json() if s["role"] == "payback")
     credit = next(t for t in all_transactions(client) if t["role"] == "payback")
     body = {"category": "gifts_donations", "scope": "merchant"}
@@ -440,7 +441,11 @@ def test_reset_sender_keeps_a_category_default(client, data) -> None:
     put(client, f"/api/v1/senders/{payback['id']}", {"answer": "friend"})
     client.delete(f"/api/v1/senders/{payback['id']}", headers=bearer(token()))
     after = get(client, f"/api/v1/transactions/{credit['id']}").json()
-    assert (after["role"], after["role_basis"]) == ("uncertain", "owner")
+    assert (after["role"], after["role_basis"], after["category"]) == (
+        "payback",
+        "engine",
+        "people",
+    )
     assert payback["id"] in {s["id"] for s in get(client, "/api/v1/senders").json()}
 
 

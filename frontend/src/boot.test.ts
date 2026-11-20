@@ -12,7 +12,7 @@ import { openDB } from 'idb'
 
 import type { Api } from './api/client.ts'
 import type { Snapshot } from './api/types.ts'
-import { accessToken, authState, expire, OFFLINE_SIGN_IN, signIn, startAuth } from './auth.ts'
+import { accessToken, authState, expire, OFFLINE_SIGN_IN, signIn, signOut, startAuth } from './auth.ts'
 import { bootPath, markPainted, noteBootError, readBoot, startWatchdog } from './boot.ts'
 import { ErrorBoundary } from './crash.ts'
 import { putOp, readOutbox, saveLocal, wipeLocal, type Meta } from './data/local.ts'
@@ -248,4 +248,15 @@ test('watchdog: a stuck phone copy read stops blocking; the server is asked, not
   assert.equal(dataState().snapshot, null)
   old.close()
   await clearData()
+})
+
+test('sign-out also clears the boot record (4E)', async () => {
+  await phoneCopy('user-a')
+  seed('user-a')
+  mockAuth({ getSession: async () => ({ data: { session: session('user-a', 3600) }, error: null }) })
+  noteBootError('test error')
+  assert.ok(localStorage.getItem('flash-boot'))
+  await signOut()
+  assert.equal(localStorage.getItem('flash-boot'), null)
+  assert.equal(authState().status, 'out')
 })

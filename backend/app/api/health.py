@@ -3,7 +3,7 @@ import secrets
 import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -26,6 +26,13 @@ UPSERT_HEARTBEAT = text(
 def health() -> dict[str, str]:
     """Liveness only. Never touches the database."""
     return {"status": "ok", "version": __version__}
+
+
+@router.head("/health")
+def health_head() -> Response:
+    """Liveness for a client that sends HEAD (a fallback for the warm job, D-098): 200,
+    no body, never the database."""
+    return Response(status_code=200)
 
 
 @router.get("/health/db")

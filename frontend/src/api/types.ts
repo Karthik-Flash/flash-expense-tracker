@@ -42,6 +42,9 @@ export interface Txn {
   amount_paise: number
   direction: 'debit' | 'credit'
   display_name: string | null
+  /** Under a person's name (D-096): the identifier this row came from, as the bank wrote it
+   *  (a name or a UPI ID); null when it is the name shown. Absent before 4E. */
+  identifier?: string | null
   /** Who the money went to or came from (p_ party, s_ sender); null with no counterparty text. */
   person_id: string | null
   role: Role
@@ -83,6 +86,26 @@ export interface Sender {
   last_time_utc: string
   /** The label of a confirmed income sender. */
   income_label: string | null
+  /** The person (as Txn.person_id) and a transaction to name or join them by (4E). */
+  person_id?: string | null
+  txn_id?: number
+}
+
+/** A person's answer: Friend, Family (income), Ignore, or none yet (to confirm). */
+export type PersonRole = 'friend' | 'income' | 'ignore' | 'none'
+
+/** Someone the owner can name or join (D-096): one party, or one identifier on its own. */
+export interface Person {
+  key: string
+  name: string | null
+  /** The owner gave the name. */
+  named: boolean
+  /** A transaction of this person, to act on. */
+  txn_id: number
+  /** null: no money came from them. */
+  role: PersonRole | null
+  /** Newest first: the names or UPI IDs the bank used, each with one of its transactions. */
+  identifiers: { name: string | null; txn_id: number; from_file: boolean }[]
 }
 
 export type SenderStatus = 'to_confirm' | 'confirmed' | 'ignored'
@@ -154,6 +177,8 @@ export interface Snapshot {
   }
   labels: LabelView[]
   categories: Category[]
+  /** Everyone to name or join (4E); absent in a phone copy from before. */
+  people?: Person[]
 }
 
 export type SnapshotAnswer = { status: 200; etag: string; snapshot: Snapshot; bytes: number } | { status: 304 }

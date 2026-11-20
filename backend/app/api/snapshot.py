@@ -184,6 +184,7 @@ def build(session, owner) -> dict:
             "unnamed": unnamed,
         },
         "labels": [v1.label_detail(owner, session, i) for i in label_ids],
+        "people": v1.people_directory(session, owner),
         "categories": v1.categories(owner),
     }
 

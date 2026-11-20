@@ -4,8 +4,9 @@ Summary of phases 0 to 6. Draft from Phase 0; the planner owns this file and
 refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
-**Status (20 Nov 2026):** Phases 0 to 3 done. **Phase 4 in progress**: 4C
-4B-1, 4B-2 and 4B-3 done; next 4E.
+**Status (20 Nov 2026):** Phases 0 to 3 done. **Phase 4 in progress**: 4C,
+4B-1, 4B-2, 4B-3 and 4E done (the owner picks a logo option); next 4F, then
+Phase 5, then the pilot. 4A, 4G and 4D run during the pilot.
 
 Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
@@ -133,8 +134,10 @@ until Phase 4.
 
 ## Phase 4: Installable offline-first PWA, owner fixes, second bank
 
-Order: 4C, 4B, 4E, 4F, 4G, 4D. 4A (carried from Phase 3) must finish before
-4D; before 4A the planner reminds the owner to download two months of
+Order (set 20 Nov 2026): 4C, 4B, 4E, then 4F (second bank), then Phase 5
+(the pilot-ready Android app), then the pilot. 4A, 4G and 4D run during the
+pilot. 4A (carried from Phase 3) must finish before 4D; before 4A the
+planner reminds the owner to download two months of
 statements (October and one messy month) as Excel or delimited text, not
 PDF, into `D:\FlashPrivate`.
 
@@ -151,11 +154,12 @@ PDF, into `D:\FlashPrivate`.
   freshness line and the Speed sheet. 4B-2 (19 Nov 2026, D-091 to D-094):
   every owner action through the outbox, shown as "Waiting to sync".
   4B-3 (20 Nov 2026, D-095): offline boot, never a blank screen.
-- [ ] 4E Owner fixes: join one person seen under a name and a UPI ID (To-do
-  sender cards get "See payments", "Name this person" and "Same as…"); a
-  faster To-do; the label length mismatch (column 80, API 30); a new logo:
-  3 original options (an idea: a lightning bolt behind the $), the owner
-  picks, then the wordmark and every app icon are updated.
+- [x] 4E Owner fixes (20 Nov 2026, D-096 to D-098): name a person and join
+  one person seen under a name and a UPI ID ("Same as…", Separate, history
+  kept), "See payments" and category chips on To-do, one label limit of 30,
+  HEAD /health, sign-out clears the boot record. Three logo options in
+  `docs/design/logo-options.html`; the owner picks, then the wordmark and
+  every app icon are updated (a short follow-up).
 - [ ] 4F Second bank: a counts-only survey of the 153 other-bank messages;
   pick the bank with the most money messages; vocabulary survey, parser,
   sender-registry entry, reparse.
@@ -170,9 +174,19 @@ PDF, into `D:\FlashPrivate`.
   messy month.
 - [ ] 4D Multi-month analysis.
 
-## Phase 5: Android shell and live SMS
+## Phase 5: Pilot-ready Android app (8-day target)
 
-Capacitor Android shell that reads bank SMS on the phone; no detail yet.
+- Multi-user: invites, per-user data, delete account.
+- Capacitor Android shell.
+- Kotlin SMS reading, history and live, uploaded through the outbox.
+- Onboarding, privacy policy, pilot invites.
+- Pilot fixes.
+
+Then the pilot; 4A, 4G and 4D run during it.
+
+Ops note: the cron-job.org warm job needs a non-browser User-Agent (a
+waking Render answers browser-like requests with an HTML page); the
+fallback is `HEAD /health` (200, no body, no database, D-098).
 
 ## Phase 6: Statements, Gmail, insights, differentiators
 
