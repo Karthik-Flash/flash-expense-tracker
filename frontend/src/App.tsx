@@ -4,7 +4,7 @@ import { api, DEMO, demoApi } from './api/index.ts'
 import { DEMO_STATES, type DemoState } from './api/fake.ts'
 import { markPainted, type BootPath } from './boot.ts'
 import { refreshToken, signIn, signOut, useAuth } from './auth.ts'
-import { startOutbox, syncState, todoView, unsynced, useOutbox } from './data/outbox.ts'
+import { checksView, startOutbox, syncState, todoView, unsynced, useOutbox } from './data/outbox.ts'
 import { clearData, startData, useData, useSnapshot } from './data/store.ts'
 import { AppContext, navigate, useNav, useScrollMemory, useView, type AppState } from './state.tsx'
 import { CategoryDetail, Home } from './screens/Home.tsx'
@@ -202,7 +202,7 @@ function TodoCount() {
   const { ops } = useOutbox()
   if (load.status !== 'ready') return null
   const t = todoView(load.data.todo, ops) // answers waiting to sync are not counted
-  const n = t.senders.length + t.merchants.length
+  const n = t.senders.length + t.merchants.length + checksView(load.data.transactions, ops).length
   if (!n) return null
   return (
     <span

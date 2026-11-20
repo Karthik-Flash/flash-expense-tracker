@@ -1,11 +1,12 @@
 import { useState } from 'react'
 
-import type { Category, Sender, Snapshot } from '../api/types.ts'
-import { actions, enqueue, personMark, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
+import type { Category, Sender, Snapshot, Txn } from '../api/types.ts'
+import { actions, checksView, enqueue, personMark, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { dayLabel } from '../lib/dates.ts'
 import { Button, Empty, Header, Loaded, Money, Section } from '../ui.tsx'
 import { seePayments, useNav } from '../state.tsx'
+import { isCredit, nameOf } from './common.ts'
 import { identifiersText, labelName, paymentsText, topCategories } from './derive.ts'
 import { Pending } from './Transactions.tsx'
 
@@ -19,14 +20,20 @@ export function TodoScreen() {
         {({ todo, categories, transactions }) => {
           // An item with an answer in the outbox leaves its list at once (D-093).
           const t = todoView(todo, ops)
+          const checks = checksView(transactions, ops)
           const chips = topCategories(transactions, categories)
           const personOf = (txnId: number) => transactions.find((x) => x.id === txnId)?.person_id ?? null
           return (
             <>
-              {t.senders.length === 0 && t.merchants.length === 0 && t.waiting.length === 0 && <Empty>Nothing to do.</Empty>}
+              {t.senders.length === 0 && t.merchants.length === 0 && t.waiting.length === 0 && checks.length === 0 && <Empty>Nothing to do.</Empty>}
               {t.waiting.length > 0 && (
                 <Section title="Waiting to sync">
                   {t.waiting.map((op) => <WaitingRow key={op.seq} op={op} />)}
+                </Section>
+              )}
+              {checks.length > 0 && (
+                <Section title="Check these payments">
+                  {checks.map((c) => <CheckRow key={c.id} t={c} />)}
                 </Section>
               )}
               {t.senders.length > 0 && (
@@ -66,6 +73,24 @@ function WaitingRow({ op }: { op: Op }) {
         <span className="min-w-0 truncate">{op.choice}</span>
         <Pending op={op} />
       </span>
+    </div>
+  )
+}
+
+/** A row the app read automatically from a bank it has no parser for yet (D-101). */
+function CheckRow({ t }: { t: Txn }) {
+  const item = nameOf(t)
+  return (
+    <div className="px-4 py-2.5">
+      <div className="flex items-baseline gap-3">
+        <span className="min-w-0 flex-1 truncate">{item}</span>
+        <Money paise={t.amount_paise} credit={isCredit(t)} />
+      </div>
+      <p className="truncate text-xs text-muted">{dayLabel(t.time_utc)} · Read automatically</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button className="flex-1" onClick={() => void enqueue(actions.looksRight(t, item))}>Looks right</Button>
+        <Button className="flex-1" onClick={() => void enqueue(actions.notAPayment(t, item))}>Not a payment</Button>
+      </div>
     </div>
   )
 }

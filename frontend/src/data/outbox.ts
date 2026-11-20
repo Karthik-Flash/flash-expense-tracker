@@ -331,8 +331,10 @@ export const unsynced = (ops: Op[]) => ops.filter((o) => o.state !== 'confirmed'
 /** The muted text beside a shown choice. */
 export const markText = (op: Op) => (op.state === 'confirmed' ? '' : 'Waiting to sync')
 
-/** The newest action that changes this row's category or label (failed ones do not). */
-export function markFor(ops: Op[], t: Txn): { category?: Op; label?: Op } {
+const isCheck = (o: Op) => o.path.endsWith('/check') || o.path.endsWith('/ignore')
+
+/** The newest action that changes this row's category, label or count (failed ones do not). */
+export function markFor(ops: Op[], t: Txn): { category?: Op; label?: Op; counted?: Op } {
   const live = ops.filter((o) => o.state !== 'failed')
   const last = (match: (o: Op) => boolean) => live.filter(match).at(-1)
   const spending = t.role === 'spend' || t.role === 'card_bill_counted' || t.role === 'refund'
@@ -343,7 +345,14 @@ export function markFor(ops: Op[], t: Txn): { category?: Op; label?: Op } {
         (o.targets.txns?.includes(t.id) || (spending && t.display_name !== null && Boolean(o.targets.merchants?.includes(t.display_name)))),
     ),
     label: last((o) => o.path.endsWith('/label') && Boolean(o.targets.txns?.includes(t.id))),
+    counted: last((o) => isCheck(o) && Boolean(o.targets.txns?.includes(t.id))),
   }
+}
+
+/** Rows read automatically that still ask "Looks right?", without those answered offline. */
+export function checksView(txns: Txn[], ops: Op[]): Txn[] {
+  const answered = new Set(ops.filter((o) => o.state !== 'failed' && isCheck(o)).flatMap((o) => o.targets.txns ?? []))
+  return txns.filter((t) => t.check && !answered.has(t.id))
 }
 
 /** The newest name, join or separate waiting for this person (failed ones do not count). */
@@ -371,7 +380,9 @@ export function todoView(todo: Snapshot['todo'], ops: Op[]) {
     senders: todo.senders.filter((s) => !senders.has(s.id)),
     answered: todo.answered.filter((s) => !senders.has(s.id)),
     merchants: todo.merchants.filter((m) => !merchants.has(m.name)),
-    waiting: live.filter((o) => o.targets.senders?.length || (o.targets.merchants?.length && o.kind.startsWith('All from'))),
+    waiting: live.filter(
+      (o) => o.targets.senders?.length || (o.targets.merchants?.length && o.kind.startsWith('All from')) || (isCheck(o) && o.method === 'PUT'),
+    ),
   }
 }
 
@@ -460,6 +471,16 @@ export const actions = {
       body: role ? { into: into.txn_id, role } : { into: into.txn_id },
       targets: { people: [p.key, into.key] },
     }
+  },
+  // Checks (D-101, D-103): a row read automatically, and Not a payment for any row.
+  looksRight(t: Pick<Txn, 'id'>, item: string): NewOp {
+    return { kind: 'Looks right', item, choice: 'Looks right', method: 'PUT', path: `/transactions/${t.id}/check`, body: null, targets: { txns: [t.id] } }
+  },
+  notAPayment(t: Pick<Txn, 'id'>, item: string): NewOp {
+    return { kind: 'Not a payment', item, choice: 'Not a payment', method: 'PUT', path: `/transactions/${t.id}/ignore`, body: null, targets: { txns: [t.id] } }
+  },
+  countAgain(t: Pick<Txn, 'id'>, item: string): NewOp {
+    return { kind: 'Count it again', item, choice: 'Counted again', method: 'DELETE', path: `/transactions/${t.id}/ignore`, body: null, targets: { txns: [t.id] } }
   },
   separate(p: Pick<Person, 'key' | 'name'>, identifier: { name: string | null; txn_id: number }): NewOp {
     const name = identifier.name ?? 'Identifier'

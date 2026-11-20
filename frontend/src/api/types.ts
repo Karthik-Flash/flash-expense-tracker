@@ -54,6 +54,10 @@ export interface Txn {
   category_name: string
   category_basis: Basis
   label: { id: number; name: string } | null
+  /** Read by the generic parser, for a bank with no parser of its own yet (D-101). */
+  generic?: boolean
+  /** A generic row the owner has not checked yet: "Looks right" or "Not a payment". */
+  check?: boolean
 }
 
 export interface Category {
