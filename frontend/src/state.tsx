@@ -28,7 +28,8 @@ const NAVIGATE = 'flash:navigate'
 const scrolls = new Map<string, number>()
 let lastMove: Move | 'pop' = 'replace'
 
-const baseOf = (view: View) => toHash({ ...view, txn: null })
+// A sheet over a list leaves its scroll alone.
+const baseOf = (view: View) => toHash({ ...view, txn: null, person: null, act: null, sheet: null })
 
 /** Once, before the first render: give a cold deep link the history under it. */
 export function startNavigation(): void {
@@ -67,6 +68,11 @@ function subscribe(onChange: () => void) {
     window.removeEventListener('popstate', onPop)
     window.removeEventListener(NAVIGATE, onChange)
   }
+}
+
+/** "See payments" (4E): every transaction of one person, all months (?who=); Back returns. */
+export function seePayments(key: string): void {
+  navigate({ ...parseHash(''), tab: 'transactions', who: key }, 'open')
 }
 
 export function useView(): View {

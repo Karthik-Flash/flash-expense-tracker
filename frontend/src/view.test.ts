@@ -63,3 +63,18 @@ test('app-wide sheets live in the URL and close first on Back', () => {
   assert.equal(parseHash('#/todo?nothing').sheet, null)
   assert.deepEqual(stack(parseHash('#/transactions?txn=9&unsaved')).map(toHash), ['#/transactions', '#/transactions?txn=9', '#/transactions?txn=9&unsaved'])
 })
+
+test('4E: one person\'s payments and the person sheet live in the URL; Back steps out', () => {
+  const pay: View = { ...HOME, tab: 'transactions', who: 'p_12' }
+  const sheet: View = { ...HOME, tab: 'todo', person: 's_ab12', act: 'join' }
+  for (const view of [pay, sheet, { ...pay, txn: 7, person: 'p_12' }]) assert.deepEqual(parseHash(toHash(view)), view)
+  assert.equal(toHash(sheet), '#/todo?person=s_ab12&do=join')
+  assert.equal(toHash(parseHash('#/todo?do=join')), '#/todo') // a step needs its person
+  assert.equal(toHash(parseHash('#/todo?person=p_1&do=delete')), '#/todo?person=p_1')
+  // The person sheet closes first, then the transaction, then the filter.
+  assert.deepEqual(
+    stack({ ...pay, txn: 7, person: 'p_12', act: 'name' }).map(toHash),
+    ['#/transactions', '#/transactions?who=p_12', '#/transactions?txn=7&who=p_12', '#/transactions?txn=7&who=p_12&person=p_12&do=name'],
+  )
+  assert.deepEqual(parentOf(pay), { ...pay, who: null })
+})

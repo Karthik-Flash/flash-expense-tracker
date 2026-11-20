@@ -1,12 +1,12 @@
 import { useState } from 'react'
 
 import type { Txn } from '../api/types.ts'
-import { actions, enqueue, markFor, markText, undo, useOutbox, type Op } from '../data/outbox.ts'
-import { useSnapshot } from '../data/store.ts'
+import { actions, enqueue, markFor, markText, personMark, shownName, undo, useOutbox, type Op } from '../data/outbox.ts'
+import { usePeople, useSnapshot } from '../data/store.ts'
 import { currentMonth, dayKey, dayLabel, fullLabel } from '../lib/dates.ts'
 import { useNav } from '../state.tsx'
 import { Button, CategoryTile, Empty, Freshness, Icon, Loaded, Money, MonthSwitcher, RowButton, Section, Sheet } from '../ui.tsx'
-import { countsInSpent, labelName, matches, monthTxns } from './derive.ts'
+import { countsInSpent, labelName, matches, monthTxns, personKey } from './derive.ts'
 import { isCredit, nameOf, roleText, subtitle } from './common.ts'
 
 export function Transactions() {
@@ -15,10 +15,24 @@ export function Transactions() {
   const cats = load.status === 'ready' ? load.data.categories : []
   const labels = load.status === 'ready' ? load.data.labels : []
   const field = 'min-h-11 w-full min-w-0 rounded-lg border border-line bg-surface px-3 text-sm text-ink'
+  const { find } = usePeople()
+  const { ops } = useOutbox()
+  // "See payments" (4E): one person, every month; Back returns to where it was opened.
+  const who = view.who
+  const whoPerson = find(who)
+  const whoTxn = who && load.status === 'ready' ? load.data.transactions.find((t) => personKey(t) === who) : undefined
+  const whoName = whoPerson ? shownName(ops, whoPerson) : whoTxn ? nameOf(whoTxn) : 'Person'
   return (
     <>
       <div className="pt-2">
-        <MonthSwitcher month={month} setMonth={(m) => replace({ month: m })} latest={currentMonth()} />
+        {who ? (
+          <div className="flex min-h-11 items-center gap-3 px-4">
+            <h1 className="min-w-0 flex-1 truncate font-medium">Payments with {whoName}</h1>
+            <button type="button" className="min-h-11 shrink-0 px-1 text-sm text-accent" onClick={() => replace({ who: null })}>Show all</button>
+          </div>
+        ) : (
+          <MonthSwitcher month={month} setMonth={(m) => replace({ month: m })} latest={currentMonth()} />
+        )}
         <Freshness />
       </div>
       <div className="space-y-2 px-4 pt-2">
@@ -57,7 +71,7 @@ export function Transactions() {
       <Loaded load={load} retry={retry}>
         {(s) => (
           <TxnList
-            txns={monthTxns(s, month).filter(
+            txns={(who ? s.transactions.filter((t) => personKey(t) === who) : monthTxns(s, month)).filter(
               (t) =>
                 (!view.category || t.category === view.category) &&
                 (view.label === null || t.label?.id === view.label) &&
@@ -124,6 +138,7 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{nameOf(t)}</span>
                 <span className="block truncate text-xs text-muted">
+                  {t.identifier && `${t.identifier} · `}
                   {title && `${dayLabel(t.time_utc)} · `}
                   {subtitle(shown)}
                   {label && ` · ${label}`}
@@ -159,6 +174,10 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
   const counts = countsInSpent(txn)
   const mark = markFor(ops, txn)
   const item = nameOf(txn)
+  const { open } = useNav()
+  const person = usePeople().find(txn.person_id)
+  const personNote = person && personMark(ops, person.key)
+  const here = person?.identifiers.find((i) => i.txn_id === txn.id || i.name === (txn.identifier ?? txn.display_name))
 
   // Saved on the phone at once and sent in the background (D-091): the sheet just closes.
   const save = (change: Parameters<typeof enqueue>[0]) => {
@@ -181,7 +200,29 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
             <Item term="Counted" value={roleText(txn)} />
             <Item term="Category" value={category} mark={mark.category} />
             <Item term="Label" value={label} mark={mark.label} />
+            {person && (
+              <Item
+                term="Person"
+                value={`${shownName(ops, person)}${txn.identifier ? ` (${txn.identifier})` : ''}`}
+                mark={personNote}
+              />
+            )}
           </dl>
+          {person && (
+            <div className="mt-2 flex flex-wrap justify-end gap-x-3">
+              <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => open({ person: person.key, act: 'name' })}>
+                {person.named ? 'Rename' : 'Name'}
+              </button>
+              <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => open({ person: person.key, act: 'join' })}>
+                Same as…
+              </button>
+              {person.identifiers.length > 1 && here && !here.from_file && (
+                <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => save(actions.separate({ ...person, name: shownName(ops, person) }, { name: here.name, txn_id: txn.id }))}>
+                  Separate
+                </button>
+              )}
+            </div>
+          )}
           <div className="mt-5 grid grid-cols-2 gap-2">
             <Button onClick={() => setStep({ kind: 'category' })} disabled={!counts}>Change category</Button>
             <Button onClick={() => setStep({ kind: 'label' })}>Label</Button>

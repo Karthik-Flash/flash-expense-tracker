@@ -12,6 +12,8 @@ import {
   type LabelView,
   type Merchant,
   type MonthData,
+  type Person,
+  type PersonRole,
   type PersonRow,
   type Role,
   type Sender,
@@ -148,6 +150,7 @@ function build(): Row[] {
   add([2026, 11, 15, 11, 20], 420, 'Goa Scooty Rentals', 'uncategorised', trip)
   add([2026, 11, 16, 19, 40], 120, 'Swiggy', 'food_drinks', { direction: 'credit', role: 'refund' })
   credit([2026, 11, 16, 22, 5], 1250, 'Rohit V', 'payback', 'engine')
+  credit([2026, 11, 17, 9, 40], 300, '*k77@okhdfcbank', 'payback', 'engine') // a masked UPI ID
   add([2026, 11, 7, 17, 0], 750, 'Meera S', 'gifts_donations', { label: 2, basis: 'owner' })
 
   return rows
@@ -176,6 +179,10 @@ export class FakeApi implements Api {
   private incomeLabel = new Map<string, string>()
   private wokeAt = 0
   private answers = new Map<string, SendAnswer>()
+  // People (4E): the owner's names by person key, and which identifier belongs to whom.
+  private names = new Map<string, string>()
+  private joins = new Map<string, string>()
+  private parties = 0
 
   setState(state: DemoState): void {
     this.state = state
@@ -209,6 +216,17 @@ export class FakeApi implements Api {
     return own ? { category: own, basis: 'owner' } : { category: row.engineCategory, basis: row.basis }
   }
 
+  /** An identifier's own key (as the server's sender id of its text). */
+  private base(row: Row): string | null {
+    return row.name ? senderId(row.name, row.id) : null
+  }
+
+  /** The person of a row: a party (p_) once named or joined, else its identifier. */
+  private personOf(row: Row): string | null {
+    const b = this.base(row)
+    return b && (this.joins.get(b) ?? b)
+  }
+
   private txn(row: Row): Txn {
     const { role, basis: roleBasis } = this.role(row)
     const { category, basis } = this.category(row)
@@ -217,8 +235,9 @@ export class FakeApi implements Api {
       time_utc: row.time,
       amount_paise: row.amount,
       direction: row.direction,
-      display_name: row.name,
-      person_id: row.name ? senderId(row.name, row.id) : null,
+      display_name: row.name && (this.names.get(this.personOf(row)!) ?? row.name),
+      identifier: row.name && this.names.has(this.personOf(row)!) ? row.name : null,
+      person_id: this.personOf(row),
       role,
       role_basis: roleBasis,
       category,
@@ -259,7 +278,7 @@ export class FakeApi implements Api {
     for (const row of rows) {
       const { role } = this.role(row)
       if (row.direction !== 'credit' || !['payback', 'uncertain', 'income', 'ignored'].includes(role)) continue
-      const id = senderId(row.name, row.id)
+      const id = this.personOf(row) ?? senderId(null, row.id)
       groups.set(id, [...(groups.get(id) ?? []), row])
     }
     return [...groups.entries()]
@@ -271,7 +290,7 @@ export class FakeApi implements Api {
         const role = (kept.at(-1)?.role ?? 'ignored') as Sender['role']
         return {
           id,
-          display_name: mine[0].name,
+          display_name: mine[0].name && (this.names.get(id) ?? mine[0].name),
           total_paise: mine.reduce((sum, r) => sum + r.amount, 0),
           count: mine.length,
           role,
@@ -279,6 +298,8 @@ export class FakeApi implements Api {
           status,
           last_time_utc: mine[mine.length - 1].time,
           income_label: role === 'income' ? (this.incomeLabel.get(id) ?? null) : null,
+          person_id: mine[0].name ? id : null,
+          txn_id: mine[mine.length - 1].id,
         }
       })
       .sort((a, b) => b.total_paise - a.total_paise || a.id.localeCompare(b.id))
@@ -368,6 +389,7 @@ export class FakeApi implements Api {
         todo: { senders: senders.filter((s) => s.status === 'to_confirm'), answered: senders.filter((s) => s.status !== 'to_confirm'), ...todo(transactions) },
         labels,
         categories: CATEGORIES,
+        people: this.peopleOf(transactions),
       }
       const text = JSON.stringify(document)
       const tag = `"${senderId(text, 0)}"`
@@ -396,8 +418,77 @@ export class FakeApi implements Api {
     })
   }
 
+  /** As app/api/v1.py people_directory: who can be named or joined. */
+  private peopleOf(txns: Txn[]): Person[] {
+    const roles = new Map(this.sendersOf(this.visible()).map((s) => [s.id, roleOf(s)]))
+    const out = new Map<string, Person>()
+    const counts = new Set<string>()
+    for (const t of txns) {
+      const row = this.rows.find((x) => x.id === t.id)!
+      const key = this.personOf(row)
+      if (!key) continue
+      const p = out.get(key) ?? { key, name: t.display_name, named: this.names.has(key), txn_id: t.id, role: roles.get(key) ?? null, identifiers: [] }
+      if (!p.identifiers.some((i) => i.name === row.name)) p.identifiers.push({ name: row.name, txn_id: t.id, from_file: false })
+      if (roles.has(key) || t.category === 'people' || t.role === 'payback' || key.startsWith('p_')) counts.add(key)
+      out.set(key, p)
+    }
+    return [...out.values()].filter((p) => counts.has(p.key)).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+  }
+
+  /** A party key for this row's person, made when it is still a lone identifier. */
+  private partyOf(row: Row): string {
+    const key = this.personOf(row)
+    if (!key) throw new ApiError(422, 'The transaction has no merchant text.')
+    if (key.startsWith('p_')) return key
+    const party = `p_${++this.parties}`
+    this.joins.set(key, party)
+    return party
+  }
+
+  private person(txnId: number, method: string, what: string, b: Record<string, unknown>): void {
+    const row = this.rows.find((r) => r.id === txnId)
+    if (!row) throw new ApiError(404, 'No such transaction.')
+    if (what === 'name' && method === 'PUT') {
+      const name = String(b.name ?? '').trim().replace(/\s+/g, ' ')
+      if (!name || [...name].length > 30) throw new ApiError(422, 'A name has 1 to 30 characters.')
+      this.names.set(this.partyOf(row), name)
+    } else if (what === 'name') {
+      if (!this.names.delete(this.personOf(row) ?? '')) throw new ApiError(404, 'This person has no name to clear.')
+    } else if (method === 'PUT') {
+      const into = this.rows.find((r) => r.id === Number(b.into))
+      if (!into) throw new ApiError(404, 'No such transaction.')
+      const from = this.personOf(row)
+      if (!from) throw new ApiError(422, 'The transaction has no merchant text.')
+      if (from === this.personOf(into)) throw new ApiError(409, 'These are already the same person.')
+      const roles = new Map(this.sendersOf(this.rows).map((s) => [s.id, roleOf(s)]))
+      const [mine, theirs] = [roles.get(from), roles.get(this.personOf(into)!)]
+      const role = b.role as PersonRole | undefined
+      if (mine && theirs && mine !== theirs && !role) throw new ApiError(409, 'The two have different answers: choose the one the person keeps.')
+      const target = this.partyOf(into)
+      for (const [identifier, owner] of [...this.joins]) if (owner === from) this.joins.set(identifier, target)
+      if (!from.startsWith('p_')) this.joins.set(from, target)
+      if (!this.names.has(target) && this.names.has(from)) this.names.set(target, this.names.get(from)!)
+      if (!this.names.has(target) && into.name) this.names.set(target, into.name.slice(0, 30)) // "Same as Rohit V"
+      const chosen = role ?? theirs ?? mine
+      if (chosen && chosen !== theirs) {
+        for (const r of this.rows.filter((x) => x.direction === 'credit' && this.personOf(x) === target)) {
+          if (chosen === 'none') this.roleAnswer.delete(r.id)
+          else this.roleAnswer.set(r.id, chosen === 'friend' ? 'payback' : chosen === 'income' ? 'income' : 'ignored')
+        }
+      }
+    } else {
+      const b0 = this.base(row)
+      const owner = b0 && this.joins.get(b0)
+      if (!b0 || !owner) throw new ApiError(404, 'This identifier is not part of a person.')
+      if ([...this.joins.values()].filter((o) => o === owner).length < 2) throw new ApiError(409, "This is the person's only identifier.")
+      this.joins.delete(b0)
+    }
+  }
+
   private apply({ method, path, body }: SendRequest): void {
     const b = (body ?? {}) as Record<string, string | number | undefined>
+    const person = /^\/people\/(\d+)\/(name|join)$/.exec(path)
+    if (person) return this.person(Number(person[1]), method, person[2], b)
     const sender = /^\/senders\/([^/]+)$/.exec(path)
     const txn = /^\/transactions\/(\d+)\/(category|label)$/.exec(path)
     if (sender && method === 'PUT') return this.answerSender(decodeURIComponent(sender[1]), b as unknown as SenderAnswer)
@@ -416,13 +507,13 @@ export class FakeApi implements Api {
     const sender = this.sendersOf(this.rows).find((s) => s.id === id)
     if (!sender) throw new ApiError(404, 'No such sender.')
     const role: Role = answer.answer === 'friend' ? 'payback' : answer.answer === 'income' ? 'income' : 'ignored'
-    const mine = this.rows.filter((r) => r.direction === 'credit' && senderId(r.name, r.id) === id)
+    const mine = this.rows.filter((r) => r.direction === 'credit' && (this.personOf(r) ?? senderId(null, r.id)) === id)
     for (const row of mine) this.roleAnswer.set(row.id, role)
     if (answer.answer === 'income') this.incomeLabel.set(id, answer.label.trim().replace(/\s+/g, ' '))
   }
 
   private resetSender(id: string): void {
-    const mine = this.rows.filter((r) => r.direction === 'credit' && senderId(r.name, r.id) === id)
+    const mine = this.rows.filter((r) => r.direction === 'credit' && (this.personOf(r) ?? senderId(null, r.id)) === id)
     if (!mine.length) throw new ApiError(404, 'No such sender.')
     for (const row of mine) this.roleAnswer.delete(row.id)
     this.incomeLabel.delete(id)
@@ -464,6 +555,13 @@ export class FakeApi implements Api {
     if (!row) throw new ApiError(404, 'No such transaction.')
     row.label = null
   }
+}
+
+/** As owner_actions.person_role. */
+function roleOf(s: Sender): PersonRole {
+  if (s.status === 'ignored') return 'ignore'
+  if (s.status === 'to_confirm') return 'none'
+  return s.role === 'income' ? 'income' : 'friend'
 }
 
 // The server's figures, for the demo only (app/api/snapshot.py does this for real data). The

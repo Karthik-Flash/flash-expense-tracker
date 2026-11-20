@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react'
 
 import type { Merchant, MonthData, PersonRow, Summary, Txn } from '../api/types.ts'
 import { Wordmark } from '../brand.tsx'
-import { noteHomeDrawn, useSnapshot } from '../data/store.ts'
+import { shownName, useOutbox } from '../data/outbox.ts'
+import { noteHomeDrawn, usePeople, useSnapshot } from '../data/store.ts'
 import { currentMonth, monthLabel } from '../lib/dates.ts'
 import { percentOf, rupees } from '../lib/money.ts'
 import { HOME } from '../view.ts'
 import { navigate, useApp, useNav } from '../state.tsx'
 import { Bar, CategoryTile, Empty, Figure, Freshness, Header, Icon, Loaded, Money, MonthSwitcher, Notice, RowButton, Section } from '../ui.tsx'
 import { nameOf } from './common.ts'
-import { isPersonTxn, monthData, monthTxns, personKey } from './derive.ts'
+import { identifiersText, isPersonTxn, monthData, monthTxns, personKey } from './derive.ts'
 import { Ring } from './Ring.tsx'
 import { TxnList } from './Transactions.tsx'
 
@@ -231,18 +232,22 @@ function Merchants({ rows, slug }: { rows: Merchant[]; slug: string }) {
 /** People: what went to each person and what came back. Money in is not part of Spent. */
 function Ledger({ rows }: { rows: PersonRow[] }) {
   const { open } = useNav()
+  const { find } = usePeople()
+  const { ops } = useOutbox()
   if (!rows.length) return <Empty>No money to or from people this month.</Empty>
   return (
     <>
       <Section title="Sent and got back">
         {rows.map((p) => (
-          <RowButton key={p.key} onClick={() => open({ path: ['category', 'people', p.key] })}>
+          // A row opens the person sheet: name, identifiers, Rename, Separate (4E).
+          <RowButton key={p.key} onClick={() => open({ person: p.key })}>
             <span className="min-w-0 flex-1">
               <span className="flex items-baseline gap-3">
-                <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                <span className="min-w-0 flex-1 truncate">{find(p.key) ? shownName(ops, find(p.key)!, p.name) : p.name}</span>
                 <span className="shrink-0 text-xs text-muted">Net</span>
                 <Money paise={p.net_paise} />
               </span>
+              {identifiersText(find(p.key)) && <span className="block truncate text-xs text-muted">{identifiersText(find(p.key))}</span>}
               <span className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted tabular-nums">
                 <span className="whitespace-nowrap">Sent {rupees(p.sent_paise)}</span>
                 <span className="whitespace-nowrap">Got back {rupees(p.got_back_paise)}</span>

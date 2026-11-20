@@ -6,7 +6,7 @@
 import { useSyncExternalStore } from 'react'
 
 import { ApiError, type Api, type SendRequest } from '../api/client.ts'
-import type { Category, Sender, SenderAnswer, Snapshot, Txn } from '../api/types.ts'
+import type { Category, Person, PersonRole, Sender, SenderAnswer, Snapshot, Txn } from '../api/types.ts'
 import { deleteOp, putOp, readOutbox } from './local.ts'
 import { asksSoFar, onApplied, onReset, refresh } from './store.ts'
 
@@ -19,6 +19,8 @@ export interface Targets {
   merchants?: string[]
   /** Names of labels being made. */
   labels?: string[]
+  /** Person keys a name or join is about (D-096). */
+  people?: string[]
 }
 
 export interface Op {
@@ -344,6 +346,22 @@ export function markFor(ops: Op[], t: Txn): { category?: Op; label?: Op } {
   }
 }
 
+/** The newest name, join or separate waiting for this person (failed ones do not count). */
+export function personMark(ops: Op[], key: string): Op | undefined {
+  return ops.filter((o) => o.state !== 'failed' && o.path.startsWith('/people/') && o.targets.people?.includes(key)).at(-1)
+}
+
+/** The name to show for a person: a waiting rename or clear first, then the server's. */
+export function shownName(ops: Op[], p: Pick<Person, 'key' | 'name'>, fallback = 'Person'): string {
+  const mark = personMark(ops, p.key)
+  if (mark?.path.endsWith('/name')) return mark.method === 'DELETE' ? (p.name ?? fallback) : mark.choice
+  return p.name ?? fallback
+}
+
+/** Both have an answer and they differ: the join must ask which one stays (D-096). */
+export const roleConflict = (a: Pick<Person, 'role'>, b: Pick<Person, 'role'>): boolean =>
+  a.role !== null && b.role !== null && a.role !== b.role
+
 /** To-do without the items that already have an answer waiting; those are listed apart. */
 export function todoView(todo: Snapshot['todo'], ops: Op[]) {
   const live = ops.filter((o) => o.state !== 'failed')
@@ -364,7 +382,7 @@ export function syncLine(ops: Op[], signIn: boolean): { waiting: string; failed:
   return { waiting: n ? `${n} waiting to sync` : '', failed: f ? `${f} couldn't save` : '', signIn }
 }
 
-// --- The six owner actions as outbox entries -----------------------------------------
+// --- The owner actions as outbox entries -------------------------------------------------
 
 const ANSWER_TEXT = { friend: 'Friend', income: 'Family', ignore: 'Ignored' } as const
 
@@ -422,5 +440,29 @@ export const actions = {
   },
   clearLabel(t: Txn, item: string): NewOp {
     return { kind: 'No label', item, choice: 'No label', method: 'DELETE', path: `/transactions/${t.id}/label`, body: null, targets: { txns: [t.id] } }
+  },
+  // People (D-096): each names its person by one of its transactions, so a queue made
+  // offline lands right after the actions before it.
+  namePerson(p: Pick<Person, 'key' | 'txn_id' | 'name'>, name: string): NewOp {
+    return { kind: `Name: ${name}`, item: p.name ?? 'Person', choice: name, method: 'PUT', path: `/people/${p.txn_id}/name`, body: { name }, targets: { people: [p.key] } }
+  },
+  clearName(p: Pick<Person, 'key' | 'txn_id' | 'name'>): NewOp {
+    return { kind: 'Clear name', item: p.name ?? 'Person', choice: 'No name', method: 'DELETE', path: `/people/${p.txn_id}/name`, body: null, targets: { people: [p.key] } }
+  },
+  joinPerson(p: Pick<Person, 'key' | 'txn_id' | 'name'>, into: Pick<Person, 'key' | 'txn_id' | 'name'>, role: PersonRole | null): NewOp {
+    const name = into.name ?? 'Person'
+    return {
+      kind: `Same as ${name}`,
+      item: p.name ?? 'Person',
+      choice: `Same as ${name}`,
+      method: 'PUT',
+      path: `/people/${p.txn_id}/join`,
+      body: role ? { into: into.txn_id, role } : { into: into.txn_id },
+      targets: { people: [p.key, into.key] },
+    }
+  },
+  separate(p: Pick<Person, 'key' | 'name'>, identifier: { name: string | null; txn_id: number }): NewOp {
+    const name = identifier.name ?? 'Identifier'
+    return { kind: `Separate ${name}`, item: p.name ?? 'Person', choice: `Separate ${name}`, method: 'DELETE', path: `/people/${identifier.txn_id}/join`, body: null, targets: { people: [p.key] } }
   },
 }

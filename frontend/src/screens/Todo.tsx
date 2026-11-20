@@ -1,11 +1,12 @@
 import { useState } from 'react'
 
 import type { Category, Sender, Snapshot } from '../api/types.ts'
-import { actions, enqueue, todoView, useOutbox, type Op } from '../data/outbox.ts'
-import { useSnapshot } from '../data/store.ts'
+import { actions, enqueue, personMark, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
+import { usePeople, useSnapshot } from '../data/store.ts'
 import { dayLabel } from '../lib/dates.ts'
 import { Button, Empty, Header, Loaded, Money, Section } from '../ui.tsx'
-import { labelName, paymentsText } from './derive.ts'
+import { seePayments, useNav } from '../state.tsx'
+import { identifiersText, labelName, paymentsText, topCategories } from './derive.ts'
 import { Pending } from './Transactions.tsx'
 
 export function TodoScreen() {
@@ -15,9 +16,11 @@ export function TodoScreen() {
     <>
       <Header title="To-do" />
       <Loaded load={load} retry={retry}>
-        {({ todo, categories }) => {
+        {({ todo, categories, transactions }) => {
           // An item with an answer in the outbox leaves its list at once (D-093).
           const t = todoView(todo, ops)
+          const chips = topCategories(transactions, categories)
+          const personOf = (txnId: number) => transactions.find((x) => x.id === txnId)?.person_id ?? null
           return (
             <>
               {t.senders.length === 0 && t.merchants.length === 0 && t.waiting.length === 0 && <Empty>Nothing to do.</Empty>}
@@ -33,7 +36,7 @@ export function TodoScreen() {
               )}
               {t.merchants.length > 0 && (
                 <Section title="Pick a category">
-                  {t.merchants.map((m) => <MerchantRow key={m.name} m={m} cats={categories} />)}
+                  {t.merchants.map((m) => <MerchantRow key={m.name} m={m} cats={categories} chips={chips} who={personOf(m.txn_id)} />)}
                 </Section>
               )}
               {todo.unnamed > 0 && (
@@ -81,15 +84,26 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
   const rule = labelName(family, [])
   // Saved on the phone first; the row moves to "Waiting to sync" (D-091).
   const answer = (a: Parameters<typeof actions.answerSender>[1]) => void enqueue(actions.answerSender(s, a))
+  const { ops } = useOutbox()
+  const { open } = useNav()
+  const person = usePeople().find(s.person_id)
+  const mark = person && personMark(ops, person.key)
+  const under = identifiersText(person)
   return (
     <div className="px-4 py-2.5">
       <div className="flex items-baseline gap-3">
-        <span className="min-w-0 flex-1 truncate">{s.display_name ?? 'Bank transfer in'}</span>
+        <span className="min-w-0 flex-1 truncate">{person ? shownName(ops, person, s.display_name ?? 'Bank transfer in') : (s.display_name ?? 'Bank transfer in')}</span>
         <Money paise={s.total_paise} credit />
       </div>
+      {under && <p className="truncate text-xs text-muted">{under}</p>}
       <p className="truncate text-xs text-muted">
         {s.count} {s.count === 1 ? 'credit' : 'credits'} · last {dayLabel(s.last_time_utc)}
       </p>
+      {mark && (
+        <p className="text-sm">
+          {mark.choice} <Pending op={mark} />
+        </p>
+      )}
       {mode === 'shown' && (
         <div className="mt-1 flex items-center gap-3">
           <span className="min-w-0 flex-1 text-sm wrap-break-word">{answerText(s)}</span>
@@ -102,6 +116,15 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
             <Button className="flex-1" onClick={() => answer({ answer: 'friend' })}>Friend</Button>
             <Button className="flex-1" onClick={() => setMode('family')}>Family</Button>
             <Button className="flex-1" onClick={() => answer({ answer: 'ignore' })}>Ignore</Button>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3">
+            {person && (
+              <>
+                <button type="button" className={QUIET} onClick={() => open({ person: person.key, act: 'name' })}>Name</button>
+                <button type="button" className={QUIET} onClick={() => open({ person: person.key, act: 'join' })}>Same as…</button>
+              </>
+            )}
+            {s.person_id && <button type="button" className={QUIET} onClick={() => seePayments(s.person_id!)}>See payments</button>}
           </div>
           {answered && (
             <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3">
@@ -140,8 +163,12 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
   )
 }
 
-function MerchantRow({ m, cats }: { m: Snapshot['todo']['merchants'][number]; cats: Category[] }) {
+const QUIET = 'min-h-11 text-sm text-accent'
+
+function MerchantRow({ m, cats, chips, who }: { m: Snapshot['todo']['merchants'][number]; cats: Category[]; chips: Category[]; who: string | null }) {
   const when = paymentsText(m.count, m.last_time_utc)
+  // "All from" as before: every payment to them, past and future (D-091 outbox).
+  const pick = (c: Category) => void enqueue(actions.setCategory({ id: m.txn_id, display_name: m.name }, c, 'merchant', m.name))
   return (
     <div className="px-4 py-2.5">
       <div className="flex items-baseline gap-3">
@@ -149,18 +176,28 @@ function MerchantRow({ m, cats }: { m: Snapshot['todo']['merchants'][number]; ca
         <Money paise={m.total_paise} />
       </div>
       <p className="truncate text-xs text-muted">{when}</p>
-      <select
-        aria-label={`Category for ${m.name}, ${when}`}
-        value=""
-        onChange={(e) => {
-          const picked = cats.find((c) => c.slug === e.target.value)
-          if (picked) void enqueue(actions.setCategory({ id: m.txn_id, display_name: m.name }, picked, 'merchant', m.name))
-        }}
-        className="mt-1.5 min-h-11 w-full rounded-lg border border-line bg-surface px-3 text-sm"
-      >
-        <option value="">Pick a category</option>
-        {cats.filter((c) => c.slug !== 'uncategorised').map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-      </select>
+      {chips.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-2" role="group" aria-label={`Quick categories for ${m.name}`}>
+          {chips.map((c) => (
+            <Button key={c.slug} onClick={() => pick(c)}>{c.name}</Button>
+          ))}
+        </div>
+      )}
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <select
+          aria-label={`More categories for ${m.name}, ${when}`}
+          value=""
+          onChange={(e) => {
+            const picked = cats.find((c) => c.slug === e.target.value)
+            if (picked) pick(picked)
+          }}
+          className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-sm"
+        >
+          <option value="">{chips.length ? 'More…' : 'Pick a category'}</option>
+          {cats.filter((c) => c.slug !== 'uncategorised').map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+        </select>
+        {who && <button type="button" className={QUIET} onClick={() => seePayments(who)}>See payments</button>}
+      </div>
     </div>
   )
 }

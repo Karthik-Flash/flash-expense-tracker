@@ -6,6 +6,9 @@ export type Tab = (typeof TABS)[number] | 'dev'
 /** App-wide sheets, a flag in the URL: "?speed" (Speed), "?unsaved" (couldn't save). */
 export const SHEETS = ['speed', 'unsaved'] as const
 export type SheetName = (typeof SHEETS)[number]
+/** The person sheet opened at a step (4E): "?person=p_12&do=join". */
+export const PERSON_STEPS = ['name', 'join'] as const
+export type PersonStep = (typeof PERSON_STEPS)[number]
 
 export interface View {
   tab: Tab
@@ -21,9 +24,26 @@ export interface View {
   txn: number | null
   /** An app-wide sheet over the screen. */
   sheet: SheetName | null
+  /** Transactions of one person, all months (4E "See payments"): a person key. */
+  who: string | null
+  /** The person sheet (4E): a person key, and the step it opens at. */
+  person: string | null
+  act: PersonStep | null
 }
 
-export const HOME: View = { tab: 'home', path: [], month: null, category: null, label: null, q: '', txn: null, sheet: null }
+export const HOME: View = {
+  tab: 'home',
+  path: [],
+  month: null,
+  category: null,
+  label: null,
+  q: '',
+  txn: null,
+  sheet: null,
+  who: null,
+  person: null,
+  act: null,
+}
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 const ID = /^[1-9]\d{0,14}$/
@@ -57,6 +77,9 @@ export function parseHash(hash: string): View {
     q: params.get('q') ?? '',
     txn: id('txn'),
     sheet: SHEETS.find((s) => params.has(s)) ?? null,
+    who: params.get('who') || null,
+    person: params.get('person') || null,
+    act: params.get('person') ? (PERSON_STEPS.find((s) => s === params.get('do')) ?? null) : null,
   }
 }
 
@@ -68,14 +91,20 @@ export function toHash(view: View): string {
   if (view.label !== null) params.set('label', String(view.label))
   if (view.q) params.set('q', view.q)
   if (view.txn !== null) params.set('txn', String(view.txn))
+  if (view.who) params.set('who', view.who)
+  if (view.person) params.set('person', view.person)
+  if (view.person && view.act) params.set('do', view.act)
   const query = [params.toString(), view.sheet ?? ''].filter(Boolean).join('&')
   return `#/${route}${query ? `?${query}` : ''}`
 }
 
-/** The layer under this one: an app-wide sheet, then a transaction's sheet, then the detail, then the tab's root. */
+/** The layer under this one: an app-wide sheet, the person sheet, a transaction's sheet, one
+ *  person's payments, the detail, then the tab's root. */
 export function parentOf(view: View): View | null {
   if (view.sheet !== null) return { ...view, sheet: null }
+  if (view.person !== null) return { ...view, person: null, act: null }
   if (view.txn !== null) return { ...view, txn: null }
+  if (view.who !== null) return { ...view, who: null }
   if (view.tab === 'dev' || view.path.length === 0) return null
   const keep = view.tab === 'home' && view.path[0] === 'category' && view.path.length > 2 ? 2 : 0
   return { ...view, path: view.path.slice(0, keep) }

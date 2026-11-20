@@ -12,6 +12,7 @@ import { LabelDetail, Labels } from './screens/Labels.tsx'
 import { Login } from './screens/Login.tsx'
 import { SpeedSheet } from './screens/Speed.tsx'
 import { UnsavedSheet } from './screens/Sync.tsx'
+import { PersonSheet } from './screens/People.tsx'
 import { Logos } from './screens/Logos.tsx'
 import { TodoScreen } from './screens/Todo.tsx'
 import { Transactions } from './screens/Transactions.tsx'
@@ -149,6 +150,7 @@ function Shell({ view }: { view: View }) {
       {path && <Painted path={path} />}
       {view.sheet === 'speed' && <SpeedSheet onClose={back} />}
       {view.sheet === 'unsaved' && <UnsavedSheet onClose={back} />}
+      {view.person && !view.sheet && <PersonSheet key={`${view.person}:${view.act}`} personKey={view.person} act={view.act} onClose={back} />}
     </div>
   )
 }

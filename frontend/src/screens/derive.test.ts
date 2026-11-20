@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { Snapshot, Txn } from '../api/types.ts'
-import { isPersonTxn, labelName, matches, monthData, monthTxns, paymentsText, personKey } from './derive.ts'
+import { identifiersText, isPersonTxn, labelName, matches, monthData, monthTxns, paymentsText, personKey, topCategories } from './derive.ts'
 
 const txn = (over: Partial<Txn>): Txn => ({
   id: 1,
@@ -69,4 +69,30 @@ test('merchant cards say how many payments and when, as sender cards do', () => 
   assert.equal(paymentsText(1, '2026-11-12T06:00:00Z'), '1 payment · Thu 12 Nov')
   assert.equal(paymentsText(3, '2026-11-12T19:00:00Z'), '3 payments · last Fri 13 Nov') // 00:30 IST
   assert.equal(paymentsText(2), '2 payments') // a phone copy from before the date was sent
+})
+
+test('4E: chips are the most used categories by count, the owner\'s own first, never money', () => {
+  const cats = [
+    { slug: 'food_drinks', name: 'Food & Drinks' },
+    { slug: 'travel', name: 'Travel' },
+    { slug: 'shopping', name: 'Shopping' },
+    { slug: 'groceries', name: 'Groceries' },
+    { slug: 'health', name: 'Health' },
+    { slug: 'uncategorised', name: 'Uncategorised' },
+  ]
+  const t = (id: number, category: string, owner = false, amount = 100, role: Txn['role'] = 'spend') =>
+    ({ id, category, category_basis: owner ? 'owner' : 'engine', amount_paise: amount, role }) as Txn
+  const txns = [
+    t(1, 'food_drinks'), t(2, 'food_drinks'), t(3, 'food_drinks'),
+    t(4, 'travel', true),
+    t(5, 'shopping', false, 99_999_999), // a big amount counts once, like any row
+    t(6, 'groceries'), t(7, 'groceries'),
+    t(8, 'health'),
+    t(9, 'uncategorised'), t(10, 'uncategorised'),
+    t(11, 'health', false, 100, 'payback'), // not spending
+  ]
+  assert.deepEqual(topCategories(txns, cats).map((c) => c.slug), ['travel', 'food_drinks', 'groceries', 'health'])
+  assert.deepEqual(topCategories([], cats), [])
+  assert.equal(identifiersText({ named: true, identifiers: [{ name: 'Rohit V' }, { name: '*r203@okhdfcbank' }] } as never), 'Rohit V · *r203@okhdfcbank')
+  assert.equal(identifiersText({ named: false, identifiers: [{ name: 'Rohit V' }] } as never), '')
 })
