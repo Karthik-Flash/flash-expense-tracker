@@ -380,6 +380,9 @@ def join_person(
     if old is not None:
         target.display_name = target.display_name or old.display_name
         target.category = target.category or old.category
+    if not target.display_name and target.source != "file" and into.display_name:
+        # "Same as Rohit V": the person keeps the name it is shown by (the owner's words).
+        target.display_name = into.display_name[:MAX_NAME]
     session.flush()
     for text in texts:
         session.add(PartyText(owner_id=owner_id, party_id=target.id, text=text, source=source))

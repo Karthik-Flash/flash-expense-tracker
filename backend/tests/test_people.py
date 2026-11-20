@@ -90,6 +90,8 @@ def test_join_separate_and_rejoin_keep_history(client, data, db_engine) -> None:
     b = get(client, f"/api/v1/transactions/{masked['id']}").json()
     assert a["person_id"] == b["person_id"] and a["person_id"].startswith("p_")
     assert b["role"] == masked["role"]  # still to confirm: nothing was answered
+    # "Same as Test Payee": the person keeps that name; the joined row shows its identifier.
+    assert (b["display_name"], b["identifier"]) == (PAYEE, MASKED)
     assert len(get(client, "/api/v1/senders").json()) == len(before)
     p = person(snapshot(client), a["person_id"])
     assert {i["name"] for i in p["identifiers"]} == {PAYEE, MASKED} and p["role"] == "none"
