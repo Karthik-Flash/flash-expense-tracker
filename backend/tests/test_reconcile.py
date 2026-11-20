@@ -132,7 +132,7 @@ def test_every_role_and_every_rule_is_reached() -> None:
     assert {role for _, _, role, _, _ in CASES} | {"duplicate"} == set(ROLES)
     assert {rule for _, _, _, rule, _ in CASES} | by_link == set(RULES)
     assert len(ROLES) == 11 and set(COUNTED) | DEBIT_ONLY | CREDIT_ONLY <= set(ROLES)
-    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.3.0"
+    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.4.0"
 
 
 def test_unexplained_debit_is_spend_and_unexplained_credit_is_uncertain() -> None:

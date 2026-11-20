@@ -19,6 +19,7 @@ Roles from one transaction. The first match decides, every match is kept:
 Only when none of these matched:
   CR_income_party     credit from an owner party marked as income           income
   CR_person_party     credit from an owner party of kind person             payback
+                      (a party of kind unsure gives no opinion: the rules below apply)
   CR_person_signal    credit, engine says person on a strong signal         payback
   CR_name_only, CR_business, CR_unsure, CR_no_text, CR_own_account          uncertain
   DB_no_counterparty  debit with no payee text (not an ATM)                 spend
@@ -55,7 +56,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from app.engine.merchant import MERCHANT_VERSION, Merchant, channel_for, normalise_merchant, parts
 
-RECONCILE_VERSION = "reconcile-1.3.0"
+RECONCILE_VERSION = "reconcile-1.4.0"
 VERSIONS = {"merchant": MERCHANT_VERSION, "reconcile": RECONCILE_VERSION}
 
 ROLES = (
@@ -133,7 +134,7 @@ LINK_REASONS = (
 )
 VERDICTS = ("same", "different")
 ACCOUNT_KINDS = ("bank_account", "credit_card", "wallet", "fd")
-PARTY_KINDS = ("person", "business")
+PARTY_KINDS = ("person", "business", "unsure")
 CARD_CHANNELS = ("debit_card", "credit_card")
 # Engine reason codes that are enough to call a credit a payback (D-061).
 PAYBACK_SIGNALS = frozenset({"R5_honorific", "R5_mobile_vpa", "R5_consumer_vpa"})
@@ -195,7 +196,7 @@ class OwnAccount:
 class Party:
     """A person or business the owner named, by the texts it shows up as."""
 
-    kind: str  # person or business
+    kind: str  # person, business, or unsure: the owner named or joined it, no role answer
     income: bool = False  # an income source: pocket money, stipend, salary
     texts: tuple[str, ...] = ()
     category: str | None = None  # the owner's default category for this party (a slug)
@@ -513,6 +514,8 @@ def _default(t: Txn, merchant: Merchant, own: OwnAccount | Party | None) -> Matc
     if t.direction == "debit":
         no_payee = "R0_no_text" in merchant.reasons  # an ATM withdrawal is R0_atm
         return "spend", "DB_no_counterparty" if no_payee else "DB_spend", "engine"
+    if isinstance(own, Party) and own.kind == "unsure" and not own.income:
+        own = None  # named or joined by the owner, no role answer: the merchant decides
     if isinstance(own, Party):
         if own.income:
             return "income", "CR_income_party", "owner"

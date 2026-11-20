@@ -24,11 +24,13 @@ from app.api.auth import current_owner
 from app.db import get_session
 from app.engine.categorise import CATEGORIES, SPENDING_ROLES, UNCATEGORISED, breakdown, label_view
 from app.engine.credits import sender_id
+from app.engine.merchant import channel_for, normalise_merchant
 from app.engine.reconcile import IST, ist_month, totals
 from app.models import (
     Label,
     ParseResult,
     Party,
+    PartyText,
     RawMessage,
     Transaction,
     TxnDerived,
@@ -61,6 +63,18 @@ class CategoryAnswer(Body):
 
 class NewLabel(Body):
     name: str = Field(max_length=200)  # the rules: owner_actions.clean_name
+
+
+class PersonName(Body):
+    name: str = Field(max_length=200)  # the rules: owner_actions.clean_name
+
+
+class PersonJoin(Body):
+    """Same as: `into` is a transaction of the person to join; `role` the answer the person
+    keeps when the two have different ones (D-096)."""
+
+    into: int
+    role: Literal["friend", "income", "ignore", "none"] | None = None
 
 
 class LabelAnswer(Body):
@@ -125,6 +139,20 @@ def _person(owner: uuid.UUID, t: Transaction, d: TxnDerived) -> str | None:
     return sender_id(str(owner), d.merchant_key, t.id) if d.merchant_key else None
 
 
+def engine_name(t: Transaction) -> str | None:
+    """The merchant engine's name for a transaction's text: the identifier as the bank wrote
+    it, cleaned (a name, or a UPI ID such as a masked one)."""
+    return normalise_merchant(t.counterparty_raw, channel_for(t.channel, t.hints)).display_name
+
+
+def _identifier(t: Transaction, d: TxnDerived) -> str | None:
+    """Under a person's name, the identifier this row came from; None when they agree."""
+    if d.party_id is None:
+        return None
+    name = engine_name(t)
+    return name if name != d.display_name else None
+
+
 def _item(owner: uuid.UUID, t: Transaction, d: TxnDerived, lab: Label | None) -> dict:
     return {
         "id": t.id,
@@ -132,6 +160,7 @@ def _item(owner: uuid.UUID, t: Transaction, d: TxnDerived, lab: Label | None) ->
         "amount_paise": t.amount_paise,
         "direction": t.direction,
         "display_name": d.display_name,
+        "identifier": _identifier(t, d),
         "person_id": _person(owner, t, d),
         "role": d.role,
         "role_basis": d.role_basis,
@@ -356,6 +385,12 @@ def senders(
             "status": s.status,
             "last_time_utc": _iso(s.last_time_utc),
             "income_label": income.get(s.party_id) if s.role == "income" else None,
+            # The person on the People ledger and in the people list, and a transaction to
+            # name or join them by (D-096).
+            "person_id": f"p_{s.party_id}"
+            if s.party_id is not None
+            else (s.id if s.merchant_key else None),
+            "txn_id": s.txn_ids[-1],
         }
         for s in owner_actions.senders(session, owner)
         if status in ("all", s.status)
@@ -418,5 +453,96 @@ def clear_label(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
     def action() -> dict:
         owner_actions.clear_label(session, owner, txn_id)
         return {"id": txn_id, "label_id": None}
+
+    return ops.write(session, owner, op, action)
+
+
+def people_directory(session: Session, owner: uuid.UUID) -> list[dict]:
+    """Everyone the owner can name or join (D-096): each person (a party, else one merchant
+    key) that sent money, got money as a person, is a person by the merchant engine, or was
+    named, joined or answered by the owner. Per person its identifiers (newest first), each
+    with a transaction to act on, and its answer. No money: the ledger has the sums."""
+    parties = {p.id: p for p in session.scalars(select(Party).where(Party.owner_id == owner))}
+    texts: dict[int, dict[str, str]] = defaultdict(dict)  # party -> merchant key -> source
+    for row in session.scalars(
+        select(PartyText).where(PartyText.owner_id == owner, PartyText.ended_at.is_(None))
+    ):
+        texts[row.party_id][owner_actions.text_key(row.text)] = row.source
+    everyone = owner_actions.senders(session, owner)
+    by_txn = {i: s for s in everyone for i in s.txn_ids}
+    out: dict[str, dict] = {}
+    rows = _stored(session, owner, TxnDerived.merchant_key.is_not(None))
+    for t, d in sorted(rows, key=lambda r: (r[0].txn_time_utc, r[0].id), reverse=True):
+        party = parties.get(d.party_id)
+        engine = normalise_merchant(t.counterparty_raw, channel_for(t.channel, t.hints))
+        person = out.setdefault(_person(owner, t, d), {
+            "key": _person(owner, t, d), "name": d.display_name, "named": bool(
+                party and party.display_name
+            ), "txn_id": t.id, "role": None, "identifiers": {}, "counts": False,
+        })  # fmt: skip
+        person["identifiers"].setdefault(d.merchant_key, {
+            "name": engine.display_name, "txn_id": t.id,
+            "from_file": texts.get(d.party_id, {}).get(d.merchant_key) == "file",
+        })  # fmt: skip
+        sender = by_txn.get(t.id)
+        if sender is not None and person["role"] is None:
+            person["role"] = owner_actions.person_role(sender)
+        person["counts"] = person["counts"] or bool(
+            sender is not None
+            or engine.kind == "person"
+            or d.category == "people"
+            or (party and (party.kind == "person" or party.income_label or party.display_name))
+            or len(texts.get(d.party_id, {})) > 1
+        )
+    return sorted(
+        (
+            {k: v for k, v in p.items() if k != "counts"}
+            | {"identifiers": list(p["identifiers"].values())}
+            for p in out.values()
+            if p["counts"]
+        ),
+        key=lambda p: ((p["name"] or "").casefold(), p["key"]),
+    )
+
+
+@router.put("/people/{txn_id}/name")
+def name_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: PersonName):
+    """Name the person of this transaction (D-096)."""
+
+    def action() -> dict:
+        party = owner_actions.name_person(session, owner, txn_id, body.name, "app")
+        return {"id": txn_id, "name": party.display_name}
+
+    return ops.write(session, owner, op, action, body.model_dump())
+
+
+@router.delete("/people/{txn_id}/name")
+def clear_person_name(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+    def action() -> dict:
+        owner_actions.clear_name(session, owner, txn_id)
+        return {"id": txn_id, "name": None}
+
+    return ops.write(session, owner, op, action)
+
+
+@router.put("/people/{txn_id}/join")
+def join_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: PersonJoin):
+    """Same as: this transaction's person joins the person of `into`. Different answers
+    without `role`: 409, nothing written."""
+
+    def action() -> dict:
+        owner_actions.join_person(session, owner, txn_id, body.into, body.role, "app")
+        return {"id": txn_id, "into": body.into}
+
+    return ops.write(session, owner, op, action, body.model_dump())
+
+
+@router.delete("/people/{txn_id}/join")
+def separate_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+    """Separate: this transaction's identifier leaves its person (the row keeps its end)."""
+
+    def action() -> dict:
+        owner_actions.separate_person(session, owner, txn_id)
+        return {"id": txn_id, "into": None}
 
     return ops.write(session, owner, op, action)

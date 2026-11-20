@@ -73,7 +73,7 @@ CANDIDATE_STATUSES = ("open", "confirmed", "dismissed")
 # (tests/test_owner_load.py checks that they agree).
 ACCOUNT_KINDS = ("bank_account", "credit_card", "wallet", "fd")
 IDENTIFIER_KINDS = ("last4", "text")
-PARTY_KINDS = ("person", "business")
+PARTY_KINDS = ("person", "business", "unsure")  # unsure: no role answer yet (D-096)
 OWNER_SOURCES = ("file", "terminal", "app")  # who wrote an owner row
 OWNER_LINK_KINDS = ("duplicate", "self_transfer", "card_bill", "refund", "fd")
 VERDICTS = ("same", "different")
@@ -96,6 +96,7 @@ MERCHANT_KINDS = ("business", "person", "unsure", "none")
 ROLES = (*OWNER_ROLES, "duplicate")
 DECIDERS = ("engine", "owner")
 LINK_STATUSES = ("linked", "candidate")
+LABEL_MAX = 30  # one limit for a label name: API, app and database (D-097)
 
 
 class Heartbeat(Base):
@@ -294,7 +295,10 @@ class OwnIdentifier(Base):
 
 
 class Party(Base):
-    """A person or business the owner named. income_label set: an income source."""
+    """A person or business the owner named. income_label set: an income source.
+
+    display_name: the name the owner gave in the app (D-096); shown over the label, which
+    stays the entry's key (an owner-file party keeps its file label)."""
 
     __tablename__ = "parties"
     __table_args__ = (
@@ -311,16 +315,27 @@ class Party(Base):
     # The owner's default category for every payment to this party (a slug; no CHECK,
     # so a new category needs no migration).
     category: Mapped[str | None] = mapped_column(String(40))
+    display_name: Mapped[str | None] = mapped_column(String(LABEL_MAX))
     source: Mapped[str] = mapped_column(String(10))
     created_at: Mapped[datetime] = _created()
 
 
 class PartyText(Base):
-    """A counterparty text (name or UPI ID) that belongs to a party."""
+    """A counterparty text (name or UPI ID) that belongs to a party.
+
+    A row is never deleted by the app: a join that ends gets `ended_at` (D-096). A text has
+    at most one active row; recompute, the owner file and the export read active rows."""
 
     __tablename__ = "party_texts"
     __table_args__ = (
-        UniqueConstraint("owner_id", "text", name="uq_party_text"),
+        Index(
+            "uq_party_text_active",
+            "owner_id",
+            "text",
+            unique=True,
+            postgresql_where=text("ended_at IS NULL"),
+            sqlite_where=text("ended_at IS NULL"),
+        ),
         CheckConstraint(_in("source", OWNER_SOURCES), name="ck_party_text_source"),
     )
 
@@ -329,6 +344,8 @@ class PartyText(Base):
     party_id: Mapped[int] = mapped_column(ForeignKey("parties.id"), index=True)
     text: Mapped[str] = mapped_column(String(200))
     source: Mapped[str] = mapped_column(String(10))
+    created_at: Mapped[datetime] = _created()
+    ended_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
 
 class OwnerLinkDecision(Base):
@@ -395,11 +412,12 @@ class Label(Base):
     __table_args__ = (
         UniqueConstraint("owner_id", "name", name="uq_label_name"),
         CheckConstraint(_in("source", OWNER_SOURCES), name="ck_label_source"),
+        CheckConstraint(f"length(name) <= {LABEL_MAX}", name="ck_label_name_length"),
     )
 
     id: Mapped[int] = mapped_column(BigId, primary_key=True)
     owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
-    name: Mapped[str] = mapped_column(String(80))
+    name: Mapped[str] = mapped_column(String(LABEL_MAX))
     source: Mapped[str] = mapped_column(String(10))
     created_at: Mapped[datetime] = _created()
 

@@ -144,7 +144,7 @@ def load_owner(
     party_texts: dict[int, list[str]] = {}
     for row in session.execute(
         select(PartyText.party_id, PartyText.text)
-        .where(PartyText.owner_id == owner_id)
+        .where(PartyText.owner_id == owner_id, PartyText.ended_at.is_(None))  # D-096
         .order_by(PartyText.id)
     ):
         party_texts.setdefault(row.party_id, []).append(row.text)
@@ -186,6 +186,14 @@ def load_owner(
     return owner, accounts, parties
 
 
+def shown_name(party: Party | None, engine_name: str | None) -> str | None:
+    """The owner's name for a person (D-096), else a file entry's label, else the engine's
+    name of the text. An app-made party's label is only its key, never shown."""
+    if party is None:
+        return engine_name
+    return party.display_name or (party.label if party.source == "file" else engine_name)
+
+
 def plan(session: Session, owner_id: uuid.UUID) -> Plan:
     """Derive afresh and compare with the stored rows. Reads only."""
     txns = active_txns(session, owner_id)
@@ -208,7 +216,7 @@ def plan(session: Session, owner_id: uuid.UUID) -> Plan:
             "merchant_key": m.merchant_key,
             "merchant_kind": party.kind if party else m.kind,
             "merchant_confidence": "high" if party else m.confidence,
-            "display_name": party.label if party else m.display_name,
+            "display_name": shown_name(party, m.display_name),
             "brand_id": m.brand_id,
             "merchant_reasons": list(m.reasons),
             "party_id": party.id if party else None,

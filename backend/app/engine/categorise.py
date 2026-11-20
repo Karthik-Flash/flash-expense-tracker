@@ -14,7 +14,8 @@ unlinked refund). The first match decides; each result has a rule code and a bas
   BRAND           the merchant is in the brand dictionary         its category  engine
   KEYWORD         every category keyword in the name agrees       that category engine
   KW_conflict     keywords of two categories                      Uncategorised engine
-  PERSON          debit to a person                               People        engine
+  PERSON          debit to a person (a party of kind person, or of kind unsure or no
+                  party and the merchant engine says person)    People        engine
   NONE            nothing matched                                 Uncategorised engine
 A linked refund takes the category (and basis) of its purchase: RF_linked. An unlinked
 refund is categorised by its own merchant (owner party, brand, keyword), else NONE.
@@ -34,7 +35,7 @@ from datetime import UTC, datetime
 from app.engine.merchant import brands, parts
 from app.engine.reconcile import COUNTED, Derived, OwnerData, Result, Totals, Txn, totals
 
-CATEGORISE_VERSION = "categorise-1.0.0"
+CATEGORISE_VERSION = "categorise-1.1.0"
 
 # slug -> name. The slug is stored and never changes; a new category needs no migration.
 CATEGORIES = {
@@ -258,7 +259,8 @@ def _one(t: Txn, d: Derived, owner: OwnerData, result: Result) -> Categorised:
         return Categorised(found.pop(), "KEYWORD", "engine")
     if found:
         return Categorised(UNCATEGORISED, "KW_conflict", "engine")
-    if t.direction == "debit" and (party.kind if party else merchant.kind) == "person":
+    kind = party.kind if party and party.kind != "unsure" else merchant.kind
+    if t.direction == "debit" and kind == "person":
         return Categorised("people", "PERSON", "engine")
     return Categorised(UNCATEGORISED, "NONE", "engine")
 
