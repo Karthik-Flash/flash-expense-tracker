@@ -3,6 +3,7 @@
 // page). 401 and 403 also tell the login layer (auth.ts).
 
 import { ApiError, type Api, type SendAnswer, type SendRequest } from './client.ts'
+import { HEADER } from './headers.ts'
 import type { Snapshot, SnapshotAnswer } from './types.ts'
 
 type Lost = (status: 401 | 403) => void
@@ -53,8 +54,8 @@ export class HttpApi implements Api {
         cache: 'no-store',
         signal: init.signal,
         headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
+          [HEADER.authorization]: `Bearer ${token}`,
+          [HEADER.accept]: 'application/json',
           ...init.headers,
         },
       })
@@ -69,7 +70,7 @@ export class HttpApi implements Api {
   }
 
   async snapshot(etag: string | null, signal: AbortSignal): Promise<SnapshotAnswer> {
-    const response = await this.request('GET', '/sync/snapshot', { signal, headers: etag ? { 'If-None-Match': etag } : {} })
+    const response = await this.request('GET', '/sync/snapshot', { signal, headers: etag ? { [HEADER.ifNoneMatch]: etag } : {} })
     if (response.status === 304) return { status: 304 }
     const text = await response.text()
     let snapshot: Snapshot
@@ -98,11 +99,11 @@ export class HttpApi implements Api {
         cache: 'no-store',
         signal,
         headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-          'Idempotency-Key': request.op_id,
-          ...(request.defer ? { 'X-Defer-Recompute': '1' } : {}),
-          ...(request.body === null || request.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          [HEADER.authorization]: `Bearer ${token}`,
+          [HEADER.accept]: 'application/json',
+          [HEADER.idempotencyKey]: request.op_id,
+          ...(request.defer ? { [HEADER.deferRecompute]: '1' } : {}),
+          ...(request.body === null || request.body === undefined ? {} : { [HEADER.contentType]: 'application/json' }),
         },
         body: request.body === null || request.body === undefined ? undefined : JSON.stringify(request.body),
       })
