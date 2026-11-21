@@ -1,0 +1,4 @@
+include ':app'
+// No Cordova plugins: the generated capacitor-cordova-android-plugins module is not built.
+
+apply from: 'capacitor.settings.gradle'

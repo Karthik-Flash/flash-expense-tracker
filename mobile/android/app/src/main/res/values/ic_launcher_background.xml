@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The logo tile (favicon.svg) and the light page colour (frontend/src/index.css). -->
+    <color name="ic_launcher_background">#16191B</color>
+    <color name="page">#F6F6F4</color>
+</resources>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Logo C2 (frontend/public/favicon.svg): the teal bolt with the $ mark, scaled into the
+     adaptive icon's safe zone (100-unit logo, centre at 54,54 of 108, scale 0.6). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="50"
+        android:pivotY="50"
+        android:scaleX="0.6"
+        android:scaleY="0.6"
+        android:translateX="4"
+        android:translateY="4">
+        <path
+            android:fillColor="#7CC4BB"
+            android:strokeColor="#7CC4BB"
+            android:strokeWidth="1.4"
+            android:strokeLineJoin="round"
+            android:pathData="M46.15,10 L76.91,10 L58.37,42 L75.23,42 L26.1,90 L41.94,56.4 L23.09,56.4Z" />
+        <group
+            android:translateX="49.52"
+            android:translateY="40.28"
+            android:scaleX="2.3388"
+            android:scaleY="2.3388">
+            <group
+                android:translateX="-12"
+                android:translateY="-12">
+                <path
+                    android:strokeColor="#16191B"
+                    android:strokeWidth="3.26"
+                    android:strokeLineCap="round"
+                    android:strokeLineJoin="round"
+                    android:pathData="M16.6,6.4H9.8A2.8,2.8 0,0 0,9.8 12H14.2A2.8,2.8 0,0 1,14.2 17.6H7.4M12,2.6V6.4M12,17.6V21.4" />
+            </group>
+        </group>
+    </group>
+</vector>
