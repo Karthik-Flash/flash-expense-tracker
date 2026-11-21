@@ -9,15 +9,21 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --test \"src/**/*.test.ts\""
+    "test": "node --test \"src/**/*.test.ts\"",
+    "android:web": "node scripts/android.mjs web",
+    "android:sync": "node scripts/android.mjs sync",
+    "android:apk": "node scripts/android.mjs apk"
   },
   "dependencies": {
+    "@capacitor/core": "8.6.2",
     "@supabase/supabase-js": "2.119.0",
     "idb": "8.0.4",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/cli": "8.6.2",
     "@tailwindcss/vite": "4.3.5",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",

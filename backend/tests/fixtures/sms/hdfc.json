@@ -53,7 +53,21 @@
     "sender": "HDFCBK",
     "body": "Notice!\n1. Forex Markup fee applies to your HDFC Bank Debit Card International payment\n2. Final txn amount may change based on forex rate on the settlement date",
     "received_at": "2026-01-08T16:45:10Z",
-    "expected": {"type": "foreign_currency"}
+    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": null, "channel": "debit_card", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
+  },
+  {
+    "id": "hdfc-H04-forex-notice-2",
+    "sender": "VM-HDFCBK-S",
+    "body": "Notice! 1. Forex Markup fee applies to your HDFC Bank Debit Card International payment 2. Final txn amount may change based on forex rate on the settlement date",
+    "received_at": "2026-01-08T16:46:00Z",
+    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": null, "channel": "debit_card", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
+  },
+  {
+    "id": "hdfc-H04-forex-notice-3",
+    "sender": "AD-HDFCBK",
+    "body": "Notice!\r\n1.  Forex Markup fee applies to your HDFC Bank Debit Card International payment\r\n2.  Final txn amount may change based on forex rate on the settlement date.\n",
+    "received_at": "2026-01-08T16:47:00Z",
+    "expected": {"type": "other_info", "amount_paise": null, "direction": null, "account_last4": null, "channel": "debit_card", "counterparty_raw": null, "reference": null, "balance_paise": null, "txn_time_utc": null, "time_inferred": null}
   },
   {
     "id": "hdfc-H05-netbanking-payment-1",

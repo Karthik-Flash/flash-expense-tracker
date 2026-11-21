@@ -45,6 +45,7 @@ function server(statuses: number[] = []) {
   let offline = true
   const api: Api = {
     demo: false,
+    registerDevice: async () => ({ token: 'test-token' }),
     snapshot: async () => ({ status: 304 }),
     async send(req) {
       if (offline) throw new ApiError(0, 'Could not reach the server.')

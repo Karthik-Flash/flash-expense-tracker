@@ -5,16 +5,28 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
 [PLAN.md](PLAN.md).
 
-## Current state (start of Phase 5, 21 Nov 2026)
+## Current state (Phase 5A done, 22 Nov 2026)
 
+- **Phase 5A is done, not pushed**: Flash on Android, the owner's phone
+  first ([design/phase-5a-android.md](design/phase-5a-android.md), D-122 to
+  D-127). Devices and ingest-only device tokens (migration `0014`), bank-only
+  `POST /api/v1/ingest/sms` stored exactly as import-sms, a Capacitor 8.6.2
+  shell in `mobile/android` (appId `app.flashexpense.android`), a Kotlin SMS
+  plugin (history from a cursor, live receiver, SQLite queue, WorkManager,
+  6-hourly catch-up, Keystore-sealed token), the Bank SMS sheet, HDFC
+  `hdfc-1.2.0`. The owner's steps (push, Render `CORS_ORIGINS`, reparse,
+  build with the Supabase settings, `adb install -r`, first run): NOTES
+  cheat sheet, "Android app". Next ([PLAN.md](PLAN.md)): 5B reliability on
+  the real phone, 5C several users, 5D 2-3 testers; Phase 6 the Play Store.
+  Still waiting for the planner: `statement-import --apply`,
+  `statement-names --apply`, the September re-check.
+- Android build: Gradle 9.9.2, Android Gradle Plugin 9.5.1 (JDK 25 at
+  `D:\Applications2\AndroidStudio\jbr`; the template's Gradle 8.14.3 cannot
+  run on it), compileSdk and targetSdk 36, minSdk 26; `npm run android:apk`
+  from `frontend\` builds the debug APK. Agents never run adb against a
+  device.
 - **Phases 0 to 4 are done.** Phase 4 in one page:
   [retro/phase-4.md](retro/phase-4.md) (what shipped, what broke, the rules).
-  Next: Phase 5, the pilot-ready Android app ([PLAN.md](PLAN.md): 5A several
-  users, 5B Capacitor shell, 5C Kotlin SMS reading, 5D first-run setup and
-  pilot invites, 5E pilot fixes; 8-day target). Before 5A: the missing HDFC
-  template from the owner's approved `--unparsed` sample, the planner's call
-  on `statement-import --apply` and `statement-names --apply`, and the
-  September statement checked again.
 - **Phase 4 by step:** 4C install and update (D-085 to D-087); 4B offline
   first: phone copy, outbox, offline launch (D-088 to D-095); 4E people
   (D-096 to D-098); 4F other banks, the CORS fix, the stuck-queue fix,
@@ -28,15 +40,16 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   old to new SHAs in [history-rewrite-20261121.md](history-rewrite-20261121.md));
   the push was verified and the git backup deleted (D-121). Enable the hook
   once per clone: `git config core.hooksPath .githooks`.
-- Engine versions: parsers `hdfc-1.1.1`, `sbi-1.0.0` and `generic-1.0.0`
+- Engine versions: parsers `hdfc-1.2.0`, `sbi-1.0.0` and `generic-1.0.0`
   (other banks), `merchant-1.1.1`, `reconcile-1.6.0`, `categorise-1.2.0`;
   statement reader `stmt-hdfc-1.1.0`.
-- Alembic head: `0013` (owner names, party kinds self and investment, role
-  investment; `0011` was not used).
-- Decisions: D-001 to D-121 ([DECISIONS.md](DECISIONS.md)).
+- Alembic head: `0014` (devices; `0011` was not used).
+- Decisions: D-001 to D-127 ([DECISIONS.md](DECISIONS.md)).
 - Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
-  lint/typecheck/tests/build, and the cross-origin check
-  (`node scripts/cross-origin-check.mjs` from `frontend\`).
+  lint/typecheck/tests/build, the cross-origin check
+  (`node scripts/cross-origin-check.mjs` from `frontend\`, which covers the
+  Android origin `https://localhost` since 5A), and the Kotlin unit tests
+  (`.\gradlew.bat testDebugUnitTest` from `mobile\android\`).
 - Cron: only the 03:30 IST Supabase heartbeat. The API warm job is
   retired (D-112: its pings got 503 and never woke Render; the phone copy
   covers cold starts).
@@ -139,6 +152,8 @@ backend/            Render root
   app/api/v1.py       data API /api/v1 (docs/api.md)
   app/api/snapshot.py GET /api/v1/sync/snapshot: the app's one read, ETag and 304 (D-088)
   app/api/ops.py      every owner write: Idempotency-Key (client_ops), deferred recompute (D-091 to D-094)
+  app/api/devices.py  5A: /api/v1/devices (login) and /api/v1/ingest/sms (device token only, D-122, D-123)
+  app/engine/shared/  bank_senders.json: the sender list, read by senders.py and packed into the APK
   app/config.py       settings from env / backend/.env (DATABASE_URL, PING_TOKEN, CORS_ORIGINS, OWNER_ID)
   app/db.py           engine, SessionLocal, Base
   app/models.py       ORM models; UtcDateTime column type
@@ -152,7 +167,7 @@ frontend/           Vercel root (docs/ui-spec.md): src/api (Api interface; http.
 scripts/            standalone, stdlib: redact_sms.py, shape_survey.py, parse_coverage.py (+ tests); backup_db.ps1 (owner: pg_dump via Docker)
 infra/              render.yaml (reference copy), README.md (setup and runbook)
 docs/               PLAN, DECISIONS (D-001..D-108), design/phase-4e-people.md, design/logo-options.html, engine.md, data-model.md, api.md, design/phase-3-backbone.md, templates/hdfc.md, this file
-mobile/             placeholder for the Capacitor Android shell
+mobile/             the Android app (5A): android/ Gradle project, Kotlin SMS plugin (mobile/README.md)
 data/               gitignored except README; only data/sample/redacted_sample.json is for agents
 ```
 
@@ -222,7 +237,7 @@ redacted sample (288 msgs)        raw_messages --engine--> parse_results --money
    returns `ParsedMessage` or `Unknown(reason)`. Literal whole-body templates;
    exactly one may match; amount-free unmatched notices become `H_INFO`
    other_info; amounts are never guessed (docs/engine.md, D-041, D-044).
-   HDFC is the only parser: `hdfc-1.1.1`.
+   HDFC `hdfc-1.2.0`, SBI `sbi-1.0.0`, other banks `generic-1.0.0`.
 3. **Import** (`app/importers`, `app/pipeline`): streams XML, stores only
    bank-registry senders (with or without a parser), parses, upserts
    transactions, records fuzzy candidates. Batched commits, crash-safe,

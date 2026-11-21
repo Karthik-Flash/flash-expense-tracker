@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 import sys
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from app.engine import ParsedMessage, Unknown, parse_message
 from app.engine.parsers import PARSERS
 from app.engine.parsers.base import BankParser, Template
 from app.engine.parsers.hdfc import PARSER, PARSER_VERSION
+from app.pipeline.sample_export import redact
 
 FIXTURES = json.loads(
     (Path(__file__).parent / "fixtures" / "sms" / "hdfc.json").read_text(encoding="utf-8")
@@ -60,6 +62,7 @@ def test_every_template_has_a_fixture() -> None:
     ("template_id", "hints"),
     [
         ("N02", ("card_bill_payment",)),
+        ("H04", ("forex_notice",)),
         ("H08", ("mandate_reference",)),
         ("H13", ("mandate_reference",)),
         ("H17", ("autopay",)),
@@ -113,6 +116,29 @@ def test_no_parser_for_bank() -> None:
 def test_foreign_currency_deferred() -> None:
     body = "Spent EUR 9.99 On HDFC Bank Card 0003 At TEST STORE On 2026-01-05:10:00:00"
     assert parse_message("HDFCBK", body, WHEN).reason == "foreign_currency_deferred"
+
+
+# The owner's approved sample of the HDFC messages no parser read (4Z, 44 messages, one
+# shape): shape tokens only, words outside the bank vocabulary as {WORD}.
+UNREAD_SHAPE = (
+    "{WORD}!\n"
+    "{NUM}. {WORD} {WORD} {WORD} {WORD} to your HDFC Bank Debit Card {WORD} payment\n"
+    "{NUM}. {WORD} txn amount may {WORD} {WORD} on {WORD} {WORD} on the {WORD} date"
+)
+
+
+def test_h04_is_the_unread_shape_and_a_notice_with_no_money() -> None:
+    """hdfc-1.2.0 (D-127): the forex markup notice was foreign_currency_deferred, counted in
+    "not counted yet"; it holds no amount, so it is a notice and never a transaction."""
+    forex = [f for f in FIXTURES if f["id"].startswith("hdfc-H04-")]
+    assert len(forex) == 3
+    assert redact(forex[0]["body"], Counter())[0] == UNREAD_SHAPE
+    for fx in forex:
+        result = parse_message(fx["sender"], fx["body"], received(fx))
+        assert (result.template_id, result.type, result.is_money) == ("H04", "other_info", False)
+    # With an amount it is no notice: never read as H04, never guessed.
+    with_amount = forex[1]["body"].replace("payment", "payment of Rs.33")
+    assert parse_message("HDFCBK", with_amount, WHEN) == Unknown("no_template", "HDFC")
 
 
 def test_two_matching_templates_are_ambiguous() -> None:

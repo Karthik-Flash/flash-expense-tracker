@@ -39,19 +39,19 @@ def assert_no_values(out: str) -> None:
 def test_dry_run_then_import_then_stats_print_counts_only(run, backup: Path) -> None:
     dry = run("import-sms", "--input", str(backup), "--dry-run")
     assert "dry run: nothing saved" in dry
-    assert re.search(r"read\s+56\b", dry) and re.search(r"otp\s+1\b", dry)
+    assert re.search(r"read\s+58\b", dry) and re.search(r"otp\s+1\b", dry)
     assert "tables" in run("stats") and re.search(r"raw_messages\s+0\b", run("stats"))
 
     out = run("import-sms", "--input", str(backup))
     assert "import-sms batch" in out and f"HDFC {PARSER_VERSION}" in out
     again = run("import-sms", "--input", str(backup))
-    assert re.search(r"duplicate\s+50\b", again)
+    assert re.search(r"duplicate\s+52\b", again)
 
     stats = run("stats")
-    assert re.search(r"raw_messages\s+50\b", stats)
+    assert re.search(r"raw_messages\s+52\b", stats)
     assert re.search(r"no_parser_for_bank\s+1\b", stats)
     assert re.search(r"months \(IST\)\s+2026-01 \.\. 2026-01", stats)
-    assert re.search(r"#\d+ done .* raw new 0\s+duplicate 50", stats)  # ids: PG skips dry runs
+    assert re.search(r"#\d+ done .* raw new 0\s+duplicate 52", stats)  # ids: PG skips dry runs
     for out_text in (dry, out, again, stats, run("reparse", "--dry-run"), run("reparse")):
         assert_no_values(out_text)
 

@@ -5,8 +5,11 @@ import { readTimings, type Timing } from '../data/local.ts'
 import { failedOps, useOutbox, waiting } from '../data/outbox.ts'
 import { speedRows } from '../data/store.ts'
 import { istTime } from '../lib/dates.ts'
+import { loadSms, useSms } from '../native/sms.ts'
+import { needsBatteryHint } from '../native/smsState.ts'
 import { useNav } from '../state.tsx'
 import { Sheet } from '../ui.tsx'
+import { SmsRows } from './BankSms.tsx'
 
 /** The outbox first (D-107): what is on the phone, what failed, the last try and success. */
 function SyncBlock() {
@@ -31,6 +34,27 @@ function SyncBlock() {
   )
 }
 
+
+/** Bank SMS on this phone first (5A): permission, queue, last upload, last error. In a
+ *  browser only the link (the phones and Revoke). */
+function SmsBlock({ open }: { open: () => void }) {
+  const sms = useSms()
+  useEffect(() => void loadSms(), [])
+  const link = (
+    <button type="button" className="block min-h-11 text-left text-accent" onClick={open}>
+      {sms.available ? 'Bank SMS settings' : 'Bank SMS and your phones'}
+    </button>
+  )
+  if (!sms.available) return link
+  return (
+    <div>
+      <h3 className="text-xs font-medium text-muted">Bank SMS</h3>
+      <SmsRows status={sms} />
+      {needsBatteryHint(sms) && <p className="mt-1 text-xs text-muted">Battery: set Flash to Unrestricted for background uploads.</p>}
+      {link}
+    </div>
+  )
+}
 
 /** How this launch reached its first screen, and the last boot errors (D-095). */
 function BootBlock() {
@@ -71,6 +95,7 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet title="Speed" onClose={onClose}>
       <div className="px-4 py-3 text-sm">
+        <SmsBlock open={() => replace({ sheet: 'sms' })} />
         <button type="button" className="-mt-1 mb-2 min-h-11 text-left text-accent" onClick={() => replace({ sheet: 'profile' })}>
           Your name as banks show it
         </button>

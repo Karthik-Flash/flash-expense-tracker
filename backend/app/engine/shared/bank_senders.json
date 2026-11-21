@@ -1,0 +1,20 @@
+{
+  "_": "Sender core -> bank code (D-123). One list for the server (app/engine/senders.py) and the phone (copied into the APK). not_banks: registered senders that are not banks; the importer keeps them, the phone never uploads them.",
+  "senders": {
+    "HDFCBK": "HDFC",
+    "HDFCBN": "HDFC",
+    "SBIBNK": "SBI",
+    "CBSSBI": "SBI",
+    "SBIUPI": "SBI",
+    "SBIINB": "SBI",
+    "SBYONO": "SBI",
+    "SBIPSG": "SBI",
+    "ICICIT": "ICICI",
+    "AXISBK": "AXIS",
+    "KOTAKM": "KOTAK",
+    "YESBNK": "YES",
+    "DOPBNK": "INDIA_POST",
+    "PHONPE": "PHONEPE"
+  },
+  "not_banks": ["PHONEPE"]
+}

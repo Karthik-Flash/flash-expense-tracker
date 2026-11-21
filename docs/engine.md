@@ -45,7 +45,7 @@ body      --normalise-----> one line, single spaces
 
 | Module | Job |
 | ------ | --- |
-| `senders.py` | Sender ID -> core (same rules as `scripts/redact_sms.py`; both pass `backend/tests/fixtures/sender_ids.json`) and core -> bank. |
+| `senders.py` | Sender ID -> core (same rules as `scripts/redact_sms.py` and the phone's `BankSenders.kt`; all pass `backend/tests/fixtures/sender_ids.json`) and core -> bank, from `shared/bank_senders.json` (5A, D-123: the same file is packed into the APK; `not_banks` lists registered senders that are not banks, PhonePe). |
 | `money.py` | `to_paise("Rs.1,25,000.50")` -> `12500050`. Accepts Rs / Rs. / INR / INR. / ₹, Indian grouping or no commas, 0-2 decimals. Rejects anything else (`AmountError`). |
 | `timeparse.py` | Every catalogued date/time format. IST is a fixed UTC+05:30 offset (no zoneinfo). |
 | `models.py` | `ParsedMessage` and `Unknown` (frozen dataclasses). |
@@ -90,7 +90,7 @@ body      --normalise-----> one line, single spaces
 
 ## Parser versions
 
-Each bank module has `PARSER_VERSION` (e.g. `hdfc-1.1.1`), stored on every
+Each bank module has `PARSER_VERSION` (e.g. `hdfc-1.2.0`), stored on every
 result so stored messages can be re-parsed when a parser improves. Bump it
 in the same commit as any change that can alter a result:
 
@@ -120,6 +120,21 @@ prove that.
 6. **Check coverage**:
    `backend\.venv\Scripts\python.exe scripts\parse_coverage.py --input data\sample\redacted_sample.json`
    It prints counts and the shapes of Unknown messages, never bodies.
+
+## HDFC 1.2.0 (D-127)
+
+The owner's approved sample of the HDFC messages no parser read (4Z,
+`redact-sample --family HDFC --unparsed`) holds 44 messages of one shape: H04,
+the forex markup notice ("Notice! 1. Forex Markup fee applies to your HDFC
+Bank Debit Card International payment 2. Final txn amount may change …"). It
+has no amount: the international spend itself comes as an H03 alert in INR
+and is counted. Until 1.1.1 a `FOREIGN_CURRENCY` pattern made it
+`foreign_currency_deferred`, so each one added to "not counted yet". Since
+`hdfc-1.2.0` it is template H04, type `other_info`, channel `debit_card`,
+hint `forex_notice`; it never makes a transaction. A foreign-currency card
+spend (`Spent USD …`, N14) stays deferred. On the 288-message redacted sample:
+131 of 135 HDFC results are unchanged field for field; the 4 forex notices
+went from `foreign_currency_deferred` to `other_info` H04.
 
 ## SBI parser (`sbi-1.0.0`, D-108)
 

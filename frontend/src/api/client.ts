@@ -29,6 +29,9 @@ export interface Api {
   snapshot(etag: string | null, signal: AbortSignal): Promise<SnapshotAnswer>
   /** Throws an ApiError only when the server cannot be reached (status 0) or on abort. */
   send(request: SendRequest, signal: AbortSignal): Promise<SendAnswer>
+  /** POST /devices (5A, D-122): this phone, and its device token, shown only in this answer.
+   *  Online only, never through the outbox: a stored replay would have to keep the token. */
+  registerDevice(deviceId: string, name: string): Promise<{ token: string }>
 }
 
 export class ApiError extends Error {

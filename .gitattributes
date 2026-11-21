@@ -1,3 +1,6 @@
 # Normalize line endings to LF in the repo regardless of OS.
 * text=auto eol=lf
 *.png binary
+# Windows batch files need CRLF (mobile/android/gradlew.bat, 5A).
+*.bat text eol=crlf
+*.jar binary

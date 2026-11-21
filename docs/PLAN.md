@@ -4,10 +4,9 @@ Summary of phases 0 to 6. Draft from Phase 0; the planner owns this file and
 refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
-**Status (20 Nov 2026):** Phases 0 to 3 done. **Phase 4 in progress**: 4C,
-4B-1, 4B-2, 4B-3, 4E, 4F-A and 4F-B done; next the owner checks that queued
-taps sync and runs the counts, then Phase 5, then the pilot. 4A, 4G and 4D
-run during the pilot.
+**Status (22 Nov 2026):** Phases 0 to 4 done; Phase 5A (Flash on Android)
+done, not pushed; next the owner installs the APK on the phone, then 5B. 4G
+and 4D run during the pilot.
 
 Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
@@ -223,28 +222,46 @@ approved `redact-sample --family HDFC --unparsed` sample, then a reparse;
 `statement-import --apply` and `statement-names --apply` when the planner
 says so; the September statement checked again with `stmt-hdfc-1.1.0`.
 
-- [ ] 5A Several users: sign-up by invite only, every row kept per user
-  (owner id on every table, RLS), delete account (all rows, then the login).
-- [ ] 5B Capacitor Android shell around the PWA (`mobile/`), signed debug
-  build, the same outbox and phone copy.
-- [ ] 5C Kotlin SMS reading: the history at setup and new messages live
-  (bank senders only, on the phone), uploaded through the outbox with the
-  same idempotency keys; the server parses as today.
-- [ ] 5D First-run setup (sign in, SMS permission with a plain explanation,
-  "Your name as banks show it", the first import), a privacy policy, pilot
-  invites.
-- [ ] 5E Pilot fixes.
+Re-ordered by the planner on 22 Nov 2026 (the owner's phone first, then 2-3
+testers; the Play Store is Phase 6). The HDFC template from the approved
+`--unparsed` sample shipped in 5A (`hdfc-1.2.0`, D-127: it is the forex
+notice, no amount); `statement-import --apply`, `statement-names --apply`
+and the September re-check still wait for the planner.
 
-Play Store notes: the SMS permission (READ_SMS, RECEIVE_SMS) needs Google's
-approval through the Permissions Declaration as a core feature, so plan for
-review time; a new personal developer account must run a closed test with
-at least 12 testers for 14 days in a row before it can publish to production.
+- [x] 5A Flash on Android, the owner's phone first (22 Nov 2026, D-122 to
+  D-127): devices and ingest-only device tokens (migration `0014`); bank-only
+  SMS ingest with one sender list shared with the phone, stored exactly as a
+  laptop import; statement rows keep their id when an SMS merges; the
+  Capacitor 8.6.2 shell (`app.flashexpense.android`, bundled web assets, APK
+  updates by adb); the Kotlin SMS plugin (permission with restricted
+  settings, history from a cursor, live receiver, SQLite queue, WorkManager
+  upload and 6-hourly catch-up, Keystore-sealed token, status, refresh on
+  upload); HDFC `hdfc-1.2.0`. Design:
+  [design/phase-5a-android.md](design/phase-5a-android.md).
+- [ ] 5B Reliability on the real phone: missed broadcasts (receiver against
+  catch-up counts), Samsung battery (Unrestricted or not), the quality of
+  live classification (new payments as they arrive).
+- [ ] 5C Several users: invite codes, an isolation audit (every row and
+  route per owner, RLS), delete account = delete all their data (then the
+  login), first-run setup (sign in, SMS permission, "Your name as banks show
+  it", the first scan).
+- [ ] 5D 2-3 testers.
 
 Then the pilot; 4G (cash wallet) and 4D (multi-month analysis) run during it.
 
 Ops note: there is no warm job (D-112); `HEAD /health` (D-098) and
 `/health/db` stay for manual checks.
 
-## Phase 6: Statements, Gmail, insights, differentiators
+## Phase 6: Play Store
+
+Release signing (Play App Signing), the privacy policy, the store listing.
+The SMS permission (READ_SMS, RECEIVE_SMS) needs Google's approval through
+the Permissions Declaration as a core feature, so plan for review time; a new
+personal developer account must run a closed test with at least 12 testers
+for 14 days in a row before it can publish to production.
+
+## Phase 7: Statements, Gmail, insights, differentiators
+
+(Phase 6 until 22 Nov 2026; renumbered when the Play Store became Phase 6.)
 
 Budget cycles, P2P tagging, roommate splits, subscriptions, first-salary mode, and D-026 (investment senders); no detail yet.

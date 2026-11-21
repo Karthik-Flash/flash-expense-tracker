@@ -5,17 +5,22 @@
 //
 // It builds into dist-xo/, serves it on :4174, starts the API on :8765
 // (backend/tests/cross_origin_server.py), then in headless Edge: a tap online, and a tap
-// offline followed by going online. It prints each preflight and write with its status, and
-// exits 1 when a write did not reach the server.
+// offline followed by going online. Then the Android app's origin (5A, D-125): the WebView
+// at https://localhost sends exactly these preflights and requests, replayed from Node with
+// that Origin; the phone's native upload sends none (not subject to CORS). It prints each
+// preflight and write with its status, and exits 1 when a write did not reach the server.
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 
+import { HEADER, METHODS } from '../src/api/headers.ts'
+
 const FRONTEND = resolve(import.meta.dirname, '..')
 const BACKEND = resolve(FRONTEND, '..', 'backend')
 const APP = 'http://localhost:4174'
+const CAPACITOR = 'https://localhost' // the Android WebView's origin (D-125)
 const API = 'http://127.0.0.1:8765'
 const AUTH = 'http://127.0.0.1:9' // nothing listens: the stored session is all the app needs
 const EDGE = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/microsoft-edge', '/usr/bin/google-chrome'].find(existsSync)
@@ -39,7 +44,7 @@ if ((await new Promise((r) => build.on('exit', r))) !== 0) done(2)
 run(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--outDir', 'dist-xo', '--port', '4174', '--strictPort'], { cwd: FRONTEND, env })
 
 // 2. The API, with the frontend's origin allowed.
-const server = run(PYTHON, ['-m', 'tests.cross_origin_server', '8765', APP], { cwd: BACKEND })
+const server = run(PYTHON, ['-m', 'tests.cross_origin_server', '8765', `${APP},${CAPACITOR}`], { cwd: BACKEND })
 const log = []
 let token = null
 createInterface({ input: server.stdout }).on('line', (line) => {
@@ -96,7 +101,9 @@ const session = { access_token: token, refresh_token: 'xo-refresh', token_type: 
 await js(`localStorage.setItem('sb-127-auth-token', ${JSON.stringify(JSON.stringify(session))})`)
 await cdp('Page.navigate', { url: `${APP}/#/todo` })
 await cdp('Page.reload', { ignoreCache: true })
-await sleep(6000)
+// Up to 30 s for the To-do card (a cold first run is slow), then a moment to settle.
+for (let i = 0; i < 60 && !(await js(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Friend')`)); i++) await sleep(500)
+await sleep(1000)
 if (process.env.XO_DEBUG) console.log('page:', (await js('document.body.innerText')).slice(0, 400))
 
 const results = []
@@ -120,7 +127,45 @@ for (const r of requests.values()) if (r.method !== 'GET') console.log(`  ${r.me
 console.log('server log, non-GET lines:')
 for (const line of log) if (!line.startsWith('GET ')) console.log(`  ${line}`)
 const put = writes()
-const ok = put.length >= 2 && put.every((r) => r.result.startsWith('2')) && sentOffline === 0
+const browserOk = put.length >= 2 && put.every((r) => r.result.startsWith('2')) && sentOffline === 0
+
+// 4. The Android app (https://localhost): a preflight per method with every app header, the
+// snapshot, registering this phone, an upload with the device token (native: no Origin),
+// and revoking the phone through the outbox's route. Another origin gets no CORS answer.
+const allHeaders = Object.values(HEADER).join(', ')
+const xo = []
+const check = (what, answer, want, origin = CAPACITOR) => {
+  const acao = answer.headers.get('access-control-allow-origin')
+  const pass = answer.status === want && (origin === null || acao === origin)
+  xo.push(pass)
+  console.log(`  ${what}: ${answer.status}${origin === null ? '' : `, allow-origin ${acao ?? 'none'}`} ${pass ? 'ok' : 'FAIL'}`)
+}
+console.log(`Android app origin ${CAPACITOR}:`)
+for (const method of METHODS) {
+  const pre = await fetch(`${API}/api/v1/devices`, { method: 'OPTIONS', headers: { Origin: CAPACITOR, 'Access-Control-Request-Method': method, 'Access-Control-Request-Headers': allHeaders } })
+  check(`preflight ${method}`, pre, 200)
+}
+const auth = { Origin: CAPACITOR, [HEADER.authorization]: `Bearer ${token}`, [HEADER.accept]: 'application/json' }
+const snap = await fetch(`${API}/api/v1/sync/snapshot`, { headers: auth })
+check('GET /api/v1/sync/snapshot', snap, 200)
+const exposed = (snap.headers.get('access-control-expose-headers') ?? '').toLowerCase().includes('etag')
+xo.push(exposed)
+console.log(`  ETag exposed: ${exposed ? 'ok' : 'FAIL'}`)
+const deviceId = crypto.randomUUID()
+const reg = await fetch(`${API}/api/v1/devices`, { method: 'POST', headers: { ...auth, [HEADER.contentType]: 'application/json' }, body: JSON.stringify({ device_id: deviceId, name: 'XO TEST PHONE' }) })
+check('POST /api/v1/devices', reg, 201)
+const deviceToken = (await reg.json().catch(() => ({}))).token
+const sms = { sender: 'VM-HDFCBK-S', body: 'Sent Rs.33.00\nFrom HDFC Bank A/C *0001\nTo TEST XO\nOn 10/03/26\nRef 612300000077\nNot You?\nCall 18000000001/SMS BLOCK UPI to 9000000001\n', received_at_utc: '2026-03-10T06:00:00.123Z', device_msg_id: '1' }
+const upload = await fetch(`${API}/api/v1/ingest/sms`, { method: 'POST', headers: { [HEADER.authorization]: `Bearer ${deviceToken}`, [HEADER.contentType]: 'application/json' }, body: JSON.stringify({ messages: [sms] }) })
+check('POST /api/v1/ingest/sms (native, device token)', upload, 200, null)
+const revoke = await fetch(`${API}/api/v1/devices/${deviceId}`, { method: 'DELETE', headers: { ...auth, [HEADER.idempotencyKey]: crypto.randomUUID() } })
+check('DELETE /api/v1/devices/{device_id}', revoke, 200)
+const evil = await fetch(`${API}/api/v1/devices`, { method: 'OPTIONS', headers: { Origin: 'https://localhost:8443', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': allHeaders } })
+const refused = evil.status === 400 && !evil.headers.get('access-control-allow-origin')
+xo.push(refused)
+console.log(`  another origin (https://localhost:8443) refused: ${refused ? 'ok' : 'FAIL'}`)
+
+const ok = browserOk && xo.every(Boolean)
 console.log(ok ? 'CROSS-ORIGIN CHECK: PASS' : 'CROSS-ORIGIN CHECK: FAIL')
 ws.close()
 done(ok ? 0 : 1)

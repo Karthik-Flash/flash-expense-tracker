@@ -1,0 +1,60 @@
+apply plugin: 'com.android.application'
+
+// The APK version (docs/design/phase-5a-android.md): frontend/scripts/android.mjs passes the
+// package.json version and the commit count, so every new APK installs over the old one.
+def flashVersionCode = (project.findProperty('flashVersionCode') ?: '1') as int
+def flashVersionName = (project.findProperty('flashVersionName') ?: '0.1.0') as String
+
+// One list of bank senders for the server and the phone (D-123): the server's folder
+// backend/app/engine/shared/ (bank_senders.json only) is an assets folder of the APK.
+def sharedAssets = rootProject.file('../../backend/app/engine/shared').absolutePath
+
+android {
+    namespace = "app.flashexpense.android"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId = "app.flashexpense.android"
+        minSdk = rootProject.ext.minSdkVersion
+        targetSdk = rootProject.ext.targetSdkVersion
+        versionCode = flashVersionCode
+        versionName = flashVersionName
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    androidResources {
+        // Files and dirs to omit from the packaged assets dir (Capacitor's default).
+        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+    buildTypes {
+        release {
+            minifyEnabled = false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    testOptions {
+        unitTests.all {
+            // Kotlin unit tests read the shared fixtures in backend/tests/fixtures.
+            systemProperty 'flash.repo', rootProject.file('../..').absolutePath
+        }
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.assets?.addStaticSourceDirectory(sharedAssets)
+    }
+}
+
+def v = rootProject.ext // variables.gradle: exact versions
+
+dependencies {
+    implementation "androidx.appcompat:appcompat:${v.androidxAppCompatVersion}"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:${v.androidxCoordinatorLayoutVersion}"
+    implementation "androidx.core:core-splashscreen:${v.coreSplashScreenVersion}"
+    implementation "androidx.work:work-runtime-ktx:${v.workVersion}"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:${v.junitVersion}"
+    androidTestImplementation "androidx.test.ext:junit:${v.androidxJunitVersion}"
+    androidTestImplementation "androidx.test.espresso:espresso-core:${v.androidxEspressoCoreVersion}"
+}
+
+apply from: 'capacitor.build.gradle'

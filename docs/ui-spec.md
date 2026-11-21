@@ -72,6 +72,7 @@ link opens it from cold (`frontend/src/view.ts`, tested both ways):
 | `txn` | the transaction whose sheet is open |
 | `who` | Transactions of one person, every month ("See payments", 4E) |
 | `person`, `do` | the person sheet, opened at `name` or `join` (4E) |
+| `speed`, `unsaved`, `profile`, `sms` | an app-wide sheet: Speed, Not saved, Your name, Bank SMS (5A) |
 
 - Opening a layer (a detail or a sheet) adds a history entry. Back closes the
   topmost layer: an app-wide sheet, the person sheet, the transaction sheet,
@@ -457,7 +458,45 @@ most 30 characters."); Create stays disabled until the name is fine.
 
 **Speed sheet**: the Sync block comes first: saved on phone, failed, last
 attempt (IST time and result code), last success, last error. Then the
-targets, the last launch, the launches table and the boot block.
+targets, the last launch, the launches table and the boot block. Since 5A a
+Bank SMS block sits above it (below).
+
+## Bank SMS (5A, D-122, D-124)
+
+The **Bank SMS sheet** (`?sms`) opens from Home (in the Android app, one
+muted line under the freshness line until bank SMS are on: "Read bank SMS on
+this phone · Set up", "Bank SMS: Android did not allow access · Set up",
+"Bank SMS stopped: this phone was disconnected · Set up", or "· Choose" when
+only the period is left) and from the Speed sheet ("Bank SMS settings"; in a
+browser "Bank SMS and your phones"). It always starts with one muted
+sentence: Flash reads only the banks' SMS and sends them to the account;
+other messages are never read, kept or sent. Then one step at a time
+(`native/smsState.ts` `smsStep`):
+
+| Step | What the sheet shows |
+| ---- | -------------------- |
+| browser | "Bank SMS are read by the Flash app for Android", then the phones |
+| permission | Why SMS access is needed, "Allow SMS access" (primary); a granted permission connects the phone at once |
+| blocked | "Android did not allow SMS access" and the numbered steps: Open App info; ⋮ > Allow restricted settings (if there is no ⋮, go on); Permissions > SMS > Allow; come back. "Open App info" (primary), "Check again" |
+| connect / revoked | "Connect this phone" or "This phone was disconnected …", one primary button |
+| period | "Which messages to read first": radio rows "From your newest message on the server (Sat 14 Nov)" (the default when the server has SMS), "The last 3 / 6 / 12 months"; "Start reading" |
+| on | "On. New bank SMS are sent within a minute …", the waiting count, the last error in words (danger colour), "Sync now" |
+
+- **Battery hint**, when Android optimises Flash's battery use: a bordered
+  card "For uploads in the background, set Flash's battery use to
+  Unrestricted. On Samsung: App info, Battery, Unrestricted." and "Open App
+  info".
+- **Status** (also at the top of the Speed sheet, `statusRows`): SMS
+  permission, this phone (connected, disconnected, not connected), waiting
+  on phone, last upload (IST time, n new), last attempt (time, result code),
+  last error (code), reading since, dropped (only when not 0), battery
+  (unrestricted or optimised). Codes, counts and times only: safe to paste.
+- **Phones**: every phone of the account from the snapshot (`devices`):
+  name, "· this phone", "Last upload Sat 21 Nov", "No upload yet" or
+  "Revoked"; Revoke on an active one goes through the outbox and shows
+  "Saved on phone · syncing" on its row.
+- In the Android app there is no update bar: a new version is a new APK
+  (D-125). The version line shows the APK's build.
 
 ## Update bar and version line
 

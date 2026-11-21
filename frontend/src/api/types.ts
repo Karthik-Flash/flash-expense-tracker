@@ -215,10 +215,24 @@ export interface Snapshot {
   }
   /** "Your name as banks show it" (D-117). Absent before 4Z. */
   profile?: { names: string[] }
+  /** Phones that upload bank SMS (5A, D-122). Absent before 5A. */
+  devices?: Device[]
+  /** When the newest SMS the server has arrived: where a first scan starts (5A). */
+  sms?: { newest_utc: string | null }
   labels: LabelView[]
   categories: Category[]
   /** Everyone to name or join (4E); absent in a phone copy from before. */
   people?: Person[]
+}
+
+/** A phone that uploads bank SMS (D-122). Never its token. */
+export interface Device {
+  device_id: string
+  name: string
+  created_utc: string | null
+  last_seen_utc: string | null
+  /** Set: its token no longer works. */
+  revoked_utc: string | null
 }
 
 export type SnapshotAnswer = { status: 200; etag: string; snapshot: Snapshot; bytes: number } | { status: 304 }

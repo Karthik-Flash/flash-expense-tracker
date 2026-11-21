@@ -51,6 +51,7 @@ function server(snapshots: ('ok' | 'error')[] = []) {
   let modes: Mode[] = []
   const api: Api = {
     demo: false,
+    registerDevice: async () => ({ token: 'test-token' }),
     async snapshot(): Promise<SnapshotAnswer> {
       if (snapshots.shift() === 'error') throw new ApiError(0, 'Could not reach the server.')
       return { status: 200, etag: '"e"', snapshot: snap, bytes: 1 }

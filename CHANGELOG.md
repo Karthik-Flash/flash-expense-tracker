@@ -4,6 +4,27 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 5A: Flash on Android (22 Nov 2026)
+
+- An Android app (`app.flashexpense.android`, "Flash"): the web app bundled
+  in a Capacitor 8.6.2 shell, so it opens offline from the first launch; a
+  new version is a new APK, installed over USB (D-125).
+- Bank SMS read on the phone: the history from a chosen start (the newest
+  message the server has, or 3, 6 or 12 months), every new message within a
+  minute, and a check every 6 hours. Only bank messages leave the phone; the
+  server checks again and stores them exactly as a laptop import, so nothing
+  is counted twice (D-123, D-124).
+- Phones and device tokens: a phone uploads with its own token, which can do
+  nothing else; Revoke from any device; sign-out revokes and wipes it
+  (D-122).
+- A "Bank SMS" sheet: permission (with the steps for Android's restricted
+  settings), connect, the period, the status and the phones; the same status
+  at the top of the Speed sheet, with a battery hint (D-124).
+- An SMS that merges into a row from the bank statement keeps that row and
+  your answers on it (D-126).
+- HDFC `hdfc-1.2.0`: the forex markup notice is read as a notice, so 44
+  messages leave "not counted yet"; it carries no amount (D-127).
+
 ## Phase 4Z: closing Phase 4 (21 Nov 2026)
 
 - History: the push was verified and the temporary git backup deleted

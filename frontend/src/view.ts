@@ -3,8 +3,8 @@
 
 export const TABS = ['home', 'transactions', 'todo', 'labels'] as const
 export type Tab = (typeof TABS)[number] | 'dev'
-/** App-wide sheets, a flag in the URL: "?speed" (Speed), "?unsaved" (not saved). */
-export const SHEETS = ['speed', 'unsaved', 'profile'] as const
+/** App-wide sheets, a flag in the URL: "?speed" (Speed), "?unsaved" (not saved), "?sms" (Bank SMS). */
+export const SHEETS = ['speed', 'unsaved', 'profile', 'sms'] as const
 export type SheetName = (typeof SHEETS)[number]
 /** The person sheet opened at a step (4E): "?person=p_12&do=join". */
 export const PERSON_STEPS = ['name', 'join'] as const

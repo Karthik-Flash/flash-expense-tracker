@@ -32,7 +32,7 @@ SMS Backup XML --importer--> raw_messages --engine--> parse_results --money?--> 
 | Table | Key columns | Constraints |
 | ----- | ----------- | ----------- |
 | `import_batches` | `source`, `started_at`, `finished_at`, `status` (running, done, failed), `input_fingerprint` (sha256 of the input bytes, never the file name), `app_version`, `parser_versions` (JSON), `counts` (JSON) | |
-| `raw_messages` | `source` (sms_backup, manual, statement, live_sms, gmail), `sender_raw`, `sender_core`, `body`, `received_at`, `content_hash`, `first_batch_id` | UNIQUE (`owner_id`, `content_hash`) |
+| `raw_messages` | `source` (sms_backup, manual, statement, live_sms (the phone, 5A), gmail), `sender_raw`, `sender_core`, `body`, `received_at`, `content_hash`, `first_batch_id` | UNIQUE (`owner_id`, `content_hash`) |
 | `parse_results` | `raw_message_id`, `parser_version`, `status` (parsed, unknown), `unknown_reason`, `unknown_detail`, `is_current`, every `ParsedMessage` field (`hints` as JSON) | UNIQUE (`raw_message_id`, `parser_version`); one `is_current` row per message (partial unique index) |
 | `transactions` | `dedupe_key`, `type`, `direction`, `amount_paise`, `currency`, `account_last4`, `channel`, `counterparty_raw`, `reference`, `balance_paise`, `txn_time_utc`, `time_inferred`, `bank`, `hints`, `status` (active, superseded) | UNIQUE (`owner_id`, `dedupe_key`); `amount_paise > 0` |
 | `transaction_sources` | `transaction_id`, `raw_message_id`, `parse_result_id` | UNIQUE (`raw_message_id`) |
@@ -375,6 +375,31 @@ level security on, no policies.
 | `recompute_pending` | The write deferred its recompute (D-094); the next read runs it and clears the mark |
 
 It holds no money, no message text and no counterparty text.
+
+## Devices (migration `0014`, D-122)
+
+A phone that uploads bank SMS. Row level security on, no policies. Rows are
+never deleted: a revoked phone keeps its row with `revoked_at`.
+
+| Column | What |
+| ------ | ---- |
+| `owner_id`, `device_id` | Unique together: the phone's own id (a UUID per install, kept across sign-outs) |
+| `name` | "samsung SM-S918B", at most 60 characters |
+| `token_hash` | SHA-256 of the device token (unique); the token itself is never stored |
+| `created_at`, `last_seen_at`, `revoked_at` | UTC; `last_seen_at` is the last upload |
+
+It holds no message, no money and no counterparty text. Uploads go through
+the same store as import-sms: `raw_messages.source` `live_sms`, one
+`import_batches` row (source `live_sms`) per upload, the same content hash,
+so a message the laptop imported and the phone uploaded is one raw message.
+
+**Statement rows keep their id (D-126).** An SMS that merges into a
+transaction first read from the bank statement (`statement-import`), by its
+reference or by the same amount and day (`store.statement_twin`), replaces
+that transaction's fields with its own words but keeps the transaction's id,
+so the owner's category, label, role and check on it stay. A later reparse of
+the SMS updates the same transaction in place. Tested on both routes (phone
+and laptop) and after a reparse (`tests/test_devices.py`).
 
 ## Login and the API (D-078)
 

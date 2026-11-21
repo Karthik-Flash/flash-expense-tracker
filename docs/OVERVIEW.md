@@ -2,7 +2,8 @@
 
 A one-page tour of Flash Expense Tracker for someone new to the project. It
 links to the detailed documents instead of repeating them. State: Phase 4
-done, Phase 5 next (21 Nov 2026; [retro/phase-4.md](retro/phase-4.md)).
+done ([retro/phase-4.md](retro/phase-4.md)); Phase 5A, the Android app, done
+on 22 Nov 2026 ([design/phase-5a-android.md](design/phase-5a-android.md)).
 
 ## What it does and for whom
 
@@ -19,7 +20,7 @@ statement.
 
 | Place | What it holds or does | What it never sees |
 | ----- | --------------------- | ------------------ |
-| Phone | The app (an installable web app). Shows numbers; sends the owner's answers. | The database password; other people's data |
+| Phone | The app (an installable web app, and since 5A the Android app). Shows numbers; sends the owner's answers; the Android app reads bank SMS and uploads only those (D-123, D-124). | The database password; other people's data; any SMS that is not a bank's |
 | Laptop | Code, tests, and `D:\FlashPrivate\` (SMS exports, the redaction key, private lists, backups). The owner runs imports and backups here. | Nothing leaves `D:\FlashPrivate\` except through the owner's own commands |
 | Supabase Postgres | The real data: messages, transactions, owner answers, derived results | Only the server and the owner's import connect to it |
 | Supabase Auth | The owner's login (email and password, sign-ups off) | Transactions |
@@ -126,8 +127,9 @@ Full rules: [ui-spec.md](ui-spec.md).
   Meanwhile `statement-import` can add those rows from the statement.
 - HDFC and SBI have their own parsers; ICICI, Axis, Kotak, YES and India Post
   use the careful generic parser; foreign-currency messages are not counted.
-- Data comes from SMS backups the owner imports; live SMS on the phone is
-  Phase 5.
+- Data comes from SMS backups the owner imports and, since 5A, from the
+  Android app, which uploads bank SMS as they arrive (both stored the same
+  way, never twice).
 - The server sleeps when idle and can take about a minute to wake; the phone
   copy shows meanwhile (there is no warm job, D-112).
 - Owner answers made offline wait on the phone ("Saved on phone · syncing")

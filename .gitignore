@@ -6,9 +6,9 @@
 # --- Personal data: only data/README.md is tracked ----------------------------
 data/*
 !data/README.md
-# SMS Backup & Restore exports. Android XML (mobile phase) will need a
-# negation such as !mobile/android/**/*.xml when it arrives.
+# SMS Backup & Restore exports. The Android project's XML (mobile/) is tracked (5A).
 *.xml
+!mobile/**/*.xml
 
 # --- Python ------------------------------------------------------------------
 .venv/
@@ -40,4 +40,5 @@ dev-dist/
 Thumbs.db
 .claude/settings.local.json
 dist-xo/
+dist-android/
 screens-out/

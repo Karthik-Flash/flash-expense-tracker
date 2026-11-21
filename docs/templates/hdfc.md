@@ -99,10 +99,13 @@ Notice!
 {NUM}. Final txn amount may change based on forex rate on the settlement date
 ```
 
-- **Type:** foreign_currency (deferred)
+- **Type:** other_info since `hdfc-1.2.0` (D-127; until 1.1.1 foreign_currency,
+  deferred). Channel `debit_card`, hint `forex_notice`.
 - **Fields:** none.
-- **Notes:** Companion notice to an international debit card spend (H03).
-  Not a transaction. Foreign-currency handling is deferred.
+- **Notes:** Companion notice to an international debit card spend (H03, in
+  INR, counted). Not a transaction. In the full data: 44 messages, all this
+  shape (the owner's approved `--unparsed` sample, 4Z); a trailing full stop
+  is allowed.
 
 ### H05 · sh_bbcdf74e · 2 messages · HDFCBK
 
