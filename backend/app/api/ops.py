@@ -69,9 +69,14 @@ def client_op(
 OpDep = Annotated[Op, Depends(client_op)]
 
 
-def _hash(op: Op, body: dict | None) -> str:
-    text = json.dumps([op.method, op.path, body], sort_keys=True, separators=(",", ":"))
+def request_hash(method: str, path: str, body: dict | None) -> str:
+    """What client_ops stores: a repeat of a key must send the same method, path and body."""
+    text = json.dumps([method, path, body], sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _hash(op: Op, body: dict | None) -> str:
+    return request_hash(op.method, op.path, body)
 
 
 def _clear_pending(session: Session, owner: uuid.UUID) -> None:

@@ -248,6 +248,15 @@ def create_label(session: Session, owner_id: uuid.UUID, name: str, source: str) 
     return label
 
 
+def label_named(session: Session, owner_id: uuid.UUID, name: str, source: str) -> Label:
+    """The owner's label of this name (any case, spaces tidied), made when there is none."""
+    wanted = clean_name(name, "a label name")
+    for label in session.scalars(select(Label).where(Label.owner_id == owner_id)):
+        if " ".join(label.name.split()).casefold() == wanted.casefold():
+            return label
+    return create_label(session, owner_id, wanted, source)
+
+
 def set_label(
     session: Session, owner_id: uuid.UUID, txn_id: int, label_id: int, source: str
 ) -> None:
