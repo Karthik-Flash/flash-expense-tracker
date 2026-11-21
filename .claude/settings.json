@@ -1,4 +1,9 @@
 {
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "permissions": {
     "deny": [
       "Read(//d/FlashPrivate/**)",
@@ -15,6 +20,7 @@
       "Read(//**/.env.test)",
       "Read(/*.xml)",
       "Read(./.claude/**/*.xml)",
+      "Read(./.githooks/**/*.xml)",
       "Read(./.github/**/*.xml)",
       "Read(./.vscode/**/*.xml)",
       "Read(./backend/**/*.xml)",

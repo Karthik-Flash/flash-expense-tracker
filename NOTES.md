@@ -26,8 +26,11 @@ progress**: 4C (install and update prompt), 4B-1 (phone copy) and 4B-2
 To-do, logo options) and 4F-A (generic parser for other banks, payback
 audit, refresh after deploy, logo C2) done 20 Nov; 4F-B (the CORS fix for
 blocked taps, a queue that cannot get stuck, SBI parser) done 21 Nov; next:
-the owner checks the update, runs the counts, then Phase 5 and the pilot. A
-one-page tour:
+the owner checks the update, runs the counts, then Phase 5 and the pilot.
+History was rewritten on 21 Nov to drop AI attribution lines (D-109):
+`main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
+through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
+A one-page tour:
 [docs/OVERVIEW.md](docs/OVERVIEW.md).
 New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
@@ -787,6 +790,7 @@ their sender cores. Fixtures for parsers: `backend\tests\fixtures\sms\<bank>.jso
 ### Git: daily loop
 
 ```powershell
+git config core.hooksPath .githooks              # once per clone: no AI attribution lines (D-109)
 git switch main; git pull                         # start from latest main
 git switch -c feat/short-name                     # new branch (same as checkout -b)
 git add -p                                        # stage piece by piece
@@ -874,6 +878,16 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-21: history rewrite (no AI attribution)
+
+- 116 of 160 commits lost their `Co-Authored-By: Claude` line
+  (`git filter-branch --msg-filter`); trees, authors and dates identical.
+  Backup mirror: `D:\Projects\FinancesApp-backup-20261121.git`. Mapping and
+  restore: [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
+  SHAs quoted in log entries below are the old ones.
+- Prevention: `attribution` in `.claude/settings.json`, `.githooks/commit-msg`
+  (tested by `scripts/test_commit_msg_hook.py`), a CLAUDE.md rule.
 
 ### 2026-11-21: Phase 4F-B, blocked taps, SBI parser
 

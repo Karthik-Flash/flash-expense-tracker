@@ -22,6 +22,10 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   checked cross-origin); the outbox cannot get stuck (D-105); writes commit
   before the recompute (D-106); clearer sync wording (D-107); SBI parser
   (D-108); payback-audit honours explicit answers.
+- History rewritten 21 Nov to drop AI attribution lines (D-109): `main`
+  before 4H is `c216442` (was `076ee9f`); map in
+  [history-rewrite-20261121.md](history-rewrite-20261121.md). Enable the
+  hook once per clone: `git config core.hooksPath .githooks`.
 - Engine versions: parsers `hdfc-1.1.1`, `sbi-1.0.0` and `generic-1.0.0`
   (other banks), `merchant-1.1.1`, `reconcile-1.4.0`, `categorise-1.1.0`.
 - Alembic head: `0010` (recompute marks, `parties.answered_at`).

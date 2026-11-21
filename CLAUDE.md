@@ -80,6 +80,9 @@ Config comes from env vars (`backend/.env`, `frontend/.env`); copy the
 - Conventional Commits (`feat(backend): ...`, `fix(scripts): ...`, `ci: ...`).
 - Commit identity: `Karthik-Flash <karthikeyareddy1905@gmail.com>`. Check with
   `git var GIT_AUTHOR_IDENT` before committing.
+- No AI attribution lines in commits or PRs (`Co-Authored-By: Claude`,
+  `Claude-Session`, "Generated with Claude Code"; D-109). `.githooks/commit-msg`
+  rejects them; enable it once per clone: `git config core.hooksPath .githooks`.
 - Update `NOTES.md` after **every task**: tick what is done, add any new
   commands to its cheat sheet, list what is still open. Record lasting decisions in
   `docs/DECISIONS.md`. The planner owns `docs/PLAN.md`; propose changes there,
