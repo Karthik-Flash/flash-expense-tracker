@@ -5,37 +5,35 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
 [PLAN.md](PLAN.md).
 
-## Current state (Phase 4, 21 Nov 2026)
+## Current state (start of Phase 5, 21 Nov 2026)
 
-- Phases 0 to 3 are done. Order from here ([PLAN.md](PLAN.md)): 4E (done),
-  4F (second bank), then Phase 5 (pilot-ready Android app: multi-user with
-  invites, per-user data, delete account; Capacitor shell; Kotlin SMS
-  reading, history and live, uploaded through the outbox; onboarding,
-  privacy policy, pilot invites; pilot fixes; 8-day target), then the
-  pilot. 4A, 4G and 4D run during the pilot. Done: 4C, 4B-1, 4B-2, 4B-3,
-  4E (people, faster To-do, logo options, D-096 to D-098), 4F-A (generic
-  parser for other banks, payback audit, refresh on the first read after a
-  deploy, bank survey and redacted samples, Not a payment, logo C2, D-099
-  to D-103). Next: the owner runs the 4F-A counts (NOTES cheat sheet), then
-  4F-B (a dedicated parser for the main other bank) if they show a need.
-- 4F-B (21 Nov): the phone's writes were blocked by CORS (D-104, fixed and
-  checked cross-origin); the outbox cannot get stuck (D-105); writes commit
-  before the recompute (D-106); clearer sync wording (D-107); SBI parser
-  (D-108); payback-audit honours explicit answers.
-- 4A (21 Nov): `stmt-hdfc-1.0.0` and `statement-check` (D-114), own-account
-  transfers by shared reference or the owner's answer (`reconcile-1.5.0`,
-  D-115), `statement-names` (D-116, migration `0012`). Next: Phase 5.
-- 4H (21 Nov): person sheet actions (D-110), payback-audit counts any
-  owner answer on record and has `--restore` (D-111), the API warm job
-  retired (D-112), UI tokens and one money/date format (D-113).
-- History rewritten 21 Nov to drop AI attribution lines (D-109): `main`
-  before 4H is `c216442` (was `076ee9f`); map in
-  [history-rewrite-20261121.md](history-rewrite-20261121.md). Enable the
-  hook once per clone: `git config core.hooksPath .githooks`.
+- **Phases 0 to 4 are done.** Phase 4 in one page:
+  [retro/phase-4.md](retro/phase-4.md) (what shipped, what broke, the rules).
+  Next: Phase 5, the pilot-ready Android app ([PLAN.md](PLAN.md): 5A several
+  users, 5B Capacitor shell, 5C Kotlin SMS reading, 5D first-run setup and
+  pilot invites, 5E pilot fixes; 8-day target). Before 5A: the missing HDFC
+  template from the owner's approved `--unparsed` sample, the planner's call
+  on `statement-import --apply` and `statement-names --apply`, and the
+  September statement checked again.
+- **Phase 4 by step:** 4C install and update (D-085 to D-087); 4B offline
+  first: phone copy, outbox, offline launch (D-088 to D-095); 4E people
+  (D-096 to D-098); 4F other banks, the CORS fix, the stuck-queue fix,
+  writes before the recompute, SBI parser (D-099 to D-108); 4H history
+  without AI attribution, person sheet actions, payback-audit by any answer,
+  warm job retired, UI tokens (D-109 to D-113); 4A statement check,
+  own-account transfers, statement names (D-114 to D-116); 4Z statement
+  reader 1.1.0 and import, It's me and Investments, categories from names,
+  git backup deleted after the verified push (D-117 to D-121).
+- **History** was rewritten on 21 Nov to drop AI attribution lines (D-109;
+  old to new SHAs in [history-rewrite-20261121.md](history-rewrite-20261121.md));
+  the push was verified and the git backup deleted (D-121). Enable the hook
+  once per clone: `git config core.hooksPath .githooks`.
 - Engine versions: parsers `hdfc-1.1.1`, `sbi-1.0.0` and `generic-1.0.0`
-  (other banks), `merchant-1.1.1`, `reconcile-1.5.0`, `categorise-1.1.0`; statement reader `stmt-hdfc-1.0.0`.
-- Alembic head: `0012` (`parties.name_source`; `0011` was not used).
-- Decisions: D-001 to D-116 ([DECISIONS.md](DECISIONS.md)).
+  (other banks), `merchant-1.1.1`, `reconcile-1.6.0`, `categorise-1.2.0`;
+  statement reader `stmt-hdfc-1.1.0`.
+- Alembic head: `0013` (owner names, party kinds self and investment, role
+  investment; `0011` was not used).
+- Decisions: D-001 to D-121 ([DECISIONS.md](DECISIONS.md)).
 - Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
   lint/typecheck/tests/build, and the cross-origin check
   (`node scripts/cross-origin-check.mjs` from `frontend\`).

@@ -22,7 +22,15 @@ from sqlalchemy.orm import Session
 from app.api import ops
 from app.api.auth import current_owner
 from app.db import get_session
-from app.engine.categorise import CATEGORIES, SPENDING_ROLES, UNCATEGORISED, breakdown, label_view
+from app.engine import suggest
+from app.engine.categorise import (
+    CATEGORIES,
+    GUESS_RULES,
+    SPENDING_ROLES,
+    UNCATEGORISED,
+    breakdown,
+    label_view,
+)
 from app.engine.credits import sender_id
 from app.engine.merchant import channel_for, normalise_merchant
 from app.engine.parsers.generic import HINT as GENERIC
@@ -69,6 +77,14 @@ class NewLabel(Body):
 
 class PersonName(Body):
     name: str = Field(max_length=200)  # the rules: owner_actions.clean_name
+
+
+class OwnerNames(Body):
+    names: list[str] = Field(max_length=6)  # the rules: owner_actions.set_owner_names
+
+
+class PartyKind(Body):
+    kind: Literal["self", "investment"]
 
 
 class PersonJoin(Body):
@@ -158,7 +174,10 @@ def _identifier(t: Transaction, d: TxnDerived) -> str | None:
 def _item(
     owner: uuid.UUID, t: Transaction, d: TxnDerived, lab: Label | None, checked: int | None
 ) -> dict:
-    generic = GENERIC in (t.hints or ())  # read by the generic parser (D-101)
+    hints = t.hints or ()
+    generic = GENERIC in hints  # read by the generic parser (D-101)
+    statement = "statement" in hints  # read from the bank statement (D-120)
+    asks = generic or "statement_check" in hints
     return {
         "id": t.id,
         "time_utc": _iso(t.txn_time_utc),
@@ -172,10 +191,13 @@ def _item(
         "category": d.category,
         "category_name": CATEGORIES.get(d.category, d.category),
         "category_basis": d.category_basis,
+        # A guess from the name (D-119): "Guessed from the name" in the sheet.
+        "category_guessed": d.category_rule in GUESS_RULES,
         "label": {"id": lab.id, "name": lab.name} if lab else None,
         "generic": generic,
+        "statement": statement,
         # Asks the owner "Looks right?" until answered, or until it is not a payment.
-        "check": generic and checked is None and d.role not in ("ignored", "duplicate"),
+        "check": asks and checked is None and d.role not in ("ignored", "duplicate"),
     }
 
 
@@ -540,6 +562,8 @@ def people_directory(session: Session, owner: uuid.UUID) -> list[dict]:
             "key": _person(owner, t, d), "name": d.display_name, "named": bool(
                 party and party.display_name
             ), "txn_id": t.id, "role": None, "identifiers": {}, "counts": False,
+            # It's me or Investments (D-117, D-118), else null
+            "kind": party.kind if party and party.kind in ("self", "investment") else None,
         })  # fmt: skip
         person["identifiers"].setdefault(d.merchant_key, {
             "name": engine.display_name, "txn_id": t.id,
@@ -552,7 +576,14 @@ def people_directory(session: Session, owner: uuid.UUID) -> list[dict]:
             sender is not None
             or engine.kind == "person"
             or d.category == "people"
-            or (party and (party.kind == "person" or party.income_label or party.display_name))
+            or (
+                party
+                and (
+                    party.kind in ("person", "self", "investment")
+                    or party.income_label
+                    or party.display_name
+                )
+            )
             or len(texts.get(d.party_id, {})) > 1
         )
     return sorted(
@@ -564,6 +595,83 @@ def people_directory(session: Session, owner: uuid.UUID) -> list[dict]:
         ),
         key=lambda p: ((p["name"] or "").casefold(), p["key"]),
     )
+
+
+@router.put("/profile/names")
+def set_owner_names(owner: Owner, session: Db, op: ops.OpDep, body: OwnerNames):
+    """ "Your name as banks show it" (D-117): the whole list. Only suggestions read it."""
+
+    def action() -> dict:
+        return {"names": owner_actions.set_owner_names(session, owner, body.names, "app")}
+
+    return ops.write(session, owner, op, action, body.model_dump(), recomputes=False)
+
+
+@router.put("/people/{txn_id}/kind")
+def set_party_kind(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: PartyKind):
+    """It's me (self) or Investments (D-117, D-118): every payment of the person, both ways,
+    is a transfer between the owner's accounts, or an investment. In no total."""
+
+    def action() -> dict:
+        party = owner_actions.set_party_kind(session, owner, txn_id, body.kind, "app")
+        return {"id": txn_id, "kind": party.kind}
+
+    return ops.write(session, owner, op, action, body.model_dump())
+
+
+@router.delete("/people/{txn_id}/kind")
+def clear_party_kind(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+    """Undo It's me or Investments: the kind the person had before comes back."""
+
+    def action() -> dict:
+        party = owner_actions.clear_party_kind(session, owner, txn_id)
+        return {"id": txn_id, "kind": party.kind}
+
+    return ops.write(session, owner, op, action)
+
+
+@router.put("/people/{txn_id}/suggestion")
+def dismiss_suggestion(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: PartyKind):
+    """No to "Is this you?" or "Is this an investment?": not asked again. No total moves."""
+
+    def action() -> dict:
+        owner_actions.dismiss_suggestion(session, owner, txn_id, body.kind, "app")
+        return {"id": txn_id, "dismissed": body.kind}
+
+    return ops.write(session, owner, op, action, body.model_dump())  # may make a party
+
+
+def suggestions(session: Session, owner: uuid.UUID, names: tuple[str, ...]) -> list[dict]:
+    """To-do (D-117, D-118): "Is this you?" for a person whose text matches the owner's name
+    variants; "Is this an investment?" for a broker, clearing corporation, fund or SIP. Only
+    suggestions: nothing changes until the owner answers. Never for a person the owner
+    answered (Friend, Family, It's me, Investments) or said No to."""
+    parties = {p.id: p for p in session.scalars(select(Party).where(Party.owner_id == owner))}
+    found: dict[tuple[str, str], dict] = {}
+    rows = _stored(session, owner, TxnDerived.merchant_key.is_not(None))
+    for t, d in sorted(rows, key=lambda r: (r[0].txn_time_utc, r[0].id), reverse=True):
+        party = parties.get(d.party_id)
+        if party and (party.kind in ("self", "investment") or party.income_label):
+            continue
+        texts = (t.counterparty_raw, d.display_name)
+        kinds = []
+        if (
+            names
+            and not (party and party.answered_at)
+            and any(suggest.is_owner_name(x, names) for x in texts)
+        ):
+            kinds.append("self")
+        if any(suggest.is_investment(x) for x in texts):
+            kinds.append("investment")
+        key = _person(owner, t, d)
+        for kind in kinds:
+            if party and kind in (party.dismissed or []):
+                continue
+            entry = found.setdefault((kind, key), {
+                "kind": kind, "key": key, "txn_id": t.id, "name": d.display_name, "count": 0,
+            })  # fmt: skip
+            entry["count"] += 1
+    return sorted(found.values(), key=lambda x: (x["kind"], -x["count"], x["key"]))
 
 
 @router.put("/people/{txn_id}/name")

@@ -21,10 +21,12 @@ from app.engine.merchant import normalise_merchant
 from app.engine.parsers.generic import HINT as GENERIC
 from app.models import (
     LABEL_MAX,
+    SUGGESTIONS,
     VERDICTS,
     Label,
     OwnerCategory,
     OwnerLinkDecision,
+    OwnerName,
     OwnerRole,
     Party,
     PartyText,
@@ -326,6 +328,75 @@ def answer_transfer(
     return a, b
 
 
+MAX_OWNER_NAMES = 6
+KINDS = ("self", "investment")  # "It's me" (D-117) and Investments (D-118)
+
+
+def set_owner_names(
+    session: Session, owner_id: uuid.UUID, names: list[str], source: str
+) -> list[str]:
+    """ "Your name as banks show it": the whole list, replaced (D-117). Owner data."""
+    clean = []
+    for name in names:
+        text = " ".join((name or "").split())
+        if not 2 <= len(text) <= 2 * LABEL_MAX or not any(c.isalpha() for c in text):
+            raise ActionError("invalid", f"a name has 2 to {2 * LABEL_MAX} characters")
+        if text.casefold() not in {c.casefold() for c in clean}:
+            clean.append(text)
+    if len(clean) > MAX_OWNER_NAMES:
+        raise ActionError("invalid", f"at most {MAX_OWNER_NAMES} names")
+    session.execute(delete(OwnerName).where(OwnerName.owner_id == owner_id))
+    session.add_all(OwnerName(owner_id=owner_id, name=n, source=source) for n in clean)
+    session.flush()
+    return clean
+
+
+def set_party_kind(
+    session: Session, owner_id: uuid.UUID, txn_id: int, kind: str, source: str
+) -> Party:
+    """It's me (self) or Investments for the person of this transaction: every payment of
+    the party, both ways, becomes a transfer or an investment. The kind it had is kept, so
+    an undo restores it."""
+    if kind not in KINDS:
+        raise ActionError("invalid", "kind must be self or investment")
+    party = party_for(session, owner_id, txn_id, source)
+    if party.source == "file":
+        raise ActionError("conflict", FROM_FILE)
+    if party.kind not in KINDS:
+        party.dismissed = [d for d in party.dismissed or [] if not d.startswith("was:")] + [
+            f"was:{party.kind}"
+        ]
+    party.kind = kind
+    session.flush()
+    return party
+
+
+def clear_party_kind(session: Session, owner_id: uuid.UUID, txn_id: int) -> Party:
+    """Undo It's me or Investments: the party gets back the kind it had before."""
+    _, d = _derived(session, owner_id, txn_id)
+    party = session.get(Party, d.party_id) if d.party_id is not None else None
+    if party is None or party.kind not in KINDS:
+        raise ActionError("not_found", "this person is not marked as you or an investment")
+    was = [x for x in party.dismissed or [] if x.startswith("was:")]
+    party.kind = was[-1].removeprefix("was:") if was else "unsure"
+    party.dismissed = [x for x in party.dismissed or [] if not x.startswith("was:")]
+    session.flush()
+    return party
+
+
+def dismiss_suggestion(
+    session: Session, owner_id: uuid.UUID, txn_id: int, kind: str, source: str
+) -> Party:
+    """No to "Is this you?" or "Is this an investment?": never asked again for this party."""
+    if kind not in SUGGESTIONS:
+        raise ActionError("invalid", "kind must be self or investment")
+    party = party_for(session, owner_id, txn_id, source)
+    if kind not in (party.dismissed or []):
+        party.dismissed = [*(party.dismissed or []), kind]
+    session.flush()
+    return party
+
+
 # The checked transaction, for a route that must fail before writing anything else.
 transaction_of = _transaction
 
@@ -337,7 +408,7 @@ def looks_right(session: Session, owner_id: uuid.UUID, txn_id: int, source: str)
     """The owner checked a payment the generic parser read: its "check" flag goes. No total
     changes. Only a generic payment has a flag to clear."""
     t = _transaction(session, owner_id, txn_id)
-    if GENERIC not in (t.hints or ()):
+    if GENERIC not in (t.hints or ()) and "statement_check" not in (t.hints or ()):
         raise ActionError("invalid", "only a payment read automatically needs a check")
     row = session.get(TxnCheck, txn_id) or TxnCheck(transaction_id=txn_id, owner_id=owner_id)
     row.checked_at, row.source = datetime.now(UTC), source

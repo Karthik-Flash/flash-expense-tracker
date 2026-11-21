@@ -47,8 +47,8 @@ def test_every_data_route_needs_a_login(client) -> None:
     paths = app.openapi()["paths"]
     data_routes = [(m, p) for p, ops in paths.items() if p.startswith("/api/v1") for m in ops]
     # 4E: people name, clear name, join, separate. 4F-A: check, ignore, count again.
-    # 4A: a transfer answer.
-    assert len(data_routes) == 22
+    # 4A: a transfer answer. 4Z: owner names, a person's kind (set, undo), a suggestion's No.
+    assert len(data_routes) == 26
     for method, path in data_routes:
         url = re.sub(r"\{[^}]+\}", "1", path)
         response = client.request(method.upper(), url, json={})
@@ -244,7 +244,7 @@ def test_transactions_pages_filters_and_never_shows_message_text(client, data, d
     assert set(items[0]) == {
         "id", "time_utc", "amount_paise", "direction", "display_name", "identifier",
         "person_id", "role", "role_basis", "category", "category_name", "category_basis", "label",
-        "generic", "check",
+        "generic", "check", "statement", "category_guessed",
     }  # fmt: skip
     for t in items[:5]:  # one transaction by id: the same item
         assert get(client, f"/api/v1/transactions/{t['id']}").json() == t

@@ -14,6 +14,15 @@ Each row also gets its narration parts: the channel, and for UPI ("UPI-<NAME>-<V
 <REF12>-<NOTE>") the counterparty name and UPI ID; for every channel the 12-digit
 reference when the narration (or else the reference field) holds exactly one.
 
+1.1.0 (4Z): a comma inside double quotes does not split a field, so a quoted amount may
+carry thousands separators
+("1,23,456.00" or "123,456.00"); a blank or "-" amount is zero. A row with a negative
+amount, or with both a debit and a credit (a card reversal netted on one row, seen in a
+real September statement), is one movement: of the readings credit - debit, credit +
+debit and the two of their sizes, the one that keeps the balance chain unbroken decides
+its direction and amount (the plain credit - debit when no reading or no previous row
+fits). Such a row is marked `netted`; a row that nets to zero is skipped.
+
 check_balances() walks the closing balances: each must equal the previous one plus the
 credit minus the debit. A break means a row was read wrongly (or the file was edited), so
 statement-check reports the count before anything else.
@@ -25,7 +34,7 @@ from datetime import date
 
 from app.engine.money import AmountError, to_paise
 
-STATEMENT_VERSION = "stmt-hdfc-1.0.0"
+STATEMENT_VERSION = "stmt-hdfc-1.1.0"
 HEADER = ("date", "narration", "value dat", "debit amount", "credit amount",
           "chq/ref number", "closing balance")  # fmt: skip
 CHANNELS = ("upi", "neft", "imps", "rtgs", "atm", "pos", "nach", "interest", "charges",
@@ -67,6 +76,7 @@ class Row:
     name: str | None  # UPI: the counterparty name in the narration
     vpa: str | None  # UPI: the counterparty's UPI ID
     ref12: str | None  # the 12-digit UPI/IMPS reference, when there is exactly one
+    netted: bool = False  # a negative or two-sided amount, read by the balance chain
 
     @property
     def direction(self) -> str:
@@ -94,17 +104,39 @@ def _day(text: str) -> date | None:
         return None
 
 
+_NUMBER = re.compile(r"-?\d+(?:\.\d{1,2})?")
+
+
 def _paise(text: str) -> int:
-    text = text.strip()
-    return to_paise(text) if text else 0
+    """A statement amount: blank or "-" is 0; thousands separators of any grouping; may be
+    negative. The column says it is an amount, so a comma is only a separator here."""
+    text = text.strip().strip('"').replace(",", "").replace(" ", "")
+    if text in ("", "-"):
+        return 0
+    if not _NUMBER.fullmatch(text):
+        raise AmountError("not an amount")
+    negative = text.startswith("-")
+    value = to_paise(text.lstrip("-"))
+    return -value if negative else value
 
 
 def _balance(text: str) -> int:
     """A closing balance; an overdrawn one has a minus sign (or "Dr")."""
     text = text.strip()
-    negative = text.startswith("-") or text.upper().endswith("DR")
-    text = text.lstrip("-").removesuffix("Dr").removesuffix("DR").strip()
+    negative = text.upper().endswith("DR")
+    text = text.removesuffix("Dr").removesuffix("DR").strip()
     return -_paise(text) if negative else _paise(text)
+
+
+def _netted(debit: int, credit: int, before: int | None, after: int) -> int:
+    """The movement of a row with a negative or two-sided amount: the reading that keeps
+    the chain (before + movement == after); else the plain credit - debit."""
+    readings = [credit - debit, credit + debit, abs(credit) - abs(debit), abs(debit) - abs(credit)]
+    if before is not None:
+        for movement in readings:
+            if before + movement == after:
+                return movement
+    return credit - debit
 
 
 def channel_of(narration: str) -> str:
@@ -135,6 +167,21 @@ def narration_parts(
     return channel, name, vpa, refs[0] if len(refs) == 1 else None
 
 
+def split_fields(line: str) -> list[str]:
+    """Split on commas outside double quotes; the text (spaces, commas) is kept as written."""
+    fields, current, quoted = [], [], False
+    for ch in line:
+        if ch == '"':
+            quoted = not quoted
+        elif ch == "," and not quoted:
+            fields.append("".join(current))
+            current = []
+            continue
+        current.append(ch)
+    fields.append("".join(current))
+    return fields
+
+
 def _header(fields: list[str]) -> bool:
     return tuple(f.strip().casefold() for f in fields) == HEADER
 
@@ -144,8 +191,9 @@ def read(text: str) -> Statement:
     rows: list[Row] = []
     skipped = 0
     seen_header = False
+    before: int | None = None  # the previous row's closing balance
     for number, line in enumerate(text.splitlines(), 1):
-        fields = line.split(",")
+        fields = split_fields(line)
         if not seen_header:
             seen_header = len(fields) == len(HEADER) and _header(fields)
             skipped += 1
@@ -160,12 +208,21 @@ def read(text: str) -> Statement:
             balance_paise = _balance(balance)
         except AmountError:
             raise StatementError(f"line {number}: an amount is not a number") from None
-        if bool(debit_paise) == bool(credit_paise):
-            raise StatementError(f"line {number}: a row needs exactly one of debit and credit")
+        netted = debit_paise < 0 or credit_paise < 0 or (debit_paise and credit_paise)
+        if netted:
+            movement = _netted(debit_paise, credit_paise, before, balance_paise)
+            debit_paise, credit_paise = max(-movement, 0), max(movement, 0)
+        if not debit_paise and not credit_paise:
+            if not netted:
+                raise StatementError(f"line {number}: a row needs a debit or a credit")
+            skipped += 1  # nets to zero: no money moved
+            before = balance_paise
+            continue
         narration = ",".join(fields[1:-5]).strip()
         channel, name, vpa, ref12 = narration_parts(narration, ref)
         rows.append(Row(number, when, narration, _day(value_date), debit_paise, credit_paise,
-                        ref, balance_paise, channel, name, vpa, ref12))  # fmt: skip
+                        ref, balance_paise, channel, name, vpa, ref12, bool(netted)))  # fmt: skip
+        before = balance_paise
     if not seen_header:
         raise StatementError("no header line: not an HDFC delimited statement")
     return Statement(tuple(rows), skipped)

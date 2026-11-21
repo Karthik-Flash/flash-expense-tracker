@@ -27,6 +27,8 @@ export function roleText(t: Txn): string {
       return 'Between your own accounts, not counted'
     case 'card_bill_excluded':
       return 'Card bill, not counted'
+    case 'investment':
+      return 'Investment, not counted'
     case 'fd_move':
       return 'Fixed deposit, not counted'
     case 'duplicate':

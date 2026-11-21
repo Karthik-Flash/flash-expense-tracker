@@ -7,7 +7,9 @@ import {
   markFor,
   personCategoryMark,
   personFailed,
+  kindMark,
   personMark,
+  shownKind,
   roleConflict,
   senderMark,
   shownName,
@@ -20,6 +22,7 @@ import { Button, CategoryChips, Empty, Icon, Money, Sheet } from '../ui.tsx'
 import type { PersonStep } from '../view.ts'
 import { isCredit, nameOf, subtitle } from './common.ts'
 import { countsInSpent, labelName, personKey, topCategories } from './derive.ts'
+import { AnswerButtons, type AnswerKey } from './Answers.tsx'
 import { Pending } from './Transactions.tsx'
 
 const ROLE_NAME: Record<PersonRole, string> = { friend: 'Friend', income: 'Family', ignore: 'Ignore', none: 'Not answered yet' }
@@ -183,13 +186,6 @@ export function PersonSheet({ personKey, act, onClose }: { personKey: string; ac
   )
 }
 
-type AnswerKey = 'friend' | 'family' | 'ignore' | 'income'
-const ANSWERS: { key: AnswerKey; name: string }[] = [
-  { key: 'friend', name: 'Friend' },
-  { key: 'family', name: 'Family' },
-  { key: 'ignore', name: 'Ignore' },
-  { key: 'income', name: 'Income' },
-]
 const FAMILY = 'Family'
 
 /** The answer an outbox entry or the server's sender stands for. */
@@ -220,14 +216,23 @@ function PersonActions({ p, title, snapshot }: { p: Person; title: string; snaps
   const catMark = personCategoryMark(ops, p.key)
   const answerMark = senderMark(ops, senders.map((s) => s.id))
   const liveAnswer = answerMark && answerMark.state !== 'failed' ? (answerMark.body as SenderAnswer) : undefined
-  const answered = answerKey(liveAnswer, senders[0])
+  const nav = useNav()
+  const kind = shownKind(ops, p)
+  const answered: AnswerKey | undefined = kind ?? answerKey(liveAnswer, senders[0])
+  const warn = (snapshot.todo.suggestions ?? []).find((x) => x.key === p.key)?.kind
+  const pick = (a: AnswerKey) => {
+    if (a === 'self' || a === 'investment') {
+      void enqueue(kind === a ? actions.clearKind({ ...p, name: title }) : actions.setKind({ ...p, name: title }, a))
+    } else if (a === 'income') {
+      setIncome(senders[0]?.income_label && senders[0].income_label !== FAMILY ? senders[0].income_label : 'Income')
+    } else answer(a === 'family' ? { answer: 'income', label: FAMILY } : { answer: a })
+  }
   const rule = labelName(income ?? '', [])
   const answer = (a: SenderAnswer) => {
     for (const s of senders) void enqueue(actions.answerSender(s, a))
     setIncome(null)
   }
   const head = 'text-xs font-medium text-muted'
-  const pressable = 'min-h-11 rounded-lg border border-line bg-surface px-1 text-sm aria-pressed:border-accent aria-pressed:font-medium'
   return (
     <div className="space-y-4 px-4 pt-4 text-sm">
       {spends.length > 0 && (
@@ -254,25 +259,26 @@ function PersonActions({ p, title, snapshot }: { p: Person; title: string; snaps
           <p className="mt-1 text-xs text-muted">Every payment to them, also future ones.</p>
         </section>
       )}
-      {senders.length > 0 && (
-        <section aria-labelledby="person-money-in">
-          <h3 id="person-money-in" className={head}>Money from them is</h3>
-          <div className="mt-1.5 flex flex-wrap gap-2 [&>button]:flex-1 [&>button]:basis-16" role="group" aria-label={`Money from ${title}`}>
-            {ANSWERS.map((a) => (
-              <button
-                key={a.key}
-                type="button"
-                aria-pressed={answered === a.key}
-                className={pressable}
-                onClick={() =>
-                  a.key === 'income'
-                    ? setIncome(senders[0].income_label && senders[0].income_label !== FAMILY ? senders[0].income_label : 'Income')
-                    : answer(a.key === 'family' ? { answer: 'income', label: FAMILY } : { answer: a.key })
-                }
-              >
-                {a.name}
-              </button>
-            ))}
+      <section aria-labelledby="person-money-in">
+          <h3 id="person-money-in" className={head}>{senders.length > 0 ? 'Money from them is' : 'This person is'}</h3>
+          <div className="mt-1.5">
+            {senders.length > 0 ? (
+              <AnswerButtons label={`Money from ${title}`} current={answered} warn={warn} onAnswer={pick} />
+            ) : (
+              <div className="flex flex-wrap gap-2" role="group" aria-label={`Who is ${title}?`}>
+                {(['self', 'investment'] as const).map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    aria-pressed={kind === a}
+                    className="min-h-11 flex-1 basis-20 rounded-lg border border-line bg-surface px-2 text-sm aria-pressed:border-accent aria-pressed:font-medium"
+                    onClick={() => pick(a)}
+                  >
+                    {a === 'self' ? "It's me" : 'Investments'}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {income !== null && (
             <form
@@ -302,9 +308,16 @@ function PersonActions({ p, title, snapshot }: { p: Person; title: string; snaps
               {answerMark.choice} <Pending op={answerMark} />
             </p>
           )}
-          <p className="mt-1 text-xs text-muted">Friend counts as paid back; Family and Income count as income.</p>
+          {kindMark(ops, p.key) && (
+            <p className="mt-1">
+              {kindMark(ops, p.key)!.choice} <Pending op={kindMark(ops, p.key)!} />
+            </p>
+          )}
+          <p className="mt-1 text-xs text-muted">
+            Friend counts as paid back; Family and Income as income; It's me and Investments in no total. Tap again to undo.{' '}
+            <button type="button" className="min-h-11 text-accent" onClick={() => nav.open({ sheet: 'profile' })}>Your names</button>
+          </p>
         </section>
-      )}
       {rows.length > 0 && (
         <section aria-labelledby="person-recent">
           <h3 id="person-recent" className={head}>Recent payments</h3>

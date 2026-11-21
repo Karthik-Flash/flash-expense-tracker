@@ -10,7 +10,7 @@
 import { useSyncExternalStore } from 'react'
 
 import { ApiError, type Api, type SendRequest } from '../api/client.ts'
-import type { Category, Person, PersonRole, Sender, SenderAnswer, Snapshot, Transfer, Txn } from '../api/types.ts'
+import type { Category, PartyKind, Person, PersonRole, Sender, SenderAnswer, Snapshot, Transfer, Txn } from '../api/types.ts'
 import { deleteOp, putOp, readOutbox } from './local.ts'
 import { asksSoFar, dataState, onApplied, onReset, refresh } from './store.ts'
 
@@ -487,6 +487,19 @@ export function markText(op: Op, now = Date.now()): string {
 
 const isCheck = (o: Op) => o.path.endsWith('/check') || o.path.endsWith('/ignore')
 const isTransfer = (o: Op) => o.path.startsWith('/transfers/')
+/** It's me, Investments, or No to a suggestion (D-117, D-118). */
+const isKind = (o: Op) => /^\/people\/\d+\/(kind|suggestion)$/.test(o.path)
+
+/** The newest It's me / Investments answer (or undo) waiting for this person. */
+export const kindMark = (ops: Op[], key: string): Op | undefined =>
+  ops.filter((o) => o.state !== 'failed' && o.path.endsWith('/kind') && o.targets.people?.includes(key)).at(-1)
+
+/** The kind a person has with the waiting answers applied: self, investment or none. */
+export function shownKind(ops: Op[], p: Pick<Person, 'key' | 'kind'>): PartyKind | null {
+  const mark = kindMark(ops, p.key)
+  if (!mark) return p.kind ?? null
+  return mark.method === 'DELETE' ? null : (mark.body as { kind: PartyKind }).kind
+}
 
 /** The newest action that changes this row's category, label or count (failed ones do not),
  *  and the newest one about the row the server refused (`failed`), so the row says so (4H). */
@@ -560,18 +573,21 @@ export function todoView(todo: Snapshot['todo'], ops: Op[]) {
   const senders = new Set(live.flatMap((o) => o.targets.senders ?? []))
   const merchants = new Set(live.filter((o) => o.path.endsWith('/category')).flatMap((o) => o.targets.merchants ?? []))
   const moved = new Set(live.filter(isTransfer).map((o) => o.path))
+  const asked = new Set(live.filter(isKind).flatMap((o) => o.targets.people ?? []))
   return {
     senders: todo.senders.filter((s) => !senders.has(s.id)),
     answered: todo.answered.filter((s) => !senders.has(s.id)),
     merchants: todo.merchants.filter((m) => !merchants.has(m.name)),
     transfers: (todo.transfers ?? []).filter((t) => !moved.has(transferPath(t))),
+    suggestions: (todo.suggestions ?? []).filter((x) => !asked.has(x.key)),
     waiting: [
       ...live.filter(
         (o) =>
           o.targets.senders?.length ||
           (o.targets.merchants?.length && o.kind.startsWith('All from')) ||
           (isCheck(o) && o.method === 'PUT') ||
-          isTransfer(o),
+          isTransfer(o) ||
+          isKind(o),
       ),
       ...ops.filter((o) => o.state === 'failed' && o.last_error === 'needs_choice'), // the choice, inline (D-107)
     ],
@@ -689,6 +705,22 @@ export const actions = {
       body: { verdict: same ? 'same' : 'different' },
       targets: { txns: [t.debit, t.credit] },
     }
+  },
+  /** "Your name as banks show it" (D-117): the whole list. */
+  setOwnerNames(names: string[]): NewOp {
+    return { kind: 'Your names', item: 'Your name as banks show it', choice: names.join(', ') || 'None', method: 'PUT', path: '/profile/names', body: { names }, targets: {} }
+  },
+  /** It's me or Investments for a person (D-117, D-118): every payment of theirs, both ways. */
+  setKind(p: Pick<Person, 'key' | 'txn_id' | 'name'>, kind: PartyKind): NewOp {
+    const choice = kind === 'self' ? "It's me" : 'Investments'
+    return { kind: choice, item: p.name ?? 'Person', choice, method: 'PUT', path: `/people/${p.txn_id}/kind`, body: { kind }, targets: { people: [p.key] } }
+  },
+  clearKind(p: Pick<Person, 'key' | 'txn_id' | 'name'>): NewOp {
+    return { kind: 'Not me, not an investment', item: p.name ?? 'Person', choice: 'Counted again', method: 'DELETE', path: `/people/${p.txn_id}/kind`, body: null, targets: { people: [p.key] } }
+  },
+  /** No to "Is this you?" or "Is this an investment?": not asked again. */
+  dismissSuggestion(p: { key: string; txn_id: number; name: string | null }, kind: PartyKind): NewOp {
+    return { kind: kind === 'self' ? 'Not me' : 'Not an investment', item: p.name ?? 'Person', choice: kind === 'self' ? 'Not me' : 'Not an investment', method: 'PUT', path: `/people/${p.txn_id}/suggestion`, body: { kind }, targets: { people: [p.key] } }
   },
   // Checks (D-101, D-103): a row read automatically, and Not a payment for any row.
   looksRight(t: Pick<Txn, 'id'>, item: string): NewOp {

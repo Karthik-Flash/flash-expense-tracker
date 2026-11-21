@@ -28,9 +28,10 @@ audit, refresh after deploy, logo C2) done 20 Nov; 4F-B (the CORS fix for
 blocked taps, a queue that cannot get stuck, SBI parser), 4H (history
 without AI attribution, person sheet actions, payback-audit any-answer rule
 and `--restore`, polish pass) and 4A (statement check, own-account
-transfers, statement names) done 21 Nov; next: the owner runs the
-statement check on two months, answers the transfer questions, then Phase 5
-and the pilot.
+transfers, statement names) and 4Z (statement reader 1.1.0 and import,
+It's me and Investments, categories from names, Phase 4 retro) done 21 Nov.
+**Phase 4 is done** ([docs/retro/phase-4.md](docs/retro/phase-4.md)); next:
+the open items 1 to 5, then Phase 5 and the pilot.
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -506,6 +507,10 @@ commands read the file and print; nothing is stored. Run a recompute first if
 the app says "being updated".
 
 ```powershell
+# 0. (4Z) The HDFC messages no parser reads, redacted (counts on screen; files PRIVATE)
+.\.venv\Scripts\python.exe -m app.cli redact-sample --family HDFC --unparsed
+#    After reading both files in D:\FlashPrivate\review\: scan again, copy to data\sample\
+.\.venv\Scripts\python.exe -m app.cli redact-sample --approve HDFC-UNPARSED
 # 1. The statement against the app (SAFE TO PASTE: counts and rupee sums per month)
 .\.venv\Scripts\python.exe -m app.cli statement-check --file D:\FlashPrivate\<normal>.txt
 .\.venv\Scripts\python.exe -m app.cli statement-check --file D:\FlashPrivate\<messy>.txt
@@ -515,6 +520,10 @@ the app says "being updated".
 .\.venv\Scripts\python.exe -m app.cli statement-names --file D:\FlashPrivate\<normal>.txt --file D:\FlashPrivate\<messy>.txt
 #    PRIVATE (screen only): the proposed names
 .\.venv\Scripts\python.exe -m app.cli statement-names --file D:\FlashPrivate\<normal>.txt --file D:\FlashPrivate\<messy>.txt --show
+#    (4Z) The statement-only rows as transactions: dry run (SAFE TO PASTE: counts by cause)
+.\.venv\Scripts\python.exe -m app.cli statement-import --file D:\FlashPrivate\<normal>.txt --file D:\FlashPrivate\<messy>.txt
+#    Only after the planner's OK: import them (counts; ends with a recompute)
+.\.venv\Scripts\python.exe -m app.cli statement-import --file D:\FlashPrivate\<normal>.txt --file D:\FlashPrivate\<messy>.txt --apply
 #    Only after the planner's OK: write them (counts; ends with a recompute)
 .\.venv\Scripts\python.exe -m app.cli statement-names --file D:\FlashPrivate\<normal>.txt --file D:\FlashPrivate\<messy>.txt --apply
 ```
@@ -857,59 +866,55 @@ gh repo view --web                                # open the repo in the browser
 
 ## Open items
 
-1. Bank statement check (4A, built 21 Nov): the owner runs `statement-check`
-   on one normal and one messy month and pastes the SAFE counts; the planner
-   decides on `statement-names --apply`. It also settles the unticked
-   "merged refund" check (one event or two, D-064).
-2. After the 4H push: `payback-audit` (the D-111 rule) and `payback-audit
-   --restore` (dry run) from the cheat sheet; the planner decides on
-   `--restore --apply`. Delete the cron-job.org job "Flash API warm 07-01
-   IST" (D-112). Run `git config core.hooksPath .githooks` in every clone
+Before Phase 5 (carried from Phase 4):
+
+1. **HDFC alerts the parser cannot read** (about Rs 15,700 of October
+   spending showed only on the statement): the owner runs `redact-sample
+   --family HDFC --unparsed`, reads the two files (PRIVATE), approves with
+   `--approve HDFC-UNPARSED`; the next task adds the template(s) from that
+   sample and runs a reparse. Templates are never guessed without a sample.
+2. **statement-import --apply** and **statement-names --apply** wait for the
+   planner's OK, after the owner pastes the new dry runs (cheat sheet,
+   "Statement check, transfers and statement names").
+3. **September re-check**: `statement-check` on the September file with
+   `stmt-hdfc-1.1.0` (it failed on a negative-debit card row under 1.0.0);
+   "balance breaks" must be 0.
+4. **Your name as banks show it**: the owner adds the variants in the app
+   (Speed sheet, "Your name as banks show it") so "Is this you?" and the
+   own_or_internal cause can work; then answers the To-do questions.
+5. From 4H: `payback-audit --restore` (dry run) and the planner's call on
+   `--apply`; delete the cron-job.org job "Flash API warm 07-01 IST" if it is
+   still there (D-112); `git config core.hooksPath .githooks` in every clone
    (D-109).
-3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
-4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
-   Post, Kotak, PhonePe) and 44 foreign-currency messages (D-035). Since
-   4F-A the generic parser reads the banks among them after a reparse (not
-   PhonePe, an app); `generic-preview` counts what it would read first.
-5. Category colours: every two are now at least 10 apart (CIEDE2000, 4H,
-   D-113, checked by `src/colours.test.ts`); icons and names still carry
-   identity (D-081).
-6. Not checked: real iOS, screen readers. 200 % text at 360 px was checked
-   on every screen and sheet in headless Edge on demo data (4H,
-   `docs/design/screens-4h.html`), not on a real phone.
-   The 4B-3 offline boot was checked on a production build in headless
-   Edge (service worker on, offline emulation, a seeded FAKE session, a
-   stand-in auth and API), not yet on the real phone.
-   The 4C update bar and version line were checked at 360 px, light, dark
-   and 200 % in headless Edge only; the 4B-1 screens in headless Edge at
-   390 px on demo data; the 4B-2 outbox on demo data in headless Edge (taps
-   with the demo server failing, drain once it answers). Speed sheet timings
-   and an offline tap on a real phone are still to come.
-7. Accepted risk: npm audit, 4 moderate findings, build-time only: glob
+
+Ongoing:
+
+6. Not checked on a real phone yet: the person sheet actions, "Moved between
+   your accounts?", It's me and Investments, the Your name sheet, 200 % text
+   (checked in headless Edge on demo data, `docs/design/screens-4h.html`),
+   Speed sheet timings and an offline tap. Not checked at all: real iOS,
+   screen readers.
+7. Categories from names (D-119) are proven on 154 FAKE names; the redacted
+   sample hides real payee names, so the split on real data is unmeasured.
+   A shopkeeper's QR named after a person is guessed People.
+8. Accepted risk: npm audit, 4 moderate findings, build-time only: glob
    11.1.0 (GHSA-3g3m-2fjr-6pw4) and minimatch 10.2.6 and 5.1.9
    (GHSA-g3hv-75wg-m249), via vite-plugin-pwa 2.0.0 and workbox-build 7.4.1,
    the newest releases. No patched release in the same major, so no
    override. Recheck when Workbox ships a fix; never `npm audit fix --force`.
-8. After the 4E deploy: Render runs migration `0008` (it stops if a label is
-   longer than 30 characters; the live table has none). The first owner
-   write, or `python -m app.cli recompute`, rewrites the derived rows for
-   `reconcile-1.4.0` and `categorise-1.1.0`; until then Home says "Totals
-   are being updated".
 9. The Supabase free plan has no backups; the owner runs
    `scripts/backup_db.ps1` (D-084).
-10. The owner's To-do backlog (about 100 items) to work through on the
-    phone, now with chips, "See payments", Name and Same as… (4E).
-11. The owner doubts the October People total: verify it person by person.
+10. The owner's To-do backlog to work through on the phone.
+11. The owner doubts the October People total: verify it person by person
+    (the statement check helps).
 12. Vercel: `VITE_API_URL` is saved as a Secret. The owner changes it to a
     plain variable and redeploys with the build cache off.
-13. HDFC UPI credit SMS carry only a VPA, sometimes masked with "*" by the
-    bank (22 of 22 in the redacted sample; 6 masked). Since 4E the owner
-    names the person and joins the VPA to their name on the phone (D-096);
-    the statement (4A) can confirm who sent what.
+13. The unticked "merged refund" check (one event or two, D-064): settle it
+    with a statement month that has a refund.
 14. Later list: a friendlier Home, still minimal; revisit with 4D.
 
-Known limits: HDFC and INR only; the card bill pair rule waits for credit
-card SMS; the server sleeps when idle (about a minute to wake; the phone
+Known limits: HDFC and SBI parsers (other banks generic), INR only; the
+card bill pair rule waits for credit card SMS; the server sleeps when idle (about a minute to wake; the phone
 copy covers it, D-112); import takes about 6 minutes for 917
 messages; Starlette's httpx warning is accepted (D-010).
 
@@ -925,6 +930,21 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-21: Phase 4Z, closing Phase 4
+
+- Push verified (main and 9 tags equal on GitHub, no attribution lines);
+  git backup mirror deleted, reflogs expired, gc run (D-121).
+- `stmt-hdfc-1.1.0` (negative and two-sided rows by the balance chain,
+  quoted separators, blank or "-" amounts); statement-check causes
+  (sms_not_parsed, own_or_internal, fd, investment_or_broking,
+  card_bill_payment, verification_or_tiny, likely_spend, likely_income);
+  `statement-import`; `redact-sample --unparsed` (D-120).
+- It's me and Investments (party kinds self and investment, role
+  investment, `reconcile-1.6.0`), To-do suggestions, "Your name as banks
+  show it", migration `0013` (D-117, D-118).
+- `categorise-1.2.0`: categories from names and UPI IDs (D-119).
+- Phase 4 retro: `docs/retro/phase-4.md`.
 
 ### 2026-11-21: Phase 4A, money correctness
 

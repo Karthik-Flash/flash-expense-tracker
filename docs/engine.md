@@ -554,3 +554,40 @@ else by merchant key. Nothing changes for data without unsure parties.
   month's Spent and Paid back as stored.
 - `reconcile-stats` adds "inferred own accounts" and "self-transfers by
   basis". `credit-review [--list]`: owner only, terminal only.
+
+## Phase 4Z: statement 1.1.0, causes, It's me, investments, names (D-117 to D-120)
+
+- **`stmt-hdfc-1.1.0`**: a comma inside double quotes does not split a field
+  (quoted thousands separators), a blank or "-" amount is zero, and a row
+  with a negative or two-sided amount is one movement whose reading keeps the
+  balance chain unbroken (`netted`); a row that nets to zero is skipped.
+- **statement-check causes** (`statement_check.stmt_cause`, first that
+  fits): foreign_currency, reversed_or_failed, sms_not_parsed, fd,
+  investment_or_broking, card_bill_payment, own_or_internal,
+  verification_or_tiny, no_sms, likely_spend, likely_income, unknown. The
+  `Context` holds the owner's name variants, the own last 4s and the unread
+  HDFC messages (IST day, amounts in their text); it is built in
+  `app/pipeline/statement.py` and never printed.
+- **statement-import** (`statement.plan_import`, `apply_import`): each
+  statement-only row becomes a raw message (source `statement`, sender core
+  `STATEMENT`) and a parse result of `stmt-hdfc-1.1.0`, then the usual
+  `store.link_new`: the dedupe key is the SMS key when the row has a 12-digit
+  reference. Hints: `statement`, plus `statement_check` (spend that asks
+  "Looks right?"), `statement_ask` (own or investment debits), `bank_charge`.
+  An SMS with no key match merges into the one statement row of the same
+  bank, direction and amount within a day (`store.statement_twin`) and
+  replaces its fields. Reparse and the surveys skip statement rows.
+- **`reconcile-1.6.0`**: `PT_self` (an owner party of kind `self`: every
+  payment is `self_transfer`) and `PT_investment` (kind `investment`: every
+  payment is role `investment`, in no total), basis owner, among the rules a
+  transaction carries itself; `SM_credit` (a statement credit is uncertain)
+  and `SM_ask` (a statement debit with `statement_ask` is uncertain until the
+  owner answers), basis engine, before the credit and debit defaults.
+- **`app/engine/suggest.py`**: `is_owner_name` (token-based, tolerant of
+  initials and order) and `is_investment` (broker, clearing and fund words).
+  They only make To-do questions and statement causes, never a role.
+- **`categorise-1.2.0`**: keywords per category on the name and the UPI ID's
+  words; PERSON gives way to a business word; `NAME_person` for a person-like
+  name the merchant engine was unsure of, or a bare personal UPI ID.
+  `GUESS_RULES` (BRAND, KEYWORD, PERSON, NAME_person) are shown as "guessed
+  from the name".

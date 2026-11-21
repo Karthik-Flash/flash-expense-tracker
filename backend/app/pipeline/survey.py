@@ -43,7 +43,11 @@ def _rows(session: Session, owner_id: uuid.UUID) -> Iterator[tuple]:
             ParseResult.parser_version,
         )
         .join(ParseResult, ParseResult.raw_message_id == RawMessage.id)
-        .where(RawMessage.owner_id == owner_id, ParseResult.is_current)
+        .where(
+            RawMessage.owner_id == owner_id,
+            ParseResult.is_current,
+            RawMessage.source != "statement",  # SMS only (4Z)
+        )
         .order_by(RawMessage.id)
         .execution_options(yield_per=2000)
     )

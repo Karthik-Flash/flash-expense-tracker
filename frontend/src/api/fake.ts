@@ -12,6 +12,7 @@ import {
   type LabelView,
   type Merchant,
   type MonthData,
+  type PartyKind,
   type Person,
   type PersonRole,
   type PersonRow,
@@ -21,6 +22,7 @@ import {
   type SenderStatus,
   type Snapshot,
   type SnapshotAnswer,
+  type Suggestion,
   type Summary,
   type Transfer,
   type Txn,
@@ -162,6 +164,8 @@ function build(): Row[] {
   add([2026, 11, 12, 13, 20], 340, 'Campus Bookshop', 'uncategorised', other)
   add([2026, 11, 15, 10, 5], 2000, null, 'cash', other)
   add([2026, 11, 14, 19, 30], 500, 'Priya N', 'other', { ...other, direction: 'credit', role: 'uncertain' })
+  // A broker: "Is this an investment?" (D-118).
+  add([2026, 11, 4, 9, 15], 1000, 'Groww', 'uncategorised')
   // Money moved from HDFC to the owner's SBI account, no shared reference: asked (D-115).
   add([2026, 11, 16, 10, 0], 3000, 'TEST OWNER', 'people')
   add([2026, 11, 16, 10, 12], 3000, 'TEST OWNER', 'other', { direction: 'credit', role: 'uncertain', bank: 'SBI' })
@@ -200,6 +204,10 @@ export class FakeApi implements Api {
   private checked = new Set<number>()
   // Own-account transfers (4A): pairs the owner answered, "debit:credit".
   private moves = new Set<string>()
+  // It's me and Investments (4Z): kinds by person key, No answers ("kind:key"), owner names.
+  private kinds = new Map<string, PartyKind>()
+  private dismissed = new Set<string>()
+  private ownerNames: string[] = []
 
   setState(state: DemoState): void {
     this.state = state
@@ -223,7 +231,43 @@ export class FakeApi implements Api {
 
   private role(row: Row): { role: Role; basis: Basis } {
     const answer = this.roleAnswer.get(row.id)
-    return answer ? { role: answer, basis: 'owner' } : { role: row.role, basis: row.basis }
+    if (answer) return { role: answer, basis: 'owner' }
+    const kind = this.kinds.get(this.personOf(row) ?? '')
+    if (kind) return { role: kind === 'self' ? 'self_transfer' : 'investment', basis: 'owner' }
+    return { role: row.role, basis: row.basis }
+  }
+
+  /** As v1.suggestions: Is this you? (the owner's names), Is this an investment? (D-117, D-118). */
+  private suggestions(): Suggestion[] {
+    const out = new Map<string, Suggestion>()
+    const words = (text: string) => text.toLowerCase().split(/[^a-z]+/).filter(Boolean).sort().join(' ')
+    const mine = new Set(this.ownerNames.map(words))
+    for (const row of this.visible()) {
+      const key = this.personOf(row)
+      if (!key || !row.name || this.kinds.has(key)) continue
+      const kinds: PartyKind[] = []
+      if (mine.has(words(row.name))) kinds.push('self')
+      if (/\b(groww|zerodha|upstox|kite|mutual fund|sip|mf)\b/i.test(row.name)) kinds.push('investment')
+      for (const kind of kinds) {
+        if (this.dismissed.has(`${kind}:${key}`)) continue
+        const entry = out.get(`${kind}:${key}`) ?? { kind, key, txn_id: row.id, name: this.names.get(key) ?? row.name, count: 0 }
+        entry.count += 1
+        out.set(`${kind}:${key}`, entry)
+      }
+    }
+    return [...out.values()]
+  }
+
+  private setKind(txnId: number, method: string, kind: unknown): void {
+    const row = this.rows.find((r) => r.id === txnId)
+    const key = row && this.personOf(row)
+    if (!key) throw new ApiError(404, 'No such person.')
+    if (method === 'DELETE') {
+      if (!this.kinds.delete(key)) throw new ApiError(404, 'This person is not marked as you or an investment.')
+      return
+    }
+    if (kind !== 'self' && kind !== 'investment') throw new ApiError(422, 'kind must be self or investment')
+    this.kinds.set(key, kind)
   }
 
   private category(row: Row): { category: string; basis: Basis } {
@@ -410,7 +454,9 @@ export class FakeApi implements Api {
           answered: senders.filter((s) => s.status !== 'to_confirm'),
           ...todo(transactions),
           transfers: this.transfers(),
+          suggestions: this.suggestions(),
         },
+        profile: { names: [...this.ownerNames] },
         labels,
         categories: CATEGORIES,
         people: this.peopleOf(transactions),
@@ -451,7 +497,7 @@ export class FakeApi implements Api {
       const row = this.rows.find((x) => x.id === t.id)!
       const key = this.personOf(row)
       if (!key) continue
-      const p = out.get(key) ?? { key, name: t.display_name, named: this.names.has(key), txn_id: t.id, role: roles.get(key) ?? null, identifiers: [] }
+      const p = out.get(key) ?? { key, name: t.display_name, named: this.names.has(key), txn_id: t.id, role: roles.get(key) ?? null, kind: this.kinds.get(key) ?? null, identifiers: [] }
       if (!p.identifiers.some((i) => i.name === row.name)) p.identifiers.push({ name: row.name, txn_id: t.id, from_file: false })
       if (roles.has(key) || t.category === 'people' || t.role === 'payback' || key.startsWith('p_')) counts.add(key)
       out.set(key, p)
@@ -519,6 +565,17 @@ export class FakeApi implements Api {
     const txn = /^\/transactions\/(\d+)\/(category|label)$/.exec(path)
     if (sender && method === 'PUT') return this.answerSender(decodeURIComponent(sender[1]), b as unknown as SenderAnswer)
     if (sender && method === 'DELETE') return this.resetSender(decodeURIComponent(sender[1]))
+    const kind = /^\/people\/(\d+)\/(kind|suggestion)$/.exec(path)
+    if (kind?.[2] === 'kind') return this.setKind(Number(kind[1]), method, b.kind)
+    if (kind?.[2] === 'suggestion') {
+      const row = this.rows.find((r) => r.id === Number(kind[1]))
+      if (!row || !this.personOf(row)) throw new ApiError(404, 'No such person.')
+      return void this.dismissed.add(`${String(b.kind)}:${this.personOf(row)}`)
+    }
+    if (path === '/profile/names' && method === 'PUT') {
+      this.ownerNames = ((b.names as unknown as string[]) ?? []).map((n) => n.trim().replace(/\s+/g, ' ')).filter(Boolean)
+      return
+    }
     const move = /^\/transfers\/(\d+)\/(\d+)$/.exec(path)
     if (move && method === 'PUT') return this.answerTransfer(Number(move[1]), Number(move[2]), String(b.verdict))
     if (path === '/labels' && method === 'POST') return void this.createLabel(String(b.name))

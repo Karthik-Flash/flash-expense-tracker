@@ -1,0 +1,12 @@
+TEST BANK LTD (FAKE)
+Statement From : 01/09/26 To : 30/09/26
+  Date     ,Narration                                                                     ,Value Dat,Debit Amount       ,Credit Amount      ,Chq/Ref Number   ,Closing Balance
+  01/09/26  ,UPI-TEST CAFE-testcafe@okaxis-UTIB0000001-641100000001-UPI                    ,01/09/26 ,            250.00 ,              0.00 ,0000641100000001 ,        19750.00
+  03/09/26  ,CRV POS 512345XXXXXX0001 641100000002 03SEP TEST.STORE.COM ONLINE             ,03/09/26 ,           -999.99 ,              9.99 ,0000641100000002 ,        20759.98
+  05/09/26  ,POS 512345XXXXXX0001 TEST SHOP ADJ                                            ,05/09/26 ,           -500.00 ,             20.00 ,0000000000000201 ,        20279.98
+  07/09/26  ,NEFT CR-TEST0000001-TEST EMPLOYER PVT LTD-SEP STIPEND                         ,07/09/26 ,                 - ,"1,25,000.00" ,N250260000000001 ,       145279.98
+  08/09/26  ,FD THROUGH NET-50300000000001:TEST OWNER                                      ,08/09/26 ,"100,000.00" ,                   ,0000000000000000 ,        45279.98
+  09/09/26  ,CRV POS 512345XXXXXX0001 TEST VOID                                            ,09/09/26 ,            -10.00 ,            -10.00 ,0000000000000202 ,        45279.98
+
+  **Continue**
+Generated On: 01/10/26 (FAKE).

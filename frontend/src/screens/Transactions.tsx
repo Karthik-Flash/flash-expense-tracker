@@ -191,7 +191,8 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
     onClose()
   }
   const choice = 'flex min-h-12 w-full flex-wrap items-center justify-between gap-x-3 px-4 py-2 text-left active:bg-press'
-  const category = mark.category ? mark.category.choice : `${txn.category_name} · ${txn.category_basis === 'owner' ? 'set by you' : 'automatic'}`
+  const how = txn.category_basis === 'owner' ? 'set by you' : txn.category_guessed ? 'guessed from the name' : 'automatic'
+  const category = mark.category ? mark.category.choice : `${txn.category_name} · ${how}`
   const label = mark.label ? mark.label.choice : (txn.label?.name ?? 'None')
 
   return (
@@ -202,6 +203,7 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
             <Money paise={txn.amount_paise} credit={isCredit(txn)} exact />
           </p>
           {txn.generic && <p className="mt-1 text-xs text-muted">Read automatically</p>}
+          {txn.statement && <p className="mt-1 text-xs text-muted">Read from the bank statement</p>}
           {mark.failed && (
             <p className="mt-2 text-sm wrap-break-word">
               {mark.failed.kind} <Pending op={mark.failed} />

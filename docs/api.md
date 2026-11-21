@@ -50,6 +50,10 @@ owner's transaction, label or sender is "404 not found".
 | PUT | `/api/v1/transactions/{id}/ignore` | "Not a payment" (D-103): owner role `ignored`, in no total |
 | DELETE | `/api/v1/transactions/{id}/ignore` | "Count it again": removes that role (no change when there is none; 409 when the owner set another role) |
 | PUT | `/api/v1/transfers/{debit}/{credit}` | `{"verdict": "same" \| "different"}`: "Moved between your accounts?" (D-115). Same: both legs `self_transfer`; different: the pair is gone for good. 404 for a pair the engine never proposed; 409 when a leg is already "same" with another |
+| PUT | `/api/v1/profile/names` | `{"names": [...]}`: "Your name as banks show it" (D-117), the whole list (at most 6, 2 to 60 characters each); no recompute |
+| PUT | `/api/v1/people/{txn}/kind` | `{"kind": "self" \| "investment"}`: It's me or Investments for the person of `txn` (D-117, D-118); every payment of the party, both ways |
+| DELETE | `/api/v1/people/{txn}/kind` | Undo: the party gets back the kind it had (404 when it is neither) |
+| PUT | `/api/v1/people/{txn}/suggestion` | `{"kind"}`: No to "Is this you?" / "Is this an investment?": not asked again |
 | HEAD | `/health` | 200, no body, no database (D-098): the warm job's fallback |
 
 **Writes** are saved with source `app` and are idempotent. Since 4F-B
@@ -169,7 +173,7 @@ HTML page) and, after the first answer, `If-None-Match: <ETag>`.
 | `owner_id`, `engine_versions` | Whose data, made with which engines |
 | `months[]` | Every IST month with transactions, oldest first: `month`; `summary` (exactly the `/summary` answer); `changes` (`spent_paise` and per category slug, against `summary.previous`); `chart` (`total_paise` and at most 6 slices plus one `slug: null` "Other (n)"); `merchants` (per category slug, `name`, `total_paise`, `count`, biggest first); `people` (the People ledger: `key`, `name`, `sent_paise`, `got_back_paise`, `to_confirm_paise`, `net_paise`) |
 | `transactions[]` | Every transaction item (below), newest first |
-| `todo` | `senders` (to confirm), `answered` (confirmed or ignored), `merchants` (uncategorised spending by name: `name`, `total_paise`, `count`, `txn_id`, `last_time_utc`), `unnamed`, `transfers` (4A, D-115: self-transfer candidates no owner answered, newest first: `debit`, `credit`, `amount_paise`, `from_bank`, `to_bank`, `debit_time_utc`, `credit_time_utc`) |
+| `todo` | `senders` (to confirm), `answered` (confirmed or ignored), `merchants` (uncategorised spending by name: `name`, `total_paise`, `count`, `txn_id`, `last_time_utc`), `unnamed`, `transfers` (4A, D-115: self-transfer candidates no owner answered, newest first: `debit`, `credit`, `amount_paise`, `from_bank`, `to_bank`, `debit_time_utc`, `credit_time_utc`), `suggestions` (4Z: `kind` self or investment, `key`, `txn_id`, `name`, `count`) |
 | `people[]` | 4E: everyone the owner can name or join, by name: `key` (as `person_id`), `name`, `named`, `txn_id`, `role` (`friend`, `income`, `ignore`, `none`, or null with no credits), `identifiers` (newest first: `name` as the bank wrote it, `txn_id`, `from_file`). No money |
 | `labels[]` | `/labels/{id}` for every label, by name |
 | `categories[]` | `/categories` |
@@ -264,3 +268,8 @@ When `month` is the current IST month, `previous` runs from the start of
 the month before up to the same IST day of the month, that day included
 (all of it when the month before is shorter); `whole` is false. For any
 other month it is the whole month before; `whole` is true.
+
+Since 4Z the snapshot also has `profile` (`{"names": [...]}`, D-117); a person
+in `people` has `kind` (self, investment or null); a transaction item has
+`statement` (read from the bank statement, D-120) and `category_guessed`
+(D-119). Role `investment` is in no total (D-118).
