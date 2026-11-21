@@ -15,11 +15,12 @@ from app.engine.statement_hdfc import (
 from tests.statements import statement_text, upi
 
 FIXTURE = Path(__file__).parent / "fixtures" / "statements" / "hdfc-fake-nov.txt"
+SEPTEMBER = FIXTURE.with_name("hdfc-fake-sep.txt")
 
 
 def test_the_fixture_file_in_the_banks_shape() -> None:
     s = read(FIXTURE.read_text(encoding="utf-8"))
-    assert STATEMENT_VERSION == "stmt-hdfc-1.0.0"
+    assert STATEMENT_VERSION == "stmt-hdfc-1.1.0"
     assert len(s.rows) == 8 and s.skipped == 11  # preamble, header, footer, blank lines
     assert check_balances(s.rows) == 0
     first, money_in, salary = s.rows[:3]
@@ -78,7 +79,7 @@ def test_narration_parts(narration: str, ref: str, expected: tuple) -> None:
     ("text", "message"),
     [
         ("not a statement\n01/01/26,x,01/01/26,1.00,,0,1.00\n", "no header"),
-        (statement_text([("01/01/26", "X", "1.00", "2.00", "0")]), "exactly one"),
+        (statement_text([("01/01/26", "X", "0.00", "0.00", "0")]), "a debit or a credit"),
         (statement_text([("01/01/26", "X", "1.00", "", "0")]).replace(" 1.00 ,", " 1.x0 ,"),
          "not a number"),
     ],
@@ -87,3 +88,24 @@ def test_what_is_not_a_statement_is_refused_without_values(text: str, message: s
     with pytest.raises(StatementError, match=message) as exc:
         read(text)
     assert "TEST" not in str(exc.value)
+
+
+def test_negative_and_two_sided_amounts_are_read_by_the_balance_chain() -> None:
+    """4Z: a card row with a NEGATIVE debit and a credit (seen in a real statement), quoted
+    thousands separators, blank and "-" amounts, and a row that nets to zero."""
+    s = read(SEPTEMBER.read_text(encoding="utf-8"))
+    assert check_balances(s.rows) == 0  # the chain proves each reading
+    assert s.skipped == 7  # preamble, header, footer, blank, and the row that nets to zero
+    by_line = {r.line: r for r in s.rows}
+    reversal = by_line[5]  # debit -999.99, credit 9.99, balance up by 1,009.98
+    assert (reversal.direction, reversal.amount_paise, reversal.netted) == ("credit", 100998, True)
+    adjusted = by_line[6]  # debit -500.00, credit 20.00, balance down by 480.00
+    assert (adjusted.direction, adjusted.amount_paise, adjusted.netted) == ("debit", 48000, True)
+    assert (by_line[7].credit_paise, by_line[7].debit_paise) == (12500000, 0)  # "1,25,000.00", "-"
+    assert by_line[8].debit_paise == 10000000  # "100,000.00", blank credit
+    assert by_line[4].netted is False
+
+
+def test_a_netted_first_row_takes_the_plain_reading() -> None:
+    rows = read(statement_text([("01/01/26", "CRV POS TEST", "-5.00", "1.00", "0")])).rows
+    assert (rows[0].direction, rows[0].amount_paise) == ("credit", 600)  # credit - debit

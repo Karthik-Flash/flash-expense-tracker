@@ -12,30 +12,38 @@ unlinked refund). The first match decides; each result has a rule code and a bas
   CH_emi          debit, channel emi                              EMI & Loans   engine
   HINT_fee        debit with hint bank_charge                     Fees & Charges engine
   BRAND           the merchant is in the brand dictionary         its category  engine
-  KEYWORD         every category keyword in the name agrees       that category engine
+  KEYWORD         every category keyword in the name, or in the words of its UPI ID,
+                  agrees (D-119: a curated list per category)     that category engine
   KW_conflict     keywords of two categories                      Uncategorised engine
   PERSON          debit to a person (a party of kind person, or of kind unsure or no
                   party and the merchant engine says person)    People        engine
-  NONE            nothing matched                                 Uncategorised engine
+  NAME_person     debit whose name looks like a person's: 2 to 4 words of letters
+                  (initials and Mr/Ms/Mrs/Dr/Shri/Smt allowed), no business word; or a
+                  bare personal UPI ID (letters, digits and dots at an ok* or bank
+                  handle) (D-119)                                 People        engine
+  NONE            nothing matched (a business-looking name: To-do asks)  Uncategorised
+BRAND, KEYWORD, PERSON and NAME_person are guesses from the name: the app says so
+(GUESS_RULES). Totals never depend on a category.
 A linked refund takes the category (and basis) of its purchase: RF_linked. An unlinked
 refund is categorised by its own merchant (owner party, brand, keyword), else NONE.
 
 A transaction that is not spending (payback, income, self_transfer, card_bill_excluded,
-fd_move, duplicate, ignored, uncertain) carries a fixed category for its role, rule
+fd_move, investment, duplicate, ignored, uncertain) carries a fixed category for its role, rule
 NS_<role>; it is never part of a breakdown. An owner decision still wins on it.
 
 breakdown() sums a date range by category; its values add up exactly to Spent.
 """
 
+import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from app.engine.merchant import brands, parts
+from app.engine.merchant import BUSINESS_WORDS, HONORIFICS, brands, parts
 from app.engine.reconcile import COUNTED, Derived, OwnerData, Result, Totals, Txn, totals
 
-CATEGORISE_VERSION = "categorise-1.1.0"
+CATEGORISE_VERSION = "categorise-1.2.0"
 
 # slug -> name. The slug is stored and never changes; a new category needs no migration.
 CATEGORIES = {
@@ -70,6 +78,7 @@ NOT_SPENDING = {
     "self_transfer": "other",
     "card_bill_excluded": "card_bill",
     "fd_move": "investments",
+    "investment": "investments",
     "duplicate": "other",
     "ignored": "other",
     "uncertain": "other",
@@ -86,6 +95,7 @@ RULES = (
     "KEYWORD",
     "KW_conflict",
     "PERSON",
+    "NAME_person",
     "NONE",
     *(f"NS_{role}" for role in NOT_SPENDING),
 )
@@ -169,32 +179,48 @@ BRAND_CATEGORIES = {
     "urban_company": "other",
 }
 
-# Whole words of the merchant name. Only business keywords whose meaning is clear; generic
-# ones (store, traders, services, hotel, ...) are left out on purpose.
+# Whole words of the merchant name or of its UPI ID (D-119). Only words whose meaning is
+# clear; generic ones (store, shop, traders, services, hotel, hall, depot, ...) are left out
+# on purpose: a business with no keyword stays Uncategorised and To-do asks.
 _KEYWORDS = {
     "food_drinks": (
-        "restaurant restaurants cafe dhaba bakery bakers sweets foods kitchen canteen caterers "
-        "catering mess tiffin tiffins bhojanalaya juice juices tea chai coffee snacks biryani "
-        "pizza wines bar"
+        "restaurant restaurants cafe cafes dhaba bakery bakers bakes sweets food foods foodfill "
+        "foodie kitchen canteen caterers catering mess tiffin tiffins bhojanalaya juice juices "
+        "tea chai coffee snacks biryani pizza pizzeria burger burgers shawarma momos eatery "
+        "eats bistro wines bar swiggy zomato"
     ),
-    "groceries": "kirana provision provisions supermarket dairy milk fruits vegetables chicken "
-    "mutton meat",
-    "travel": "travels tours cabs taxi fuels petroleum petrol lodge inn residency resort resorts",
+    "groceries": (
+        "kirana provision provisions supermarket supermart hypermarket mart grocery groceries "
+        "dairy milk fruits vegetables veggies chicken mutton meat dmart bigbasket "
+        "blinkit zepto instamart"
+    ),
+    "travel": (
+        "travels travel tours cabs cab taxi fuels petroleum petrol lodge inn residency resort "
+        "resorts irctc rail railway railways uber ola rapido metro bus buses airlines airways "
+        "indigo airport parking fastag"
+    ),
     "shopping": (
         "garments textiles fashion fashions boutique tailors footwear sarees silks electronics "
-        "electricals mobiles computers furniture jewellers jewellery emporium showroom"
+        "electricals mobiles computers furniture jewellers jewellery emporium showroom "
+        "collections apparel toys"
     ),
     "health": (
         "pharmacy pharma medical medicals medicos chemist chemists drugs surgicals hospital "
-        "hospitals clinic diagnostics diagnostic labs lab dental opticals optical"
+        "hospitals clinic clinics diagnostics diagnostic labs lab dental dentist opticals "
+        "optical homoeo homeo homoeopathy ayurveda ayurvedic apollo 1mg healthcare"
     ),
-    "personal_care": "salon saloon parlour laundry cleaners gym fitness",
+    "personal_care": "salon saloon parlour laundry cleaners gym fitness spa barber",
+    "subscriptions": "netflix hotstar subscription subscriptions spotify youtube",
+    "entertainment": "cinema cinemas cineplex movies theatre theatres multiplex pvr inox gaming",
     "education": (
         "college school university academy institute coaching classes tuition tutorials "
-        "stationery stationers books library"
+        "stationery stationers books book library"
     ),
     "rent_hostel": "hostel hostels",
-    "bills_recharges": "telecom communications insurance",
+    "bills_recharges": (
+        "telecom communications insurance electricity power recharge broadband gas water "
+        "bescom tneb mseb"
+    ),
     "emi_loans": "finance",
     # Not business keywords of the merchant engine: the only words that name an investment
     # on text alone. Investment senders themselves stay excluded until Phase 6 (D-026).
@@ -254,15 +280,57 @@ def _one(t: Txn, d: Derived, owner: OwnerData, result: Result) -> Categorised:
     if merchant.brand_id:
         return Categorised(BRAND_CATEGORIES[merchant.brand_id], "BRAND", "engine")
     p = parts(t.counterparty_raw)
-    found = {KEYWORD_CATEGORIES[w] for w in (p.tokens if p else ()) if w in KEYWORD_CATEGORIES}
+    words = (*p.tokens, *vpa_words(p.vpa)) if p else ()
+    found = {KEYWORD_CATEGORIES[w] for w in words if w in KEYWORD_CATEGORIES}
     if len(found) == 1:
         return Categorised(found.pop(), "KEYWORD", "engine")
     if found:
         return Categorised(UNCATEGORISED, "KW_conflict", "engine")
-    kind = party.kind if party and party.kind != "unsure" else merchant.kind
-    if t.direction == "debit" and kind == "person":
+    named = party.kind if party and party.kind in ("person", "business") else None
+    kind = named or merchant.kind
+    # The merchant engine's guess gives way to a business word ("Balaji Hall", "Lucky House");
+    # a party the owner answered as a person does not.
+    business_word = not named and bool(p and set(p.tokens) & NOT_PERSON)
+    if t.direction == "debit" and kind == "person" and not business_word:
         return Categorised("people", "PERSON", "engine")
+    if t.direction == "debit" and kind == "unsure" and p and looks_like_person(p):
+        return Categorised("people", "NAME_person", "engine")
     return Categorised(UNCATEGORISED, "NONE", "engine")
+
+
+# Words that make a name a business's, on top of the merchant engine's list (D-119).
+NOT_PERSON = (
+    BUSINESS_WORDS
+    | frozenset(KEYWORD_CATEGORIES)
+    | frozenset(
+        "hall depot hotel hotels agency centre center solutions services technologies store "
+        "stores traders enterprises pvt ltd llp works point house block".split()
+    )
+)
+PERSONAL_HANDLE = re.compile(r"ok\w+|axisbank|hdfcbank|icici|sbi|kotak|pnb|barodampay|upi")
+_PERSONAL_LOCAL = re.compile(r"(?=.*[a-z])[a-z0-9.]{3,}")
+GUESS_RULES = frozenset({"BRAND", "KEYWORD", "PERSON", "NAME_person"})
+
+
+def vpa_words(vpa: str | None) -> tuple[str, ...]:
+    """The words of a UPI ID's local part: "swiggy.food@x" -> swiggy, food."""
+    local = (vpa or "").partition("@")[0]
+    return tuple(w for w in re.split(r"[^a-z]+", local.casefold()) if len(w) > 1)
+
+
+def looks_like_person(p) -> bool:
+    """2 to 4 words of letters (initials allowed), honorifics ignored, no business word;
+    or no name at all and a personal-looking UPI ID ("ravi.k92@okaxis")."""
+    named = [w for w in p.tokens if w not in HONORIFICS]
+    if named:
+        return (
+            2 <= len(named) <= 4
+            and all(w.isalpha() for w in named)
+            and any(len(w) >= 3 for w in named)
+            and not any(w in NOT_PERSON for w in named)
+        )
+    local, _, handle = (p.vpa or "").partition("@")
+    return bool(handle and PERSONAL_HANDLE.fullmatch(handle) and _PERSONAL_LOCAL.fullmatch(local))
 
 
 def breakdown(

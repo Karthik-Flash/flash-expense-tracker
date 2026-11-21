@@ -141,3 +141,29 @@ def test_never_stored_rows_never_reach_a_sample(run, tmp_path) -> None:
     run("import-sms", "--input", str(write_backup(tmp_path / "n.xml", NEVER_STORED)))
     out = run("redact-sample", "--family", "HDFC", "--review-dir", str(tmp_path / "r"), code=2)
     assert "nothing to write" in out
+
+
+def test_unparsed_hdfc_messages_only(run, tmp_path, monkeypatch) -> None:
+    """4Z: --unparsed exports only the HDFC messages no parser read, as HDFC-UNPARSED."""
+    body = "TEST NEW SHAPE: Rs.700.00 paid to TEST PERSON via TEST APP on 01-01-26"
+    unread = ("VM-HDFCBK-S", body)
+    rows = [
+        *hdfc_rows(),
+        (unread[0], unread[1], datetime.fromisoformat("2026-01-01T06:00:00+00:00")),
+    ]
+    run("import-sms", "--input", str(write_backup(tmp_path / "a.xml", rows)))
+    review, sample = tmp_path / "review", tmp_path / "sample"
+    monkeypatch.setattr(sample_export, "SAMPLE_DIR", sample)
+    out = run("redact-sample", "--family", "HDFC", "--unparsed", "--review-dir", str(review))
+    unread_stored = sum(1 for _, b, _ in rows if b) - int(
+        re.search(r"^messages\s+(\d+)$", out, re.M).group(1)
+    )
+    assert unread_stored > 0  # the parsed fixtures are left out
+    text = (review / "hdfc-unparsed-sample.txt").read_text("utf-8")
+    assert text.startswith("# HDFC sample, unread messages only: ") and "TEST" not in text
+    assert "NEW SHAPE" not in text and "{WORD}" in text
+    assert "approved" in run("redact-sample", "--approve", "HDFC-UNPARSED", "--review-dir",
+                             str(review))  # fmt: skip
+    assert (sample / "hdfc-unparsed-sample.txt").exists()
+    assert "--unparsed goes with --family" in run("redact-sample", "--approve", "HDFC",
+                                                  "--unparsed", code=2)  # fmt: skip

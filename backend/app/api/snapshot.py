@@ -20,6 +20,7 @@ from app.api.auth import current_owner
 from app.engine.categorise import UNCATEGORISED
 from app.engine.reconcile import COUNTED, IST
 from app.models import Label, OwnerLinkDecision, Transaction, TxnLink
+from app.pipeline import statement
 from app.pipeline.recompute import VERSIONS
 
 SCHEMA_VERSION = 1
@@ -207,6 +208,7 @@ def build(session, owner) -> dict:
             "people": people(mine),
         })  # fmt: skip
     senders = v1.senders(owner, session, "all")
+    names = statement.owner_names(session, owner)
     todo, unnamed = todo_merchants(items)
     label_ids = session.scalars(
         select(Label.id).where(Label.owner_id == owner).order_by(Label.name)
@@ -223,7 +225,9 @@ def build(session, owner) -> dict:
             "merchants": todo,
             "unnamed": unnamed,
             "transfers": transfers(session, owner),
+            "suggestions": v1.suggestions(session, owner, names),
         },
+        "profile": {"names": list(names)},
         "labels": [v1.label_detail(owner, session, i) for i in label_ids],
         "people": v1.people_directory(session, owner),
         "categories": v1.categories(owner),

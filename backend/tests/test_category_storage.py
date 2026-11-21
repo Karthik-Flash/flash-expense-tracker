@@ -225,7 +225,7 @@ def test_category_stats_prints_counts_and_percentages_only(
     before = derived_rows(db_engine)
     out = run("category-stats")
     assert derived_rows(db_engine) == before
-    assert out.startswith("category-stats (categorise-1.1.0, read-only)\n")
+    assert out.startswith("category-stats (categorise-1.2.0, read-only)\n")
     block = out.split("spend transactions by category\n")[1].split("by rule")[0]
     counts = dict(re.findall(r"^  (\w+)\s+(\d+)$", block, flags=re.M))
     assert list(counts) == list(CATEGORIES)  # every category, in list order

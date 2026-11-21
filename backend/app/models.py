@@ -73,7 +73,9 @@ CANDIDATE_STATUSES = ("open", "confirmed", "dismissed")
 # (tests/test_owner_load.py checks that they agree).
 ACCOUNT_KINDS = ("bank_account", "credit_card", "wallet", "fd")
 IDENTIFIER_KINDS = ("last4", "text")
-PARTY_KINDS = ("person", "business", "unsure")  # unsure: no role answer yet (D-096)
+PARTY_KINDS = ("person", "business", "unsure", "self", "investment")
+# unsure: no role answer yet (D-096); self: "It's me" (D-117); investment: D-118
+SUGGESTIONS = ("self", "investment")  # what To-do may ask about a party (D-117, D-118)
 OWNER_SOURCES = ("file", "terminal", "app")  # who wrote an owner row
 # Who gave a party its display name (D-116): an owner source, or the bank statement.
 NAME_SOURCES = (*OWNER_SOURCES, "statement")
@@ -88,6 +90,7 @@ OWNER_ROLES = (
     "self_transfer",
     "card_bill_excluded",
     "fd_move",
+    "investment",
     "ignored",
     "uncertain",
 )  # every role except duplicate, which is decided as a link
@@ -331,6 +334,24 @@ class Party(Base):
     # Who gave display_name (D-116): app, terminal, file or statement; null: no name, or a
     # name from before 4A. statement-names never overwrites a name the owner gave.
     name_source: Mapped[str | None] = mapped_column(String(10))
+    # Suggestions the owner answered No to ("self", "investment"): never asked again (4Z).
+    dismissed: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+
+
+class OwnerName(Base):
+    """ "Your name as banks show it" (D-117): one row per variant. Owner data; private."""
+
+    __tablename__ = "owner_names"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "name", name="uq_owner_name"),
+        CheckConstraint(_in("source", OWNER_SOURCES), name="ck_owner_name_source"),
+    )
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    name: Mapped[str] = mapped_column(String(LABEL_MAX * 2))
+    source: Mapped[str] = mapped_column(String(10))
+    created_at: Mapped[datetime] = _created()
 
 
 class PartyText(Base):

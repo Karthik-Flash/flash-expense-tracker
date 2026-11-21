@@ -45,13 +45,15 @@ def test_shape(client, data) -> None:
     s = body(client)
     assert set(s) == {
         "schema_version", "generated_at", "owner_id", "engine_versions", "months",
-        "transactions", "todo", "labels", "categories", "people",
+        "transactions", "todo", "labels", "categories", "people", "profile",
     }  # fmt: skip
     assert s["schema_version"] == 1 and s["owner_id"] == str(OWNER_A)
     assert s["generated_at"].endswith("Z") and set(s["engine_versions"]) >= {"merchant"}
     assert [m["month"] for m in s["months"]] == sorted(m["month"] for m in s["months"])
     assert set(s["months"][0]) == {"month", "summary", "changes", "chart", "merchants", "people"}
-    assert set(s["todo"]) == {"senders", "answered", "merchants", "unnamed", "transfers"}
+    assert set(s["todo"]) == {
+        "senders", "answered", "merchants", "unnamed", "transfers", "suggestions"
+    }  # fmt: skip
     assert len(s["categories"]) == 20
 
 

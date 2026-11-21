@@ -95,7 +95,8 @@ VOCABULARY = frozenset(
 WORD = re.compile(r"[A-Za-z][A-Za-z']*")
 TOKEN = re.compile(r"\{[A-Z]+\}")
 HEADER = re.compile(  # the only "#" lines the tool writes
-    r"# [A-Z0-9_]+ sample: \d+ messages, \d+ shapes\. Values are shape tokens; words outside "
+    r"# [A-Z0-9_]+ sample(?:, unread messages only)?: \d+ messages, \d+ shapes\. "
+    r"Values are shape tokens; words outside "
     r"the bank vocabulary are \{WORD\}\."
     r"|## \d+ \| \d+ messages? \| kind [a-z_]+ \| (?:dedicated|generic|not parsed)"
 )
@@ -173,10 +174,17 @@ class Export:
     shapes: list[tuple[str, int, str, str]] = field(default_factory=list)  # shape, n, kind, st
     kept: Counter = field(default_factory=Counter)
     replaced: int = 0
+    unparsed: bool = False  # only the messages no parser read (4Z)
+
+    @property
+    def name(self) -> str:
+        """The file name's family: "hdfc", or "hdfc-unparsed"."""
+        return f"{self.family.lower()}-unparsed" if self.unparsed else self.family.lower()
 
     def text(self) -> str:
+        which = " sample, unread messages only" if self.unparsed else " sample"
         head = (
-            f"# {self.family} sample: {self.messages} messages, {len(self.shapes)} shapes. "
+            f"# {self.family}{which}: {self.messages} messages, {len(self.shapes)} shapes. "
             "Values are shape tokens; words outside the bank vocabulary are {WORD}."
         )
         blocks = [head]
@@ -194,12 +202,17 @@ class Export:
         ]) + "\n"  # fmt: skip
 
 
-def build(session: Session, owner_id: uuid.UUID, family: str) -> Export:
-    family = family.upper()
-    export = Export(family)
+UNPARSED = "-UNPARSED"
+
+
+def build(session: Session, owner_id: uuid.UUID, family: str, unparsed: bool = False) -> Export:
+    """`unparsed` (4Z): only the messages no parser read, as family "<BANK>-UNPARSED", so a
+    missing template can be added from an approved sample (never guessed without one)."""
+    family = family.upper().removesuffix(UNPARSED)
+    export = Export(family, unparsed=unparsed)
     counts: Counter = Counter()
     for core, body, _, status, version in _rows(session, owner_id):
-        if family_of(core) != family:
+        if family_of(core) != family or (unparsed and status == "parsed"):
             continue
         export.messages += 1
         shape, replaced = redact(body, export.kept)
@@ -227,11 +240,9 @@ def write(export: Export, review_dir: Path) -> tuple[Counter, list[str], Path | 
     if reasons or inside_repo(review_dir):
         return reasons, lines, None
     review_dir.mkdir(parents=True, exist_ok=True)
-    path = review_dir / sample_name(export.family)
+    path = review_dir / sample_name(export.name)
     path.write_text(text, encoding="utf-8")
-    (review_dir / f"{export.family.lower()}-vocabulary.txt").write_text(
-        export.vocabulary(), encoding="utf-8"
-    )
+    (review_dir / f"{export.name}-vocabulary.txt").write_text(export.vocabulary(), encoding="utf-8")
     return reasons, lines, path
 
 

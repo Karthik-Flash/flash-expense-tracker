@@ -1,10 +1,15 @@
 """The owner's bank statement against the app (D-114) and payer names from it (D-116).
 
-The owner runs both commands on their own files; nothing here keeps a statement. The pure
-parts live in the engine (statement_hdfc reads, statement_check matches); this module reads
-the app's side from the database and writes the approved names.
+The owner runs the commands on their own files. The pure parts live in the engine
+(statement_hdfc reads, statement_check matches and gives causes); this module reads the
+app's side from the database, writes the approved names, and imports the statement-only
+rows (`statement-import --apply`, D-120): each becomes a raw message of source "statement"
+with a parse result of the statement reader's version and, through the usual store, a
+transaction with hint "statement". Its dedupe key is the SMS key when it has a 12-digit
+reference, so the SMS that arrives later merges into it and replaces its fields.
 """
 
+import re
 import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -13,12 +18,26 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.engine import ParsedMessage
 from app.engine.merchant import parts
-from app.engine.reconcile import COUNTED, IST, upi_reference
-from app.engine.statement_check import AppRow
-from app.engine.statement_hdfc import Row
-from app.models import LABEL_MAX, Party, Transaction, TxnDerived
+from app.engine.money import AmountError, to_paise
+from app.engine.reconcile import COUNTED, IST, inferred_accounts, upi_reference
+from app.engine.senders import bank_for
+from app.engine.statement_check import AppRow, Context, check
+from app.engine.statement_hdfc import STATEMENT_VERSION, Row
+from app.models import (
+    LABEL_MAX,
+    OwnerName,
+    ParseResult,
+    Party,
+    RawMessage,
+    Transaction,
+    TxnDerived,
+)
+from app.pipeline.dedupe import content_hash
 from app.pipeline.owner_actions import party_for
+from app.pipeline.recompute import active_txns
+from app.pipeline.store import Counts, link_new
 
 BANK = "HDFC"
 
@@ -186,3 +205,156 @@ def apply_names(session: Session, owner_id: uuid.UUID, plan: NamePlan) -> int:
         changed += 1
     session.flush()
     return changed
+
+
+# --- statement context and import (D-120) -------------------------------------------------
+
+_AMOUNT = re.compile(r"(?:Rs\.?|INR|\u20b9)\s?(\d[\d,]*(?:\.\d{1,2})?)", re.I)
+
+
+def owner_names(session: Session, owner_id: uuid.UUID) -> tuple[str, ...]:
+    return tuple(
+        session.scalars(
+            select(OwnerName.name).where(OwnerName.owner_id == owner_id).order_by(OwnerName.id)
+        )
+    )
+
+
+def _amounts(body: str) -> frozenset[int]:
+    out = set()
+    for text in _AMOUNT.findall(body):
+        try:
+            out.add(to_paise(text.replace(",", "")))
+        except AmountError:
+            continue
+    return frozenset(out)
+
+
+def context(session: Session, owner_id: uuid.UUID, first: date, last: date) -> Context:
+    """Owner names, own last 4s and the unread HDFC messages of these days (in memory only)."""
+    own = frozenset(last4 for _, last4 in inferred_accounts(active_txns(session, owner_id)))
+    rows = session.execute(
+        select(RawMessage.sender_core, RawMessage.body, RawMessage.received_at)
+        .join(ParseResult, ParseResult.raw_message_id == RawMessage.id)
+        .where(
+            RawMessage.owner_id == owner_id,
+            RawMessage.source != "statement",
+            ParseResult.is_current,
+            ParseResult.status == "unknown",
+            RawMessage.received_at >= _utc(first - timedelta(days=1)),
+            RawMessage.received_at < _utc(last + timedelta(days=2)),
+        )
+    ).all()
+    unread = tuple(
+        (when.astimezone(IST).date(), amounts)
+        for core, body, when in rows
+        if bank_for(core) == BANK and (amounts := _amounts(body))
+    )
+    return Context(owner_names(session, owner_id), own, unread)
+
+
+# Causes never imported: the SMS will be read once its template exists; the rest are no
+# payment the app should hold (a reversal pair, a foreign charge kept out as today).
+NOT_IMPORTED = frozenset({"sms_not_parsed", "reversed_or_failed", "foreign_currency",
+                          "month_edge"})  # fmt: skip
+ASK = frozenset({"own_or_internal", "investment_or_broking"})  # never spend without an answer
+CHECK = frozenset({"likely_spend", "unknown", "no_sms"})  # debits shown with "Looks right?"
+_CHANNEL = {"upi": "upi", "neft": "neft", "imps": "imps", "rtgs": "neft", "atm": "atm",
+            "pos": "debit_card", "nach": "nach", "netbanking": "netbanking"}  # fmt: skip
+
+
+@dataclass
+class ImportPlan:
+    rows: list[tuple[str, Row]] = field(default_factory=list)  # (cause, row) to import
+    by_cause: Counter = field(default_factory=Counter)  # (month, cause) -> rows
+    skipped: Counter = field(default_factory=Counter)  # cause -> rows not imported
+    account_last4: str | None = None
+
+
+def plan_import(session: Session, owner_id: uuid.UUID, rows: list[Row]) -> ImportPlan:
+    """The statement-only rows and what each would become; counts only, nothing written."""
+    app = app_rows(session, owner_id, rows[0].date, rows[-1].date)
+    ctx = context(session, owner_id, rows[0].date, rows[-1].date)
+    months = check(rows, app, ctx)
+    plan = ImportPlan()
+    on = Counter(a.account_last4 for a in app if a.account_last4)
+    plan.account_last4 = on.most_common(1)[0][0] if on else None
+    for key, m in months.items():
+        for side, cause, row in m.unmatched:
+            if side != "statement":
+                continue
+            plan.by_cause[key, cause] += 1
+            if cause in NOT_IMPORTED:
+                plan.skipped[cause] += 1
+            else:
+                plan.rows.append((cause, row))
+    return plan
+
+
+def _parsed(row: Row, cause: str, last4: str | None) -> ParsedMessage:
+    hints = ["statement"]
+    if row.direction == "debit" and cause in ASK:
+        hints.append("statement_ask")
+    if row.direction == "debit" and cause in CHECK:
+        hints.append("statement_check")
+    if row.channel == "charges":
+        hints.append("bank_charge")
+    channel = "fd" if cause == "fd" else _CHANNEL.get(row.channel)
+    if row.channel == "upi":
+        counterparty = " ".join(x for x in (row.name, row.vpa) if x) or None
+    else:
+        counterparty = row.narration[:200] or None
+    return ParsedMessage(
+        bank=BANK,
+        template_id=f"stmt:{row.channel}",
+        parser_version=STATEMENT_VERSION,
+        type=row.direction,
+        direction=row.direction,
+        amount_paise=row.amount_paise,
+        currency="INR",
+        account_last4=last4,
+        channel=channel,
+        counterparty_raw=counterparty,
+        reference=row.ref12,
+        balance_paise=row.balance_paise,
+        txn_time_utc=_utc(row.date) + timedelta(hours=12),  # the day is known, not the time
+        time_inferred=True,
+        hints=tuple(hints),
+    )
+
+
+def apply_import(session: Session, owner_id: uuid.UUID, plan: ImportPlan) -> Counts:
+    """Write the planned rows; a row already imported is skipped (its content hash). Does
+    not commit: the caller's recompute commits it."""
+    counts = Counts()
+    for cause, row in plan.rows:
+        body = "|".join(str(x) for x in (row.date.isoformat(), row.narration, row.debit_paise,
+                                         row.credit_paise, row.ref, row.balance_paise))  # fmt: skip
+        received = _utc(row.date) + timedelta(hours=12)
+        digest = content_hash("STATEMENT", body, received)
+        exists = select(RawMessage.id).where(
+            RawMessage.owner_id == owner_id, RawMessage.content_hash == digest
+        )
+        if session.scalar(exists) is not None:
+            counts.raw_duplicate += 1
+            continue
+        raw = RawMessage(owner_id=owner_id, source="statement", sender_raw="HDFC statement",
+                         sender_core="STATEMENT", body=body, received_at=received,
+                         content_hash=digest)  # fmt: skip
+        session.add(raw)
+        session.flush()
+        counts.raw_new += 1
+        parsed = _parsed(row, cause, plan.account_last4)
+        result = ParseResult(raw_message_id=raw.id, parser_version=STATEMENT_VERSION,
+                             status="parsed", is_current=True, bank=BANK,
+                             template_id=parsed.template_id, type=parsed.type,
+                             direction=parsed.direction, amount_paise=parsed.amount_paise,
+                             currency="INR", account_last4=parsed.account_last4,
+                             channel=parsed.channel, counterparty_raw=parsed.counterparty_raw,
+                             reference=parsed.reference, balance_paise=parsed.balance_paise,
+                             txn_time_utc=parsed.txn_time_utc, time_inferred=True,
+                             hints=list(parsed.hints))  # fmt: skip
+        session.add(result)
+        session.flush()
+        link_new(session, owner_id, raw, result, parsed, counts)
+    return counts

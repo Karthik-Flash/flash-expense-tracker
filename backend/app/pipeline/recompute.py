@@ -186,6 +186,9 @@ def load_owner(
     return owner, accounts, parties
 
 
+PARTY_MERCHANT_KIND = {"self": "person", "investment": "business"}
+
+
 def shown_name(party: Party | None, engine_name: str | None) -> str | None:
     """The owner's name for a person (D-096), else a file entry's label, else the engine's
     name of the text. An app-made party's label is only its key, never shown."""
@@ -214,7 +217,8 @@ def plan(session: Session, owner_id: uuid.UUID) -> Plan:
             "transaction_id": t.id,
             "owner_id": owner_id,
             "merchant_key": m.merchant_key,
-            "merchant_kind": party.kind if party else m.kind,
+            # "It's me" is a person, an investment a business (D-117, D-118).
+            "merchant_kind": PARTY_MERCHANT_KIND.get(party.kind, party.kind) if party else m.kind,
             "merchant_confidence": "high" if party else m.confidence,
             "display_name": shown_name(party, m.display_name),
             "brand_id": m.brand_id,

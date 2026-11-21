@@ -33,7 +33,11 @@ def stale(session: Session, owner_id: uuid.UUID) -> list[int]:
     rows = session.execute(
         select(RawMessage.id, RawMessage.sender_core, ParseResult.parser_version)
         .join(ParseResult, ParseResult.raw_message_id == RawMessage.id)
-        .where(RawMessage.owner_id == owner_id, ParseResult.is_current)
+        .where(
+            RawMessage.owner_id == owner_id,
+            ParseResult.is_current,
+            RawMessage.source != "statement",  # read by the statement reader, not an SMS parser
+        )
         .order_by(RawMessage.id)
     )
     return [rid for rid, core, version in rows if version != current_version(bank_for(core))]

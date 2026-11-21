@@ -16,7 +16,13 @@ Roles from one transaction. The first match decides, every match is kept:
   ST_own_text         text of an own bank account or wallet       self_transfer
   RF_type             type refund                                 refund
   ST_masked           credit from a masked UPI ID that fits an own UPI ID    uncertain
+  PT_self             any payment of an owner party of kind self ("It's me")  self_transfer
+  PT_investment       any payment of an owner party of kind investment         investment
 Only when none of these matched:
+  SM_credit           a credit read from the bank statement (hint statement): never lowers
+                      Net until the owner decides that transaction             uncertain
+  SM_ask              a statement debit to the owner's own name or an investment (hint
+                      statement_ask): not spending until the owner answers     uncertain
   CR_income_party     credit from an owner party marked as income           income
   CR_person_party     credit from an owner party of kind person             payback
                       (a party of kind unsure gives no opinion: the rules below apply)
@@ -60,7 +66,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from app.engine.merchant import MERCHANT_VERSION, Merchant, channel_for, normalise_merchant, parts
 
-RECONCILE_VERSION = "reconcile-1.5.0"
+RECONCILE_VERSION = "reconcile-1.6.0"
 VERSIONS = {"merchant": MERCHANT_VERSION, "reconcile": RECONCILE_VERSION}
 
 ROLES = (
@@ -72,6 +78,7 @@ ROLES = (
     "self_transfer",
     "card_bill_excluded",
     "fd_move",
+    "investment",
     "duplicate",
     "ignored",
     "uncertain",
@@ -100,6 +107,10 @@ RULES = (
     "ST_own_text",
     "RF_type",
     "ST_masked",
+    "PT_self",
+    "PT_investment",
+    "SM_credit",
+    "SM_ask",
     "CR_income_party",
     "CR_person_party",
     "CR_person_signal",
@@ -141,7 +152,7 @@ LINK_REASONS = (
 )
 VERDICTS = ("same", "different")
 ACCOUNT_KINDS = ("bank_account", "credit_card", "wallet", "fd")
-PARTY_KINDS = ("person", "business", "unsure")
+PARTY_KINDS = ("person", "business", "unsure", "self", "investment")
 CARD_CHANNELS = ("debit_card", "credit_card")
 # Engine reason codes that are enough to call a credit a payback (D-061).
 PAYBACK_SIGNALS = frozenset({"R5_honorific", "R5_mobile_vpa", "R5_consumer_vpa"})
@@ -210,7 +221,9 @@ class OwnAccount:
 class Party:
     """A person or business the owner named, by the texts it shows up as."""
 
-    kind: str  # person, business, or unsure: the owner named or joined it, no role answer
+    # person, business; unsure: the owner named or joined it, no role answer; self: "It's
+    # me" (D-117); investment: a broker or fund (D-118)
+    kind: str
     income: bool = False  # an income source: pocket money, stipend, salary
     texts: tuple[str, ...] = ()
     category: str | None = None  # the owner's default category for this party (a slug)
@@ -297,7 +310,7 @@ class _Run:
     def unexplained(self, i: int) -> bool:
         """The role is the engine's default guess, so a link may still explain it."""
         _, rule, basis = self.matches[i][0]
-        return rule == "ST_masked" or (basis == "engine" and rule.startswith(("CR_", "DB_")))
+        return rule == "ST_masked" or (basis == "engine" and rule.startswith(("CR_", "DB_", "SM_")))
 
     def put(self, i: int, match: Match) -> None:
         """A link sets a role, unless the owner decided that transaction's role."""
@@ -521,10 +534,19 @@ def _own_evidence(
         yield "refund", "RF_type", "engine"
     if t.direction == "credit" and _fits_own_upi(t.counterparty_raw, own_upi):
         yield "uncertain", "ST_masked", "owner"
+    if isinstance(own, Party) and own.kind == "self":
+        yield "self_transfer", "PT_self", "owner"
+    if isinstance(own, Party) and own.kind == "investment":
+        yield "investment", "PT_investment", "owner"
 
 
 def _default(t: Txn, merchant: Merchant, own: OwnAccount | Party | None) -> Match:
     """Design B7 step 3, rows 6 and 7: the credit rules (B6), else spend."""
+    if "statement" in t.hints:  # read from the bank statement (D-120)
+        if t.direction == "credit":
+            return "uncertain", "SM_credit", "engine"
+        if "statement_ask" in t.hints:
+            return "uncertain", "SM_ask", "engine"
     if t.direction == "debit":
         no_payee = "R0_no_text" in merchant.reasons  # an ATM withdrawal is R0_atm
         return "spend", "DB_no_counterparty" if no_payee else "DB_spend", "engine"

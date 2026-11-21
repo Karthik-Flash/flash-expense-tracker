@@ -8,7 +8,7 @@ uncommitted messages, and a re-run picks them up as new.
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -179,9 +179,14 @@ def link_new(
         if parsed.is_money:
             counts.transactions["zero_amount"] += 1
         return
-    txn = find_by_key(session, owner_id, key)
+    txn = find_by_key(session, owner_id, key) or statement_twin(session, owner_id, parsed, raw)
     if txn is not None:
         txn.status = "active"  # a superseded transaction with a live source is live again
+        if STATEMENT in (txn.hints or ()) and raw.source != "statement":
+            # The SMS for a row first read from the statement (D-120): its own words win.
+            for name, value in txn_fields(parsed).items():
+                setattr(txn, name, value)
+            counts.transactions["statement_row_replaced"] += 1
         counts.transactions["merged"] += 1
     else:
         txn = Transaction(owner_id=owner_id, dedupe_key=key, status="active", **txn_fields(parsed))
@@ -193,6 +198,34 @@ def link_new(
         TransactionSource(transaction_id=txn.id, raw_message_id=raw.id, parse_result_id=row.id)
     )
     session.flush()
+
+
+STATEMENT = "statement"  # the hint of a transaction read from the bank statement (D-120)
+
+
+def statement_twin(
+    session: Session, owner_id: uuid.UUID, parsed: ParsedMessage, raw: RawMessage
+) -> Transaction | None:
+    """An SMS with no key match: the one active statement transaction of the same bank,
+    direction and amount within a day, if exactly one (D-120). A reference match is the
+    dedupe key itself; this covers the rows the statement gave no reference."""
+    if raw.source == STATEMENT or not parsed.is_money or parsed.txn_time_utc is None:
+        return None
+    near = [
+        t
+        for t in session.scalars(
+            select(Transaction).where(
+                Transaction.owner_id == owner_id,
+                Transaction.status == "active",
+                Transaction.bank == parsed.bank,
+                Transaction.direction == parsed.direction,
+                Transaction.amount_paise == parsed.amount_paise,
+            )
+        )
+        if STATEMENT in (t.hints or ())
+        and abs(t.txn_time_utc - parsed.txn_time_utc) <= timedelta(days=1)
+    ]
+    return near[0] if len(near) == 1 else None
 
 
 def record_candidates(session: Session, txn: Transaction) -> int:

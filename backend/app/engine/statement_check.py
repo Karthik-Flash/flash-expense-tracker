@@ -11,9 +11,21 @@ likely cause that fits:
   statement only  foreign_currency    the narration names a foreign currency or markup
                   reversed_or_failed  a reversal word, or a debit and a credit of the same
                                       amount within 3 days that are both unmatched
+                  sms_not_parsed      a stored HDFC message no parser read, within a day,
+                                      holds the same amount: the SMS came, its template
+                                      is missing (4Z)
+                  fd                  FD THROUGH NET, FD interest, FD maturity or closure
+                  investment_or_broking  a broker, clearing corporation, fund or SIP
+                  card_bill_payment   a debit paying a credit card bill
+                  own_or_internal     NEFT, IMPS, RTGS or a transfer (TPT) naming the owner
+                                      (name variants) or one of the owner's accounts
+                  verification_or_tiny  a credit of Rs 2 or less, an account verification,
+                                      an ACH dividend
                   no_sms              NACH, interest, charges, netbanking or IMPS: HDFC sends
                                       no alert for these, or not always
-                  unknown
+                  likely_spend        a UPI or card (POS) debit to someone else
+                  likely_income       any other credit
+                  unknown             nothing fits (a debit on another channel)
   app only        duplicate_alert     same amount and direction within a day of an app row
                                       that is matched: a second alert for one statement row
                   card_or_other_account  a credit card, or another account's last 4
@@ -22,14 +34,29 @@ likely cause that fits:
                   unknown
 """
 
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from app.engine.statement_hdfc import Row
+from app.engine.suggest import is_investment, names_owner_in
 
-CAUSES = ("no_sms", "month_edge", "foreign_currency", "reversed_or_failed", "duplicate_alert",
+CAUSES = ("sms_not_parsed", "likely_spend", "likely_income", "no_sms", "month_edge",
+          "foreign_currency", "reversed_or_failed", "fd", "investment_or_broking",
+          "card_bill_payment", "own_or_internal", "verification_or_tiny", "duplicate_alert",
           "card_or_other_account", "unknown")  # fmt: skip
+# Statement-only debits of these causes are not spending: left out when the check counts
+# the statement-only debits as spend.
+NOT_SPEND_CAUSES = frozenset({
+    "reversed_or_failed", "fd", "investment_or_broking", "card_bill_payment",
+    "own_or_internal", "verification_or_tiny",
+})  # fmt: skip
+TINY_PAISE = 200
+_FD = re.compile(r"\bFD\b|FIXED DEPOSIT|\bTD\b.*\b(?:INT|MAT)|PREMAT")
+_CARD_BILL = re.compile(r"CREDIT CARD|\bCC\b.*(?:PAY|BILL)|CARD ?BILL|\bCCPAY|AUTOPAY.*\bCC\b")
+_VERIFY = re.compile(r"^ACH C|VERIF|PENNY|DIVIDEND|\bDIV\b|ACCOUNT VALIDATION")
+_TRANSFER = frozenset({"neft", "imps", "rtgs", "other", "netbanking"})
 NO_SMS_CHANNELS = frozenset({"nach", "interest", "charges", "netbanking", "imps"})
 FOREIGN = ("USD", "EUR", "GBP", "AED", "SGD", "AUD", "CAD", "JPY", "CHF", "INTL", "FOREIGN",
            "MARKUP", "CROSS CURR", "DCC", "FX ")  # fmt: skip
@@ -76,7 +103,7 @@ class Month:
     app_credits: Side = field(default_factory=Side)
     matched: Counter = field(default_factory=Counter)  # by reference / amount_day
     stmt_only: Side = field(default_factory=Side)
-    stmt_only_debits: Side = field(default_factory=Side)  # not month_edge, not reversed
+    stmt_only_debits: Side = field(default_factory=Side)  # causes that are spending
     app_only: Side = field(default_factory=Side)
     mismatches: Side = field(default_factory=Side)  # paise: the sum of the differences
     causes: dict[str, Side] = field(default_factory=lambda: {c: Side() for c in CAUSES})
@@ -144,19 +171,65 @@ def _reversal_pairs(items: list[tuple[date, str, int, object]]) -> set[int]:
     return hit
 
 
-def _stmt_cause(row: Row, reversed_: bool) -> str:
+@dataclass(frozen=True)
+class Context:
+    """What the check knows besides the two sides: the owner's name variants, the last 4 of
+    the owner's own accounts, and the stored HDFC messages no parser read: (IST day, the
+    amounts in paise their text holds)."""
+
+    owner_names: tuple[str, ...] = ()
+    own_last4: frozenset[str] = frozenset()
+    unparsed: tuple[tuple[date, frozenset[int]], ...] = ()
+
+
+def _names_own_account(text: str, own_last4: frozenset[str]) -> bool:
+    """A masked account number ending in an own last 4: "XXXXXX0001", "**0001". A masked
+    card number ("512345XXXXXX0001": digits before the mask) is not an account."""
+    return any(re.search(rf"(?<!\d)[X*]{{2,}}\d{{0,8}}{last4}\b", text) for last4 in own_last4)
+
+
+NO_CONTEXT = Context()
+
+
+def stmt_cause(row: Row, reversed_: bool = False, context: Context = NO_CONTEXT) -> str:
+    """The likely cause of a statement row the app does not have (order as in the docstring)."""
     text = row.narration.upper()
     if any(word in text for word in FOREIGN):
         return "foreign_currency"
     words = text.replace("-", " ").split()
     if reversed_ or any(word in words for word in REVERSAL):
         return "reversed_or_failed"
+    if any(
+        abs((day - row.date).days) <= 1 and row.amount_paise in amounts
+        for day, amounts in context.unparsed
+    ):
+        return "sms_not_parsed"
+    if _FD.search(text):
+        return "fd"
+    if is_investment(row.narration):
+        return "investment_or_broking"
+    if row.direction == "debit" and _CARD_BILL.search(text):
+        return "card_bill_payment"
+    internal = row.channel in _TRANSFER or "TPT" in words
+    if internal and (
+        names_owner_in(row.narration, context.owner_names)
+        or _names_own_account(text, context.own_last4)
+    ):
+        return "own_or_internal"
+    if row.direction == "credit" and (row.amount_paise <= TINY_PAISE or _VERIFY.search(text)):
+        return "verification_or_tiny"
     if row.channel in NO_SMS_CHANNELS:
         return "no_sms"
+    if row.direction == "debit" and row.channel in ("upi", "pos"):
+        return "likely_spend"
+    if row.direction == "credit":
+        return "likely_income"
     return "unknown"
 
 
-def check(rows: list[Row] | tuple[Row, ...], app: list[AppRow]) -> dict[str, Month]:
+def check(
+    rows: list[Row] | tuple[Row, ...], app: list[AppRow], context: Context = NO_CONTEXT
+) -> dict[str, Month]:
     """Per IST month of the statement: totals, matches, unmatched rows and their causes.
 
     `app` should hold the app's HDFC rows of the statement's days (the caller selects them).
@@ -201,12 +274,12 @@ def check(rows: list[Row] | tuple[Row, ...], app: list[AppRow]) -> dict[str, Mon
     lone_rows = [r for r in rows if id(r) not in paired_stmt]
     reversed_rows = _reversal_pairs([(r.date, r.direction, r.amount_paise, r) for r in lone_rows])
     for i, row in enumerate(lone_rows):
-        cause = _stmt_cause(row, i in reversed_rows)
+        cause = stmt_cause(row, i in reversed_rows, context)
         m = month(row.date)
         m.stmt_only.add(row.amount_paise)
         m.causes[cause].add(row.amount_paise)
         m.unmatched.append(("statement", cause, row))
-        if row.direction == "debit" and cause != "reversed_or_failed":
+        if row.direction == "debit" and cause not in NOT_SPEND_CAUSES:
             m.stmt_only_debits.add(row.amount_paise)
 
     matched_app = [a for a in app if a.id in paired_app]

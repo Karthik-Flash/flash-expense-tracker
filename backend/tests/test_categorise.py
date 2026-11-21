@@ -21,7 +21,7 @@ from app.engine.categorise import (
     check_brand_categories,
     label_view,
 )
-from app.engine.merchant import BUSINESS_WORDS, brands
+from app.engine.merchant import brands
 from app.engine.reconcile import ROLES, OwnAccount, OwnerData, Party, Txn, derive, totals
 from tests.test_reconcile import DAY, OWNER, SAMPLE, T0, credit, random_txns, txn
 
@@ -76,7 +76,10 @@ def test_the_fixed_list_and_the_tables() -> None:
     check_brand_categories()  # every brand has one valid category
     assert set(BRAND_CATEGORIES) == set(brands()) and len(BRAND_CATEGORIES) == 74
     assert set(KEYWORD_CATEGORIES.values()) <= set(CATEGORIES)
-    assert set(KEYWORD_CATEGORIES) - INVESTMENT_WORDS <= BUSINESS_WORDS  # business keywords only
+    # 4Z (D-119): keywords may be brand words or words of a UPI ID, not only the merchant
+    # engine's business words; none is an honorific or shorter than two letters.
+    assert not set(KEYWORD_CATEGORIES) & {"mr", "mrs", "ms", "dr", "shri", "smt"}
+    assert all(len(w) >= 2 for w in KEYWORD_CATEGORIES) and INVESTMENT_WORDS
     assert set(NOT_SPENDING) | SPENDING_ROLES == set(ROLES)
     assert set(NOT_SPENDING.values()) <= set(CATEGORIES)
 
@@ -136,6 +139,15 @@ LEVELS = [
         "engine",
     ),
     (credit(None, channel="fd"), None, "investments", "NS_fd_move", "engine"),
+    # 4Z: a person's name on a merchant (QR) UPI ID: the name decides
+    (txn(party="TEST MOHAN LAL paytmqr123@paytm"), None, "people", "NAME_person", "engine"),
+    (
+        txn(party="TEST BROKER"),
+        party("TEST BROKER", kind="investment"),
+        "investments",
+        "NS_investment",
+        "engine",
+    ),  # fmt: skip
     (txn(), OwnerData(roles={1: "ignored"}), "other", "NS_ignored", "engine"),
     (credit("TEST"), None, "other", "NS_uncertain", "engine"),
     (
@@ -194,7 +206,8 @@ def test_keywords_match_whole_words_only() -> None:
     assert one(txn(party="TEST CAFE AND BAKERY"))[1] == "KEYWORD"  # two words, one category
     assert one(txn(party="TEST STORES PVT LTD"))[1] == "NONE"  # generic words are not mapped
     assert one(txn(party="TEST HOTEL 4"))[1] == "NONE"
-    assert one(txn(party="test.cafe@ybl"))[1] == "NONE"  # the name only, not the UPI ID
+    assert one(txn(party="test.cafe@ybl"))[1] == "KEYWORD"  # 4Z: the UPI ID's words too
+    assert one(txn(party="testcafe@ybl"))[1] != "KEYWORD"  # whole words only
 
 
 def test_bad_owner_category_is_refused_without_naming_it() -> None:

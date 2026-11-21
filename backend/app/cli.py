@@ -17,9 +17,11 @@
   payback-audit [--fix [--apply] | --restore [--apply]]
   bank-survey
   generic-preview
-  redact-sample --family <bank> [--review-dir DIR] | --approve <bank> [--review-dir DIR]
+  redact-sample --family <bank> [--unparsed] [--review-dir DIR]
+  redact-sample --approve <bank> [--review-dir DIR]
   statement-check --file <path> [--file <path> ...] [--details]
   statement-names --file <path> [--file <path> ...] [--show | --apply]
+  statement-import --file <path> [--file <path> ...] [--apply]
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
@@ -1172,7 +1174,8 @@ def cmd_statement_check(session: Session, args: argparse.Namespace) -> int:
               "recompute", file=sys.stderr)  # fmt: skip
         return 1
     app = statement.app_rows(session, settings.owner_id, rows[0].date, rows[-1].date)
-    months = statement_check.check(rows, app)
+    ctx = statement.context(session, settings.owner_id, rows[0].date, rows[-1].date)
+    months = statement_check.check(rows, app, ctx)
     print("statement-check (counts and rupee sums only; SAFE TO PASTE)")
     print(f"reader {statement_hdfc.STATEMENT_VERSION}: files {len(args.file)}, rows {len(rows)}, "
           f"lines skipped {skipped}, balance breaks {breaks}")  # fmt: skip
@@ -1225,6 +1228,37 @@ def cmd_statement_check(session: Session, args: argparse.Namespace) -> int:
                     )
         print(PRIVATE)
     return 0
+
+
+def cmd_statement_import(session: Session, args: argparse.Namespace) -> int:
+    """D-120. The statement-only rows as transactions. Dry run: counts by month and cause
+    (SAFE). --apply writes them (after the planner's OK) and recomputes."""
+    read = _statements(args.file)
+    if read is None:
+        return 2
+    rows, _skipped, breaks = read
+    if not rows:
+        print("statement-import: no rows found", file=sys.stderr)
+        return 1
+    if breaks:
+        print(f"refused: {breaks} balance break(s): fix the reading first", file=sys.stderr)
+        return 1
+    found = statement.plan_import(session, settings.owner_id, rows)
+    print("statement-import (counts only; SAFE TO PASTE)")
+    print(f"reader {statement_hdfc.STATEMENT_VERSION}: rows {len(rows)}, balance breaks 0")
+    for (month, cause), n in sorted(found.by_cause.items()):
+        print(f"  {month} {cause:<24}{n:>5}")
+    line("rows to import", len(found.rows))
+    for cause, n in sorted(found.skipped.items()):
+        line(f"not imported: {cause}", n)
+    if not args.apply:
+        print("dry run: nothing saved. To import them: --apply (after the planner's OK)")
+        return 0
+    counts = statement.apply_import(session, settings.owner_id, found)
+    line("imported", counts.raw_new)
+    line("already imported", counts.raw_duplicate)
+    line("merged into an existing transaction", counts.transactions["merged"])
+    return run_recompute(session, "import")
 
 
 def cmd_statement_names(session: Session, args: argparse.Namespace) -> int:
@@ -1309,6 +1343,9 @@ def _leaks(reasons: Counter, lines: list[str]) -> None:
 def cmd_redact_sample(session: Session, args: argparse.Namespace) -> int:
     """D-100. A redacted sample of one bank, written to the owner's review folder."""
     review = args.review_dir or PRIVATE_ROOT / "review"
+    if args.unparsed and not args.family:
+        print("--unparsed goes with --family", file=sys.stderr)
+        return 2
     if sample_export.inside_repo(review):
         print("refused: the review folder must be outside the repository", file=sys.stderr)
         return 2
@@ -1322,8 +1359,8 @@ def cmd_redact_sample(session: Session, args: argparse.Namespace) -> int:
             return 1
         print(f"approved: leak scan clean; copied to data/sample/{target.name} (git-ignored)")
         return 0
-    export = sample_export.build(session, settings.owner_id, args.family)
-    print(f"redact-sample {export.family} (counts only)")
+    export = sample_export.build(session, settings.owner_id, args.family, args.unparsed)
+    print(f"redact-sample {export.name.upper()} (counts only)")
     line("messages", export.messages)
     line("shapes", len(export.shapes))
     line("template words kept", sum(export.kept.values()))
@@ -1335,8 +1372,8 @@ def cmd_redact_sample(session: Session, args: argparse.Namespace) -> int:
     if path is None:
         _leaks(reasons, lines)
         return 1
-    print(f"written to the review folder: {path.name} and {export.family.lower()}-vocabulary.txt")
-    print(f"PRIVATE: read both files, then run: redact-sample --approve {export.family}")
+    print(f"written to the review folder: {path.name} and {export.name}-vocabulary.txt")
+    print(f"PRIVATE: read both files, then run: redact-sample --approve {export.name.upper()}")
     return 0
 
 
@@ -1411,6 +1448,10 @@ def build_parser() -> argparse.ArgumentParser:
     which.add_argument("--family", help="the bank, as bank-survey names it (e.g. SBI)")
     which.add_argument("--approve", metavar="FAMILY", help="scan again, copy to data/sample/")
     rs.add_argument("--review-dir", type=Path, help="default D:/FlashPrivate/review")
+    rs.add_argument(
+        "--unparsed", action="store_true",
+        help="with --family: only the messages no parser read (approve as <BANK>-UNPARSED)",
+    )  # fmt: skip
     sc = sub.add_parser(
         "statement-check",
         help="the HDFC statement against the app, per IST month (counts and rupee sums)",
@@ -1420,6 +1461,13 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--file", type=Path, action="append", required=True,
                     help="an HDFC NetBanking Delimited statement; repeat for more")  # fmt: skip
     sc.add_argument("--details", action="store_true", help="PRIVATE: list the unmatched rows")
+    si = sub.add_parser(
+        "statement-import",
+        help="the statement-only rows as transactions (dry run: counts by month and cause)",
+    )
+    si.add_argument("--file", type=Path, action="append", required=True,
+                    help="an HDFC NetBanking Delimited statement; repeat for more")  # fmt: skip
+    si.add_argument("--apply", action="store_true", help="import them, then recompute")
     sn = sub.add_parser(
         "statement-names",
         help="payer names for nameless UPI credits, from the statement (counts; dry run)",
@@ -1451,6 +1499,7 @@ COMMANDS = {
     "generic-preview": cmd_generic_preview,
     "redact-sample": cmd_redact_sample,
     "statement-check": cmd_statement_check,
+    "statement-import": cmd_statement_import,
     "statement-names": cmd_statement_names,
 }
 

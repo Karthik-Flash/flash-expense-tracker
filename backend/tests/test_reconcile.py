@@ -74,6 +74,10 @@ def credit(party: str | None, **fields) -> Txn:
     return txn(direction="credit", party=party, **fields)
 
 
+SELF = OwnerData(parties=(Party("self", texts=("TEST ME",)),))
+BROKER = OwnerData(parties=(Party("investment", texts=("TEST BROKER",)),))
+
+
 def one(t: Txn, owner: OwnerData | None = None) -> Derived:
     return derive([t], owner).roles[t.id]
 
@@ -115,6 +119,26 @@ CASES = [
     (txn(party="PERSON_901"), OWNER, "spend", "DB_spend", "engine"),  # paying a person is spend
     (txn(party="TEST PARENT"), OWNER, "spend", "DB_spend", "engine"),  # also an income source
     (txn(), OwnerData(roles={1: "ignored"}), "ignored", "OWNER_role", "owner"),
+    # 4Z (D-117, D-118, D-120): "It's me", Investments, and rows read from the statement.
+    (txn(party="TEST ME"), SELF, "self_transfer", "PT_self", "owner"),
+    (credit("TEST ME"), SELF, "self_transfer", "PT_self", "owner"),
+    (txn(party="TEST BROKER"), BROKER, "investment", "PT_investment", "owner"),
+    (credit("TEST BROKER"), BROKER, "investment", "PT_investment", "owner"),
+    (credit("test.parent@okaxis", hints=("statement",)), OWNER, "uncertain", "SM_credit", "engine"),
+    (
+        txn(party="TEST ME", hints=("statement", "statement_ask")),
+        None,
+        "uncertain",
+        "SM_ask",
+        "engine",
+    ),  # fmt: skip
+    (
+        txn(party="TEST ME", hints=("statement", "statement_ask")),
+        SELF,
+        "self_transfer",
+        "PT_self",
+        "owner",
+    ),  # fmt: skip
 ]
 
 
@@ -131,8 +155,8 @@ def test_every_role_and_every_rule_is_reached() -> None:
     by_link = {"OWNER_link", "DUP_autopay_card", "ST_reference", "ST_pair"}
     assert {role for _, _, role, _, _ in CASES} | {"duplicate"} == set(ROLES)
     assert {rule for _, _, _, rule, _ in CASES} | by_link == set(RULES)
-    assert len(ROLES) == 11 and set(COUNTED) | DEBIT_ONLY | CREDIT_ONLY <= set(ROLES)
-    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.5.0"
+    assert len(ROLES) == 12 and set(COUNTED) | DEBIT_ONLY | CREDIT_ONLY <= set(ROLES)
+    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.6.0"
 
 
 def test_unexplained_debit_is_spend_and_unexplained_credit_is_uncertain() -> None:
@@ -299,6 +323,18 @@ def random_txns(seed: int, n: int = 400) -> list[Txn]:
     return out
 
 
+def test_statement_rows_and_suggestions_never_lower_net() -> None:
+    """A statement credit is never Paid back, even from a Friend party, until the owner
+    decides that row; a statement debit to ask about is in no total until answered."""
+    friend = credit("test.friend@ybl", hints=("statement",), amount_paise=5_000)
+    ask = txn(2, party="TEST ME", hints=("statement", "statement_ask"), amount_paise=7_000)
+    result = derive([friend, ask], OWNER)
+    t = totals([friend, ask], result.roles, T0 - DAY, T0 + DAY)
+    assert (t.spent_paise, t.paid_back_paise, t.net_paise) == (0, 0, 0)
+    decided = OwnerData(OWNER.accounts, OWNER.parties, {1: "payback"})
+    assert derive([friend], decided).roles[1].role == "payback"  # the owner's own answer
+
+
 def test_exactly_one_role_each_same_output_in_any_order() -> None:
     txns = random_txns(1)
     owner = OwnerData(OWNER.accounts, OWNER.parties, {5: "ignored", 6: "self_transfer"})
@@ -313,7 +349,10 @@ def test_exactly_one_role_each_same_output_in_any_order() -> None:
     shuffled = random.Random(2).sample(txns, len(txns))
     assert derive(shuffled, owner) == result
     assert list(derive(shuffled, owner).roles) == list(first)
-    assert {d.role for d in first.values()} >= set(ROLES) - {"duplicate", "card_bill_counted"}
+    # investment comes only from an owner party of kind investment (see CASES)
+    assert {d.role for d in first.values()} >= set(ROLES) - {
+        "duplicate", "card_bill_counted", "investment"
+    }  # fmt: skip
     assert all(d.basis == "engine" for d in derive(txns).roles.values())  # no owner data
 
 
