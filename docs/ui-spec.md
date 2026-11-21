@@ -341,6 +341,26 @@ wrap under their terms and buttons grow.
   Counted line shows a waiting choice with "Saved on phone · syncing" and Undo.
 - Offline, all three wait in the outbox like every other answer (D-091).
 
+## It's me, Investments and your names (4Z, D-117, D-118)
+
+- **Answers**: sender cards and the person sheet show Friend, Family, It's me
+  and More…; More… shows Income, Investments and Ignore. The chosen one is
+  pressed; tapping It's me or Investments again undoes it. A person who sent
+  no money still gets It's me and Investments ("This person is").
+- **Safety**: on a person the app thinks is the owner (or an investment),
+  Friend and Family ask once, inline: "This looks like your own account. Count
+  it as Friend anyway?" with "Yes, Friend" and Cancel (primary).
+- **To-do**: "Is this you?" and "Is this an investment?", one card per person:
+  name, "2 payments", "Yes, it's me" / "Yes, an investment" and No, and a
+  muted line saying what Yes does. Only questions: nothing moves until the
+  owner answers.
+- **Your name** (`?profile`): a quiet sheet from the Speed sheet ("Your name
+  as banks show it") and the person sheet ("Your names"): the variants, each
+  with Remove, a field to add one, Save; through the outbox.
+- **Guessed categories**: the transaction sheet's Category line says "guessed
+  from the name" for a keyword, brand or person-name guess (D-119). A row read
+  from the bank statement says "Read from the bank statement".
+
 ## Moved between your accounts? (4A, D-115)
 
 - **To-do section** "Moved between your accounts?", after "Saved on phone"

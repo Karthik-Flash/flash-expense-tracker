@@ -2,7 +2,7 @@
 
 A one-page tour of Flash Expense Tracker for someone new to the project. It
 links to the detailed documents instead of repeating them. State: Phase 4
-in progress (19 Nov 2026).
+done, Phase 5 next (21 Nov 2026; [retro/phase-4.md](retro/phase-4.md)).
 
 ## What it does and for whom
 
@@ -11,7 +11,9 @@ Indian banks send an SMS for every card payment, UPI transfer and
 ATM withdrawal. Flash reads those messages and turns them into a monthly
 picture on the phone: how much was spent, how much friends paid back, what
 it went on, and what still needs a decision. There is no manual entry and no
-bank login. Today it reads HDFC Bank messages in rupees.
+bank login. Today it reads HDFC and SBI messages in rupees (other banks
+carefully, through a generic parser), and checks itself against the HDFC
+statement.
 
 ## Where things live
 
@@ -116,18 +118,18 @@ Every category has a muted colour and an icon tile; Home offers a list and a
 ring chart. Everything on screen is in the URL, so Back and reload behave.
 Full rules: [ui-spec.md](ui-spec.md).
 
-## Known limits (Phase 4)
+## Known limits (start of Phase 5)
 
-- The check against a bank statement (one normal, one messy month) is still
-  open; it is the first item of Phase 4.
-- Only HDFC has a parser: 153 other-bank messages and 44 foreign-currency
-  messages are not counted.
-- Data ends at the 14 Nov 2026 export; live SMS on the phone is Phase 5.
-- One person seen under a name and a UPI ID shows twice until they are
-  joined in the owner file; the app cannot join them yet.
-- The server sleeps when idle and can take about a minute to wake; a
-  cron job keeps it awake 07:00 to 00:50 IST, and the phone copy shows
-  meanwhile.
-- Owner answers made offline wait on the phone ("Waiting to sync") and are
-  sent when the server can be reached; totals move only after that.
-- Open items in full: [HANDOFF.md](HANDOFF.md#open-items).
+- Some HDFC UPI alerts use a template the parser does not know yet (about Rs
+  15,700 of October spending showed only on the statement); the fix waits for
+  the owner's approved `redact-sample --family HDFC --unparsed` sample.
+  Meanwhile `statement-import` can add those rows from the statement.
+- HDFC and SBI have their own parsers; ICICI, Axis, Kotak, YES and India Post
+  use the careful generic parser; foreign-currency messages are not counted.
+- Data comes from SMS backups the owner imports; live SMS on the phone is
+  Phase 5.
+- The server sleeps when idle and can take about a minute to wake; the phone
+  copy shows meanwhile (there is no warm job, D-112).
+- Owner answers made offline wait on the phone ("Saved on phone · syncing")
+  and are sent when the server can be reached; totals move only after that.
+- Open items in full: [NOTES.md](../NOTES.md#open-items).

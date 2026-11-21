@@ -4,6 +4,21 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 4Z: closing Phase 4 (21 Nov 2026)
+
+- History: the push was verified and the temporary git backup deleted
+  (D-121).
+- Statements: September's card reversal row (a negative debit with a credit)
+  is read by the balance chain; more likely causes (an unread HDFC alert, own
+  transfers, FD, investments, card bills, tiny credits); `statement-import`
+  adds the rows the app misses, safely (D-120); `redact-sample --unparsed` for
+  the missing HDFC template.
+- "It's me" and Investments on sender cards and the person sheet, with "Is
+  this you?" and "Is this an investment?" in To-do and "Your name as banks show
+  it" in a settings sheet (D-117, D-118).
+- Categories guessed from payee names and UPI IDs; "guessed from the name" in
+  the sheet; totals unchanged (D-119).
+
 ## Phase 4A: money correctness (21 Nov 2026)
 
 - `statement-check`: the HDFC NetBanking statement against the app, per

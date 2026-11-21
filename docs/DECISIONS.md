@@ -1407,3 +1407,91 @@ Same as…); then recomputes. Migration `0012` adds `parties.name_source`
 (app, terminal, file or statement; the app and terminal set it with every
 name from now on), so statement names stay told apart and nothing is
 overwritten; the party's texts and history are untouched.
+
+## D-117 The owner's name variants and "It's me" (2026-11-21)
+
+The owner keeps "Your name as banks show it" (one or more variants) in a
+settings sheet reached from the Speed sheet (the version line) and the person
+sheet; stored on the server as owner data (`owner_names`, migration `0013`,
+RLS on). Sender cards and the person sheet answer Friend, Family, It's me,
+and More… (Income, Investments, Ignore), through the outbox, offline, and
+reversible: It's me makes the party kind `self`, and every payment of that
+party, debit or credit, is `self_transfer` (rule `PT_self`, basis owner);
+undo (`DELETE /api/v1/people/{txn}/kind`) gives the party back the kind it
+had. The engine only suggests: To-do asks "Is this you?" for a person whose
+text matches a variant (`app/engine/suggest.py`: token-based, any order,
+honorifics ignored, an initial matches a word, one extra initial allowed, a
+lone surname never matches a longer name). No answers are remembered
+(`parties.dismissed`). Tapping Friend or Family on a person the app thinks is
+the owner asks once: "This looks like your own account. Count it as Friend
+anyway?" A suggestion never changes a total.
+
+## D-118 Investments are their own role, in no total (2026-11-21)
+
+Money to or from a broker, clearing corporation, fund or SIP is not spending
+and not income. The totals are exactly those of `fd_move` (in no total), but
+a new role `investment` is used: `fd_move` is shown as "Fixed deposit" and
+takes part in the FD closure pair rule, neither of which fits a broker.
+Investments come only from the owner: the party kind `investment` (answer
+"Investments") makes every payment of the party `investment` (rule
+`PT_investment`); the category is Investments. To-do asks "Is this an
+investment?" for names with broker and fund words (Zerodha, Groww, Upstox,
+Angel One, Kite, ICCL, Indian Clearing Corp, NSE Clearing, mutual fund,
+AMC, MF, SIP, …). Migration `0013` adds the role and the kinds.
+
+## D-119 Categories guessed from names (2026-11-21)
+
+`categorise-1.2.0`. A curated keyword list per existing category (Food &
+Drinks, Groceries, Travel, Health, Shopping, Subscriptions, Bills &
+Recharges, Education, Entertainment, Personal Care, Rent & Hostel), matched
+on whole words of the payee name and of its UPI ID's local part; generic
+words (store, shop, traders, hotel, hall, depot, …) are left out on purpose,
+and two categories' keywords give Uncategorised. With no keyword, a debit to
+a person is People: the merchant engine's person signal, unless the name
+holds a business word, or (`NAME_person`) a name of 2 to 4 words of letters,
+honorifics and initials allowed, no business word, or a bare personal UPI ID
+at an ok* or bank handle. A business-looking name with no keyword stays
+Uncategorised and To-do asks. The owner's transaction decision beats the
+party default, which beats any guess; the sheet says "guessed from the name"
+(rules BRAND, KEYWORD, PERSON, NAME_person). Spent, Paid back and Net never
+depend on a category (tested). 154 FAKE names with traps are in the tests.
+
+## D-120 Statement causes and statement-import (2026-11-21)
+
+`stmt-hdfc-1.1.0` reads a quoted amount with thousands separators, a blank or
+"-" amount, and a row with a negative or two-sided amount (a card reversal
+netted on one row): of credit - debit, credit + debit and the two of their
+sizes, the reading that keeps the balance chain unbroken decides direction
+and amount; a row that nets to zero is skipped. `statement-check` gains
+causes, first that fits: foreign_currency, reversed_or_failed,
+`sms_not_parsed` (a stored HDFC message no parser read, within a day, holds
+the same amount), fd, investment_or_broking, card_bill_payment,
+own_or_internal (NEFT/IMPS/RTGS/TPT naming an owner name variant or a masked
+own account), verification_or_tiny (a credit of Rs 2 or less, a
+verification, an ACH dividend), no_sms, likely_spend (a UPI or POS debit),
+likely_income, unknown; the Spent comparison counts only the debits that are
+spending. `statement-import` (dry run; `--apply` after the planner's OK)
+adds the statement-only rows as transactions of source "statement" (raw
+message, parse result `stmt-hdfc-1.1.0`, the usual store): idempotent by
+content hash; deduped against the SMS by the 12-digit reference (the same
+dedupe key as the SMS) and the check's amount-and-day match; a later SMS
+merges into the statement row and replaces its fields. Roles: likely_spend,
+no_sms and unknown debits are spend and ask "Looks right?"; fd is fd_move;
+own_or_internal and investment_or_broking debits are uncertain (rule
+`SM_ask`) until the owner answers It's me or Investments; every statement
+credit is uncertain (`SM_credit`) unless the owner decides that row: never
+Paid back, never lowering Net; a card bill payment is treated as the engine
+treats card bills; sms_not_parsed, reversals, foreign charges and month
+edges are only counted. Reparse and the surveys skip statement rows.
+`redact-sample --family HDFC --unparsed` exports only the unread HDFC
+messages for the next template; templates are never guessed without an
+approved sample.
+
+## D-121 The git backup is deleted after the verified push (2026-11-21)
+
+After the owner force-pushed the rewritten history (D-109): `origin/main`
+equals local `main` (`13138a9`), every tag equals its remote tag, and
+`origin/main` holds no attribution line. The mirror backup
+`D:\Projects\FinancesApp-backup-20261121.git` was then deleted, the reflogs
+expired and `git gc --prune=now` run. The owner's database backups in
+`D:\FlashPrivate\backups` were never touched.

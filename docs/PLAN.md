@@ -206,22 +206,44 @@ PDF, into `D:\FlashPrivate`.
   automatically (`reconcile-1.5.0`), other pairs within 30 minutes are asked
   in To-do; `statement-names` gives masked senders the statement's payer
   name, owner-approved (`--apply`), migration `0012`. The owner runs it on
-  one normal and one messy month. Next: Phase 5.
+  one normal and one messy month.
+- [x] 4Z Close Phase 4 (21 Nov 2026, D-117 to D-121): verified push, git
+  backup deleted; `stmt-hdfc-1.1.0` (negative and two-sided rows by the
+  balance chain), more statement causes, `statement-import`, `redact-sample
+  --unparsed`; It's me and Investments with To-do suggestions and "Your name
+  as banks show it"; `categorise-1.2.0` (categories from names); the Phase 4
+  retro (`docs/retro/phase-4.md`). Phase 4 is done; 4G and 4D move to the
+  pilot.
 - [ ] 4D Multi-month analysis.
 
 ## Phase 5: Pilot-ready Android app (8-day target)
 
-- Multi-user: invites, per-user data, delete account.
-- Capacitor Android shell.
-- Kotlin SMS reading, history and live, uploaded through the outbox.
-- Onboarding, privacy policy, pilot invites.
-- Pilot fixes.
+Before 5A, carried from Phase 4: the missing HDFC template from the owner's
+approved `redact-sample --family HDFC --unparsed` sample, then a reparse;
+`statement-import --apply` and `statement-names --apply` when the planner
+says so; the September statement checked again with `stmt-hdfc-1.1.0`.
 
-Then the pilot; 4A, 4G and 4D run during it.
+- [ ] 5A Several users: sign-up by invite only, every row kept per user
+  (owner id on every table, RLS), delete account (all rows, then the login).
+- [ ] 5B Capacitor Android shell around the PWA (`mobile/`), signed debug
+  build, the same outbox and phone copy.
+- [ ] 5C Kotlin SMS reading: the history at setup and new messages live
+  (bank senders only, on the phone), uploaded through the outbox with the
+  same idempotency keys; the server parses as today.
+- [ ] 5D First-run setup (sign in, SMS permission with a plain explanation,
+  "Your name as banks show it", the first import), a privacy policy, pilot
+  invites.
+- [ ] 5E Pilot fixes.
 
-Ops note: the cron-job.org warm job needs a non-browser User-Agent (a
-waking Render answers browser-like requests with an HTML page); the
-fallback is `HEAD /health` (200, no body, no database, D-098).
+Play Store notes: the SMS permission (READ_SMS, RECEIVE_SMS) needs Google's
+approval through the Permissions Declaration as a core feature, so plan for
+review time; a new personal developer account must run a closed test with
+at least 12 testers for 14 days in a row before it can publish to production.
+
+Then the pilot; 4G (cash wallet) and 4D (multi-month analysis) run during it.
+
+Ops note: there is no warm job (D-112); `HEAD /health` (D-098) and
+`/health/db` stay for manual checks.
 
 ## Phase 6: Statements, Gmail, insights, differentiators
 
