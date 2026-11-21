@@ -15,7 +15,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Response
 from sqlalchemy import select
 
-from app.api import v1
+from app.api import devices, v1
 from app.api.auth import current_owner
 from app.engine.categorise import UNCATEGORISED
 from app.engine.reconcile import COUNTED, IST
@@ -228,6 +228,9 @@ def build(session, owner) -> dict:
             "suggestions": v1.suggestions(session, owner, names),
         },
         "profile": {"names": list(names)},
+        # 5A (D-122, D-124): the phones that upload bank SMS, and where a first scan starts.
+        "devices": devices.devices_of(session, owner),
+        "sms": {"newest_utc": devices.newest_sms(session, owner)},
         "labels": [v1.label_detail(owner, session, i) for i in label_ids],
         "people": v1.people_directory(session, owner),
         "categories": v1.categories(owner),

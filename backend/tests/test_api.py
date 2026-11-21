@@ -48,7 +48,8 @@ def test_every_data_route_needs_a_login(client) -> None:
     data_routes = [(m, p) for p, ops in paths.items() if p.startswith("/api/v1") for m in ops]
     # 4E: people name, clear name, join, separate. 4F-A: check, ignore, count again.
     # 4A: a transfer answer. 4Z: owner names, a person's kind (set, undo), a suggestion's No.
-    assert len(data_routes) == 26
+    # 5A: devices (register, list, revoke) and the SMS ingest (a device token, D-122).
+    assert len(data_routes) == 30
     for method, path in data_routes:
         url = re.sub(r"\{[^}]+\}", "1", path)
         response = client.request(method.upper(), url, json={})

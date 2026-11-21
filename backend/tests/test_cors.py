@@ -67,6 +67,29 @@ def test_another_origin_or_an_unknown_header_is_refused() -> None:
         assert main.allowed_origins(["*", "https://evil.example"]) == []
 
 
+def test_the_android_app_origin_when_listed_in_cors_origins() -> None:
+    """5A (D-125): the Capacitor WebView is https://localhost. It is allowed only when
+    CORS_ORIGINS lists it, exactly (no port), with the same headers as the Vercel app."""
+    from fastapi.middleware.cors import CORSMiddleware
+
+    android = main.CAPACITOR_ORIGIN
+    assert android == "https://localhost"
+    assert main.allowed_origins([android, "https://localhost:8443", "https://localhost.evil"]) == [
+        android
+    ]
+    headers, methods, _ = client_lists()
+    wrapped = CORSMiddleware(main.app, **main.cors_options([main.VERCEL_ORIGIN, android]))
+    with TestClient(wrapped) as client:
+        for method in methods:
+            answer = preflight(client, android, method, headers)
+            assert answer.status_code == 200, (method, answer.text)
+            assert answer.headers["access-control-allow-origin"] == android
+        assert preflight(client, "https://localhost:8443", "PUT", headers).status_code == 400
+        read = client.get("/health", headers={"Origin": android})
+        assert read.headers["access-control-allow-origin"] == android
+        assert "etag" in read.headers["access-control-expose-headers"].lower()
+
+
 def test_etag_is_exposed_to_the_app() -> None:
     with TestClient(main.app) as client:
         answer = client.get("/health", headers={"Origin": ALLOWED})

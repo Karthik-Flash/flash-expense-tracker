@@ -103,6 +103,7 @@ ROLES = (*OWNER_ROLES, "duplicate")
 DECIDERS = ("engine", "owner")
 LINK_STATUSES = ("linked", "candidate")
 LABEL_MAX = 30  # one limit for a label name: API, app and database (D-097)
+DEVICE_NAME_MAX = 60  # a phone's name, "samsung SM-S918B" (D-122)
 
 
 class Heartbeat(Base):
@@ -518,6 +519,26 @@ class RecomputeMark(Base):
     marked_at: Mapped[datetime] = mapped_column(UtcDateTime)
     failed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     failure: Mapped[str | None] = mapped_column(String(40))
+
+
+class Device(Base):
+    """A phone that uploads bank SMS (D-122). Its token is shown once and stored only as a
+    SHA-256; the token can call the SMS ingest route and nothing else. Revoked, never deleted."""
+
+    __tablename__ = "devices"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "device_id", name="uq_device_owner_device"),
+        UniqueConstraint("token_hash", name="uq_device_token_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    device_id: Mapped[uuid.UUID] = mapped_column(Uuid)  # chosen by the phone, once per install
+    name: Mapped[str] = mapped_column(String(DEVICE_NAME_MAX))
+    token_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = _created()
+    last_seen_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
 
 # --- Derived data -------------------------------------------------------------

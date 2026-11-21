@@ -16,7 +16,7 @@ from app.engine.parsers.base import AMOUNT, MASK, BankParser, Template
 # Bump on every change that can alter the result for some message:
 # MAJOR when result fields change meaning, MINOR when a template is added
 # (more messages parse), PATCH when a template fix changes values.
-PARSER_VERSION = "hdfc-1.1.1"
+PARSER_VERSION = "hdfc-1.2.0"
 
 _PARTS = {
     "<AMT>": f"(?P<amount>{AMOUNT})",
@@ -74,7 +74,20 @@ TEMPLATES = (
         "debit",
         "debit_card",
     ),
-    # H04 sh_1aaf7a69: forex notice -> FOREIGN_CURRENCY below, not a template
+    # H04 sh_1aaf7a69: forex markup notice. It comes with an international debit card spend,
+    # whose own alert (H03) is in INR and counted; this one has no amount, so it is a notice
+    # (hdfc-1.2.0, D-127; it was foreign_currency_deferred and "not counted yet").
+    Template(
+        "H04",
+        _p(
+            r"Notice! 1\. Forex Markup fee applies to your HDFC Bank Debit Card International "
+            r"payment 2\. Final txn amount may change based on forex rate on the settlement "
+            r"date\.?"
+        ),
+        "other_info",
+        "debit_card",
+        hints=("forex_notice",),
+    ),
     # H05 sh_bbcdf74e: NetBanking payment
     Template(
         "H05",
@@ -377,7 +390,6 @@ TEMPLATES = (
 )
 
 FOREIGN_CURRENCY = (
-    re.compile(r"^Notice! 1\. Forex Markup fee applies"),  # H04 sh_1aaf7a69
     re.compile(r"^Spent (?!INR\b)[A-Z]{3} ?\d"),  # N14 not yet seen: foreign card spend
 )
 

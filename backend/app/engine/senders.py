@@ -1,29 +1,25 @@
 """Sender ID normalisation and the sender -> bank registry.
 
-Same rules as scripts/redact_sms.py (that script stays standalone). Both
-implementations must pass backend/tests/fixtures/sender_ids.json.
+Same rules as scripts/redact_sms.py (that script stays standalone) and the phone
+(mobile/android BankSenders.kt). All implementations must pass
+backend/tests/fixtures/sender_ids.json.
+
+The registry is shared/bank_senders.json: this module and the Android app read the same
+file (D-123), so the phone uploads exactly the senders the server accepts.
 """
+
+import json
+from pathlib import Path
 
 TRAI_SUFFIXES = frozenset("STPG")  # service, transactional, promotional, government
 
+_SHARED = json.loads((Path(__file__).parent / "shared" / "bank_senders.json").read_text("utf-8"))
 # Normalised sender core -> bank code. A bank is parsed only if it also has an
 # entry in app.engine.parsers.PARSERS.
-SENDER_BANKS: dict[str, str] = {
-    "HDFCBK": "HDFC",
-    "HDFCBN": "HDFC",
-    "SBIBNK": "SBI",
-    "CBSSBI": "SBI",
-    "SBIUPI": "SBI",
-    "SBIINB": "SBI",
-    "SBYONO": "SBI",
-    "SBIPSG": "SBI",
-    "ICICIT": "ICICI",
-    "AXISBK": "AXIS",
-    "KOTAKM": "KOTAK",
-    "YESBNK": "YES",
-    "DOPBNK": "INDIA_POST",
-    "PHONPE": "PHONEPE",
-}
+SENDER_BANKS: dict[str, str] = dict(_SHARED["senders"])
+# Registered senders that are not banks (a payments app): import-sms keeps them, the phone
+# never uploads them and the ingest route refuses them.
+NOT_BANKS: frozenset[str] = frozenset(_SHARED["not_banks"])
 
 
 def parse_sender(address: str) -> tuple[str, str]:
@@ -57,3 +53,8 @@ def parse_sender(address: str) -> tuple[str, str]:
 def bank_for(core: str) -> str | None:
     """Bank code for a normalised core, or None if the sender is not a known bank."""
     return SENDER_BANKS.get(core) if core.isalnum() else None
+
+
+def is_bank(core: str) -> bool:
+    """A bank family (bank-survey's family_of names a bank), not a registered non-bank."""
+    return bank_for(core) not in (None, *NOT_BANKS)
