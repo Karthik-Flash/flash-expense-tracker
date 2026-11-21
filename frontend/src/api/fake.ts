@@ -221,7 +221,7 @@ export class FakeApi implements Api {
   private category(row: Row): { category: string; basis: Basis } {
     const { role } = this.role(row)
     if (!SPENDING.includes(role)) return { category: NOT_SPENDING[role] ?? 'other', basis: 'engine' }
-    const own = this.oneOff.get(row.id) ?? (row.name ? this.merchantDefault.get(row.name) : undefined)
+    const own = this.oneOff.get(row.id) ?? (row.name ? this.merchantDefault.get(this.personOf(row) ?? row.name) : undefined)
     return own ? { category: own, basis: 'owner' } : { category: row.engineCategory, basis: row.basis }
   }
 
@@ -509,7 +509,7 @@ export class FakeApi implements Api {
     if (path === '/labels' && method === 'POST') return void this.createLabel(String(b.name))
     if (txn?.[2] === 'category' && method === 'PUT') return this.setCategory(Number(txn[1]), String(b.category), b.scope as 'merchant' | 'transaction')
     if (txn?.[2] === 'label' && method === 'PUT') {
-      const id = b.new_label !== undefined ? this.createLabel(String(b.new_label)) : Number(b.label_id)
+      const id = b.new_label !== undefined ? this.labelNamed(String(b.new_label)) : Number(b.label_id)
       return this.setLabel(Number(txn[1]), id)
     }
     if (txn?.[2] === 'label' && method === 'DELETE') return this.clearLabel(Number(txn[1]))
@@ -553,7 +553,7 @@ export class FakeApi implements Api {
     if (!NAME[category]) throw new ApiError(422, 'Not a category of the list.')
     if (scope === 'merchant') {
       if (!row.name) throw new ApiError(422, 'The transaction has no merchant text.')
-      this.merchantDefault.set(row.name, category)
+      this.merchantDefault.set(this.personOf(row) ?? row.name, category) // the party default: every identifier
       this.oneOff.delete(txnId)
     } else {
       this.oneOff.set(txnId, category)
@@ -569,6 +569,13 @@ export class FakeApi implements Api {
     const id = Math.max(0, ...this.labelNames.keys()) + 1
     this.labelNames.set(id, clean)
     return id
+  }
+
+  /** As owner_actions.label_named: the label of this name, made when there is none (D-110). */
+  private labelNamed(name: string): number {
+    const clean = name.trim().replace(/\s+/g, ' ').toLowerCase()
+    for (const [id, existing] of this.labelNames) if (existing.toLowerCase() === clean) return id
+    return this.createLabel(name)
   }
 
   private setLabel(txnId: number, labelId: number): void {

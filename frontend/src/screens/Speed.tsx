@@ -4,7 +4,7 @@ import { readBoot } from '../boot.ts'
 import { readTimings, type Timing } from '../data/local.ts'
 import { failedOps, useOutbox, waiting } from '../data/outbox.ts'
 import { speedRows } from '../data/store.ts'
-import { dayLabel, istTime, timeLabel } from '../lib/dates.ts'
+import { istTime } from '../lib/dates.ts'
 import { Sheet } from '../ui.tsx'
 
 /** The outbox first (D-107): what is on the phone, what failed, the last try and success. */
@@ -30,10 +30,6 @@ function SyncBlock() {
   )
 }
 
-const when = (ms: number) => {
-  const iso = new Date(ms).toISOString()
-  return `${dayLabel(iso)} ${timeLabel(iso)}`
-}
 
 /** How this launch reached its first screen, and the last boot errors (D-095). */
 function BootBlock() {
@@ -53,7 +49,7 @@ function BootBlock() {
         <ul className="mt-1 space-y-0.5 text-xs">
           {log.errors.map((e, i) => (
             <li key={i} className="wrap-break-word">
-              <span className="text-muted tabular-nums">{when(e.at)}</span> {e.message}
+              <span className="text-muted tabular-nums">{istTime(e.at)}</span> {e.message}
             </li>
           ))}
         </ul>
@@ -98,7 +94,7 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
         )}
         {rows.length > 0 && (
           <table className="mt-4 w-full text-left tabular-nums">
-            <caption className="pb-1 text-left text-xs font-medium text-muted">Last {rows.length} launches</caption>
+            <caption className="pb-1 text-left text-xs font-medium text-muted">{rows.length === 1 ? 'Last launch' : `Last ${rows.length} launches`}</caption>
             <thead className="text-xs text-muted">
               <tr>
                 <th className="py-1 font-normal">Time</th>
@@ -111,10 +107,10 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
             <tbody className="divide-y divide-line">
               {rows.map((r, i) => (
                 <tr key={i}>
-                  <td className="py-1 whitespace-nowrap">{r.when}</td>
+                  <td className="py-1">{r.when}</td>
                   <td className="py-1 pl-2">{r.boot}</td>
-                  <td className="py-1 text-right whitespace-nowrap">{r.local}</td>
-                  <td className="py-1 text-right whitespace-nowrap">{r.fresh}</td>
+                  <td className="py-1 text-right">{r.local}</td>
+                  <td className="py-1 text-right">{r.fresh}</td>
                   <td className="py-1 pl-3">{r.result}</td>
                 </tr>
               ))}

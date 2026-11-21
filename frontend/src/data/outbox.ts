@@ -487,20 +487,48 @@ export function markText(op: Op, now = Date.now()): string {
 
 const isCheck = (o: Op) => o.path.endsWith('/check') || o.path.endsWith('/ignore')
 
-/** The newest action that changes this row's category, label or count (failed ones do not). */
-export function markFor(ops: Op[], t: Txn): { category?: Op; label?: Op; counted?: Op } {
+/** The newest action that changes this row's category, label or count (failed ones do not),
+ *  and the newest one about the row the server refused (`failed`), so the row says so (4H). */
+export function markFor(ops: Op[], t: Txn): { category?: Op; label?: Op; counted?: Op; failed?: Op } {
+  const spending = t.role === 'spend' || t.role === 'card_bill_counted' || t.role === 'refund'
+  const isCategory = (o: Op) =>
+    o.path.endsWith('/category') &&
+    (o.targets.txns?.includes(t.id) ||
+      (spending && t.display_name !== null && Boolean(o.targets.merchants?.includes(t.display_name))) ||
+      (spending && t.person_id !== null && Boolean(o.targets.people?.includes(t.person_id))))
+  const isLabel = (o: Op) => o.path.endsWith('/label') && Boolean(o.targets.txns?.includes(t.id))
+  const isCounted = (o: Op) => isCheck(o) && Boolean(o.targets.txns?.includes(t.id))
   const live = ops.filter((o) => o.state !== 'failed')
   const last = (match: (o: Op) => boolean) => live.filter(match).at(-1)
-  const spending = t.role === 'spend' || t.role === 'card_bill_counted' || t.role === 'refund'
   return {
-    category: last(
-      (o) =>
-        o.path.endsWith('/category') &&
-        (o.targets.txns?.includes(t.id) || (spending && t.display_name !== null && Boolean(o.targets.merchants?.includes(t.display_name)))),
-    ),
-    label: last((o) => o.path.endsWith('/label') && Boolean(o.targets.txns?.includes(t.id))),
-    counted: last((o) => isCheck(o) && Boolean(o.targets.txns?.includes(t.id))),
+    category: last(isCategory),
+    label: last(isLabel),
+    counted: last(isCounted),
+    failed: ops.filter((o) => o.state === 'failed' && (isCategory(o) || isLabel(o) || isCounted(o))).at(-1),
   }
+}
+
+/** The newest "Payments to them count as" choice for a person (D-110), failed ones too. */
+export const personCategoryMark = (ops: Op[], key: string): Op | undefined =>
+  ops.filter((o) => o.path.endsWith('/category') && (o.body as { scope?: string } | null)?.scope === 'merchant' && o.targets.people?.includes(key)).at(-1)
+
+/** The newest answer for any of these senders (D-110), failed ones too. */
+export const senderMark = (ops: Op[], ids: string[]): Op | undefined =>
+  ops.filter((o) => o.targets.senders?.some((id) => ids.includes(id))).at(-1)
+
+/** The newest refused name, join or separate of a person, for its sheet. */
+export const personFailed = (ops: Op[], key: string): Op | undefined =>
+  ops.filter((o) => o.state === 'failed' && o.path.startsWith('/people/') && o.targets.people?.includes(key)).at(-1)
+
+/** Labels being made on the phone, not on the server yet: they can be picked meanwhile. */
+export function waitingLabels(ops: Op[], known: string[]): string[] {
+  const seen = new Set(known.map((n) => n.toLowerCase()))
+  const out: string[] = []
+  for (const name of ops.flatMap((o) => (o.state === 'failed' ? [] : (o.targets.labels ?? [])))) {
+    if (!seen.has(name.toLowerCase())) out.push(name)
+    seen.add(name.toLowerCase())
+  }
+  return out
 }
 
 /** Rows read automatically that still ask "Looks right?", without those answered offline. */
@@ -543,11 +571,11 @@ export function todoView(todo: Snapshot['todo'], ops: Op[]) {
   }
 }
 
-/** "3 waiting to sync" and "1 couldn't save" for the line under the month. */
+/** "3 saved on phone, syncing" and "1 not saved" for the line under the month (D-113 wording). */
 export function syncLine(ops: Op[], signIn: boolean): { waiting: string; failed: string; signIn: boolean } {
   const n = waiting(ops)
   const f = failedOps(ops).length
-  return { waiting: n ? `${n} saved on phone, syncing` : '', failed: f ? `${f} couldn't save` : '', signIn }
+  return { waiting: n ? `${n} saved on phone, syncing` : '', failed: f ? `${f} not saved` : '', signIn }
 }
 
 // --- The owner actions as outbox entries -------------------------------------------------
@@ -578,17 +606,28 @@ export const actions = {
       targets: { senders: [s.id] },
     }
   },
-  setCategory(t: { id: number; display_name: string | null }, c: Category, scope: 'merchant' | 'transaction', item: string): NewOp {
-    const merchant = scope === 'merchant' && t.display_name
+  /** `person`: "Payments to them count as" in the person sheet (D-110): the party default,
+   *  shown on every row of the person, whichever name or UPI ID the bank used. */
+  setCategory(
+    t: { id: number; display_name: string | null },
+    c: Category,
+    scope: 'merchant' | 'transaction',
+    item: string,
+    person?: { key: string; name: string },
+  ): NewOp {
+    const merchant = scope === 'merchant' && (person?.name ?? t.display_name)
+    const targets: Targets = { txns: [t.id] }
+    if (scope === 'merchant' && t.display_name) targets.merchants = [t.display_name]
+    if (scope === 'merchant' && person) targets.people = [person.key]
     return {
-      kind: merchant ? `All from ${t.display_name}: ${c.name}` : `Category: ${c.name}`,
+      kind: merchant ? `All from ${merchant}: ${c.name}` : `Category: ${c.name}`,
       item,
       choice: c.name,
       slug: c.slug,
       method: 'PUT',
       path: `/transactions/${t.id}/category`,
       body: { category: c.slug, scope },
-      targets: merchant ? { txns: [t.id], merchants: [t.display_name as string] } : { txns: [t.id] },
+      targets,
     }
   },
   createLabel(name: string): NewOp {

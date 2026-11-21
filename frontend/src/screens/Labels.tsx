@@ -33,7 +33,7 @@ export function Labels() {
               {making.map((op) => (
                 <div key={op.seq} className="flex items-start gap-3 px-4 py-3">
                   <Icon name="tag" className="pt-0.5 text-muted" />
-                  <span className="min-w-0 flex-1">
+                  <span className="min-w-[min(6rem,35vw)] flex-1">
                     <span className="block truncate font-medium">{op.choice}</span>
                     <Pending op={op} />
                   </span>
@@ -42,7 +42,7 @@ export function Labels() {
               {views.map((v) => (
                 <RowButton key={v.id} onClick={() => open({ path: [String(v.id)] })}>
                   <Icon name="tag" className="self-start pt-0.5 text-muted" />
-                  <span className="min-w-0 flex-1">
+                  <span className="min-w-[min(6rem,35vw)] flex-1">
                     <span className="block truncate font-medium">{v.name}</span>
                     <span className="mt-1 flex flex-wrap items-end gap-x-6 gap-y-1 text-sm">
                       <Figure term="Spent" paise={v.spent_paise} />
@@ -99,7 +99,7 @@ export function LabelDetail({ id }: { id: number }) {
             <>
               <div className="px-4 pt-2 text-center">
                 <p className="text-sm text-muted">Net</p>
-                <p className="mt-1 text-3xl font-semibold whitespace-nowrap tabular-nums">{rupees(v.net_paise)}</p>
+                <p className="mt-1 text-[min(1.875rem,11vw)] font-semibold whitespace-nowrap tabular-nums">{rupees(v.net_paise)}</p>
                 <p className="mt-2 text-sm text-muted tabular-nums">
                   <span className="whitespace-nowrap">Spent {rupees(v.spent_paise)}</span> ·{' '}
                   <span className="whitespace-nowrap">Paid back {rupees(v.paid_back_paise)}</span>
@@ -110,9 +110,9 @@ export function LabelDetail({ id }: { id: number }) {
                   {parts.map((p) => (
                     <div key={p.slug} className="flex items-center gap-3 px-4 py-3">
                       <CategoryTile slug={p.slug} />
-                      <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline gap-3">
-                        <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                      <span className="min-w-[min(6rem,35vw)] flex-1">
+                      <span className="flex flex-wrap items-baseline gap-x-3">
+                        <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{p.name}</span>
                         <Money paise={p.amount_paise} />
                         <span className="w-9 shrink-0 text-right text-sm text-muted tabular-nums">{percentOf(p.amount_paise, v.spent_paise)}</span>
                       </span>

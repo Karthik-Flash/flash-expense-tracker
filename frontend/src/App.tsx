@@ -187,7 +187,8 @@ function Nav({ view }: { view: View }) {
                   <Icon name={icon} />
                   {tab === 'todo' && <TodoCount />}
                 </span>
-                <span className={`max-w-full truncate text-xs ${active ? 'font-semibold' : ''}`}>{name}</span>
+                {/* Tab names stay on one line at large text sizes: at most 12 px, less on a narrow screen (4H). */}
+                <span className={`max-w-full truncate text-[min(0.75rem,3.3vw)] ${active ? 'font-semibold' : ''}`}>{name}</span>
               </a>
             </li>
           )

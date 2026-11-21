@@ -1,4 +1,7 @@
 // Times arrive as UTC ISO strings; they are shown in IST, a fixed +05:30 (D-002).
+// One set of formats (D-113): a day "Tue 17 Nov" (rows, day headers, cards), a moment
+// "Tue 17 Nov, 14:05" (sync details, freshness), a transaction's time in full
+// "Tue 17 Nov 2026, 14:05" (its sheet), a month "Nov 2026".
 
 const IST_OFFSET_MS = 330 * 60_000
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -75,9 +78,9 @@ export function istToIso(year: number, month: number, day: number, hour = 0, min
   return new Date(Date.UTC(year, month - 1, day, hour, minute) - IST_OFFSET_MS).toISOString()
 }
 
-/** A moment (ms) as day and time in IST, as the app shows it; '–' when there is none. */
+/** "Tue 17 Nov, 14:05": a moment (ms) in IST; '–' when there is none. */
 export function istTime(ms: number | null | undefined): string {
   if (!ms) return '–'
   const iso = new Date(ms).toISOString()
-  return `${dayLabel(iso)} ${timeLabel(iso)}`
+  return `${dayLabel(iso)}, ${timeLabel(iso)}`
 }

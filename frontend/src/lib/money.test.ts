@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { groupIndian, moneyIn, percentOf, rupees, rupeesExact } from './money.ts'
+import { groupIndian, percentOf, rupees } from './money.ts'
 
 test('Indian grouping', () => {
   const cases: [number, string][] = [
@@ -26,16 +26,21 @@ test('whole rupees for overviews, rounded half away from zero', () => {
   assert.equal(rupees(-150049), '−₹1,500')
 })
 
-test('paise for detail', () => {
-  assert.equal(rupeesExact(5), '₹0.05')
-  assert.equal(rupeesExact(99900), '₹999.00')
-  assert.equal(rupeesExact(12345678), '₹1,23,456.78')
-  assert.equal(rupeesExact(-150050), '−₹1,500.50')
+test('a transaction: paise only when not zero (D-113)', () => {
+  assert.equal(rupees(5, true), '₹0.05')
+  assert.equal(rupees(99900, true), '₹999')
+  assert.equal(rupees(99910, true), '₹999.10')
+  assert.equal(rupees(12345678, true), '₹1,23,456.78')
+  assert.equal(rupees(10000000, true), '₹1,00,000')
+  assert.equal(rupees(-150050, true), '−₹1,500.50')
+  assert.equal(rupees(0, true), '₹0')
 })
 
 test('money in and percentages', () => {
-  assert.equal(moneyIn(45000), '+₹450')
-  assert.equal(moneyIn(45025, true), '+₹450.25')
+  assert.equal(rupees(45000, false, true), '+₹450')
+  assert.equal(rupees(45025, true, true), '+₹450.25')
+  assert.equal(rupees(45000, true, true), '+₹450')
+  assert.equal(rupees(10000000, false, true), '+₹1,00,000')
   assert.equal(percentOf(250, 1000), '25%')
   assert.equal(percentOf(4, 1000), '<1%')
   assert.equal(percentOf(0, 1000), '0%')

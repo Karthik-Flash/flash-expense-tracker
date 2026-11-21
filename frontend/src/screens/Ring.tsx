@@ -38,7 +38,7 @@ export function Ring({ chart, spent, onOpen, onOther }: {
   const go = (slug: string | null) => (slug ? onOpen(slug) : onOther())
   return (
     <>
-      <div className="relative mx-auto mt-2 size-56">
+      <div className="relative mx-auto mt-2 size-[min(14rem,78vw)]">
         <svg viewBox="0 0 120 120" className="size-full -rotate-90" role="group" aria-label="Spent by category">
           {drawn.map((a) => (
             <circle key={a.slug ?? 'other'} cx="60" cy="60" r={R} fill="none" stroke={a.slug ? catColor(a.slug) : OTHER}
@@ -53,8 +53,8 @@ export function Ring({ chart, spent, onOpen, onOther }: {
           ))}
         </svg>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center" aria-hidden="true">
-          <span className="text-sm text-muted">Spent</span>
-          <span className="text-2xl font-semibold whitespace-nowrap tabular-nums">{rupees(spent)}</span>
+          <span className="text-[min(0.875rem,4vw)] text-muted">Spent</span>
+          <span className="text-[min(1.5rem,7vw)] font-semibold whitespace-nowrap tabular-nums">{rupees(spent)}</span>
         </div>
       </div>
       <Section>
@@ -67,7 +67,7 @@ export function Ring({ chart, spent, onOpen, onOther }: {
                 <Icon name="ellipsis" />
               </span>
             )}
-            <span className="min-w-0 flex-1 truncate">{s.name}</span>
+            <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{s.name}</span>
             <Money paise={s.amount_paise} />
             <span className="w-9 shrink-0 text-right text-sm text-muted tabular-nums">{percentOf(s.amount_paise, total)}</span>
           </RowButton>

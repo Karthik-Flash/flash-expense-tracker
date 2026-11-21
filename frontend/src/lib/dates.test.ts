@@ -6,6 +6,7 @@ import {
   dayKey,
   dayLabel,
   fullLabel,
+  istTime,
   istToIso,
   monthLabel,
   monthOf,
@@ -42,4 +43,14 @@ test('month labels and shifting', () => {
 test('building UTC times from IST', () => {
   assert.equal(istToIso(2026, 11, 17, 14, 5), '2026-11-17T08:35:00.000Z')
   assert.equal(istToIso(2026, 11, 1), '2026-10-31T18:30:00.000Z')
+})
+
+test('one set of formats (D-113): day, moment, full, month', () => {
+  const iso = '2026-11-17T08:35:00Z' // 14:05 IST
+  assert.equal(dayLabel(iso), 'Tue 17 Nov')
+  assert.equal(istTime(Date.parse(iso)), 'Tue 17 Nov, 14:05')
+  assert.equal(fullLabel(iso), 'Tue 17 Nov 2026, 14:05')
+  assert.equal(monthLabel('2026-11'), 'Nov 2026')
+  assert.equal(istTime(null), '–')
+  assert.equal(istTime(Date.parse('2026-11-16T18:30:00Z')), 'Tue 17 Nov, 00:00') // IST midnight
 })

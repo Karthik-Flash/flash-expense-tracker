@@ -1,4 +1,6 @@
-// Money is integer paise everywhere (D-001). These only format it for display.
+// Money is integer paise everywhere (D-001). This only formats it for display, in one place
+// (D-113): Indian digit grouping always; totals in whole rupees; a transaction's own amount
+// with paise only when they are not zero.
 
 const MINUS = '−'
 
@@ -10,23 +12,18 @@ export function groupIndian(whole: number): string {
   return `${head},${digits.slice(-3)}`
 }
 
-/** Overviews: whole rupees, rounded half away from zero. 12345650 -> "₹1,23,457". */
-export function rupees(paise: number): string {
-  const sign = paise < 0 ? MINUS : ''
-  return `${sign}₹${groupIndian(Math.round(Math.abs(paise) / 100))}`
-}
-
-/** Transaction detail: rupees and paise. 12345678 -> "₹1,23,456.78". */
-export function rupeesExact(paise: number): string {
-  const sign = paise < 0 ? MINUS : ''
+/**
+ * The one money formatter.
+ * - Totals (`exact` false): whole rupees, rounded half away from zero. 12345650 -> "₹1,23,457".
+ * - A transaction (`exact` true): paise only when not zero. 45000 -> "₹450", 12345678 -> "₹1,23,456.78".
+ * - `credit`: money in, with a plus: "+₹450".
+ */
+export function rupees(paise: number, exact = false, credit = false): string {
+  const sign = paise < 0 ? MINUS : credit ? '+' : ''
   const abs = Math.abs(paise)
-  const rest = String(abs % 100).padStart(2, '0')
-  return `${sign}₹${groupIndian(Math.floor(abs / 100))}.${rest}`
-}
-
-/** Money in is shown with a plus: "+₹450". */
-export function moneyIn(paise: number, exact = false): string {
-  return `+${exact ? rupeesExact(paise) : rupees(paise)}`
+  if (!exact) return `${sign}₹${groupIndian(Math.round(abs / 100))}`
+  const rest = abs % 100
+  return `${sign}₹${groupIndian(Math.floor(abs / 100))}${rest ? `.${String(rest).padStart(2, '0')}` : ''}`
 }
 
 /** Share of a whole as "37%", "<1%" for a small part, "" when there is no whole. */

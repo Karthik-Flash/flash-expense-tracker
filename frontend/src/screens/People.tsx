@@ -1,12 +1,25 @@
 import { useState } from 'react'
 
-import type { Person, PersonRole } from '../api/types.ts'
-import { actions, enqueue, personMark, roleConflict, shownName, useOutbox } from '../data/outbox.ts'
+import type { Category, Person, PersonRole, Sender, SenderAnswer, Snapshot, Txn } from '../api/types.ts'
+import {
+  actions,
+  enqueue,
+  markFor,
+  personCategoryMark,
+  personFailed,
+  personMark,
+  roleConflict,
+  senderMark,
+  shownName,
+  useOutbox,
+} from '../data/outbox.ts'
 import { usePeople, useSnapshot } from '../data/store.ts'
+import { dayLabel } from '../lib/dates.ts'
 import { seePayments, useNav } from '../state.tsx'
-import { Button, Empty, Icon, Sheet } from '../ui.tsx'
+import { Button, CategoryChips, Empty, Icon, Money, Sheet } from '../ui.tsx'
 import type { PersonStep } from '../view.ts'
-import { labelName } from './derive.ts'
+import { isCredit, nameOf, subtitle } from './common.ts'
+import { countsInSpent, labelName, personKey, topCategories } from './derive.ts'
 import { Pending } from './Transactions.tsx'
 
 const ROLE_NAME: Record<PersonRole, string> = { friend: 'Friend', income: 'Family', ignore: 'Ignore', none: 'Not answered yet' }
@@ -14,7 +27,8 @@ const quiet = 'min-h-11 px-1 text-sm text-accent'
 
 type Step = { kind: 'detail' } | { kind: 'name' } | { kind: 'join' } | { kind: 'role'; into: Person }
 
-/** One person (?person=): name, identifiers, Rename, Clear name, Same as…, Separate (D-096).
+/** One person (?person=): how payments to them count, what money from them is, their recent
+ *  payments (D-110); then name, identifiers, Rename, Clear name, Same as…, Separate (D-096).
  *  Every change is saved on the phone and sent in the background (D-091). */
 export function PersonSheet({ personKey, act, onClose }: { personKey: string; act: PersonStep | null; onClose: () => void }) {
   const { people, find } = usePeople()
@@ -36,7 +50,7 @@ export function PersonSheet({ personKey, act, onClose }: { personKey: string; ac
     )
   }
   const title = shownName(ops, p)
-  const mark = personMark(ops, p.key)
+  const mark = personMark(ops, p.key) ?? personFailed(ops, p.key)
   const rule = labelName(name, [])
   const join = (into: Person, role: PersonRole | null) => {
     void enqueue(actions.joinPerson({ ...p, name: title }, into, role))
@@ -53,6 +67,7 @@ export function PersonSheet({ personKey, act, onClose }: { personKey: string; ac
 
   return (
     <Sheet title={title} onClose={onClose}>
+      {step.kind === 'detail' && load.status === 'ready' && <PersonActions p={p} title={title} snapshot={load.data} />}
       {step.kind === 'detail' && (
         <div className="px-4 py-4 text-sm">
           {mark && (
@@ -77,13 +92,12 @@ export function PersonSheet({ personKey, act, onClose }: { personKey: string; ac
               </li>
             ))}
           </ul>
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="mt-4 flex flex-wrap gap-2 [&>button]:flex-1 [&>button]:basis-36">
             <Button onClick={() => setStep({ kind: 'name' })}>{p.named ? 'Rename' : 'Name'}</Button>
             <Button onClick={() => setStep({ kind: 'join' })}>Same as…</Button>
             {p.named && <Button onClick={() => void enqueue(actions.clearName({ ...p, name: title }))}>Clear name</Button>}
-            <Button onClick={() => seePayments(p.key)}>See payments</Button>
             {view.tab === 'home' && view.path[1] === 'people' && view.path.length === 2 && (
-              <Button className="col-span-2" onClick={() => open({ path: ['category', 'people', p.key], person: null, act: null })}>
+              <Button className="basis-full" onClick={() => open({ path: ['category', 'people', p.key], person: null, act: null })}>
                 This month with {title}
               </Button>
             )}
@@ -137,7 +151,7 @@ export function PersonSheet({ personKey, act, onClose }: { personKey: string; ac
               {others.map((o) => (
                 <li key={o.key}>
                   <button type="button" className={choice} onClick={() => pick(o)}>
-                    <span className="min-w-0 flex-1">
+                    <span className="min-w-[min(6rem,35vw)] flex-1">
                       <span className="block truncate">{shownName(ops, o)}</span>
                       {o.named && <span className="block truncate text-xs text-muted">{o.identifiers.map((i) => i.name).filter(Boolean).join(' · ')}</span>}
                     </span>
@@ -166,5 +180,189 @@ export function PersonSheet({ personKey, act, onClose }: { personKey: string; ac
         </div>
       )}
     </Sheet>
+  )
+}
+
+type AnswerKey = 'friend' | 'family' | 'ignore' | 'income'
+const ANSWERS: { key: AnswerKey; name: string }[] = [
+  { key: 'friend', name: 'Friend' },
+  { key: 'family', name: 'Family' },
+  { key: 'ignore', name: 'Ignore' },
+  { key: 'income', name: 'Income' },
+]
+const FAMILY = 'Family'
+
+/** The answer an outbox entry or the server's sender stands for. */
+function answerKey(a: SenderAnswer | undefined, s: Sender | undefined): AnswerKey | undefined {
+  if (a) return a.answer === 'income' ? (a.label === FAMILY ? 'family' : 'income') : a.answer
+  if (!s || s.status === 'to_confirm') return undefined
+  if (s.status === 'ignored') return 'ignore'
+  return s.role === 'income' ? (s.income_label === FAMILY ? 'family' : 'income') : 'friend'
+}
+
+/** The category every payment to them has now, when they all have the same one. */
+function oneCategory(rows: Txn[]): string | undefined {
+  const slugs = new Set(rows.map((t) => t.category))
+  return slugs.size === 1 ? [...slugs][0] : undefined
+}
+
+/** D-110: change how a person's payments count without opening each one. Quiet and compact:
+ *  their default category, the sender answer (only when they sent money), recent payments. */
+function PersonActions({ p, title, snapshot }: { p: Person; title: string; snapshot: Snapshot }) {
+  const { ops } = useOutbox()
+  const [openRow, setOpenRow] = useState<number | null>(null)
+  const [income, setIncome] = useState<string | null>(null)
+  const cats: Category[] = snapshot.categories
+  const chips = topCategories(snapshot.transactions, cats)
+  const rows = snapshot.transactions.filter((t) => personKey(t) === p.key)
+  const spends = rows.filter((t) => t.direction === 'debit' && countsInSpent(t))
+  const senders = [...snapshot.todo.senders, ...snapshot.todo.answered].filter((s) => s.person_id === p.key)
+  const catMark = personCategoryMark(ops, p.key)
+  const answerMark = senderMark(ops, senders.map((s) => s.id))
+  const liveAnswer = answerMark && answerMark.state !== 'failed' ? (answerMark.body as SenderAnswer) : undefined
+  const answered = answerKey(liveAnswer, senders[0])
+  const rule = labelName(income ?? '', [])
+  const answer = (a: SenderAnswer) => {
+    for (const s of senders) void enqueue(actions.answerSender(s, a))
+    setIncome(null)
+  }
+  const head = 'text-xs font-medium text-muted'
+  const pressable = 'min-h-11 rounded-lg border border-line bg-surface px-1 text-sm aria-pressed:border-accent aria-pressed:font-medium'
+  return (
+    <div className="space-y-4 px-4 pt-4 text-sm">
+      {spends.length > 0 && (
+        <section aria-labelledby="person-counts">
+          <h3 id="person-counts" className={head}>Payments to them count as</h3>
+          <div className="mt-1.5">
+            <CategoryChips
+              chips={chips}
+              cats={cats}
+              label={`Category for every payment to ${title}`}
+              current={catMark && catMark.state !== 'failed' ? catMark.slug : oneCategory(spends)}
+              onPick={(c) =>
+                void enqueue(
+                  actions.setCategory({ id: spends[0].id, display_name: spends[0].display_name }, c, 'merchant', title, { key: p.key, name: title }),
+                )
+              }
+            />
+          </div>
+          {catMark && (
+            <p className="mt-1">
+              {catMark.choice} <Pending op={catMark} />
+            </p>
+          )}
+          <p className="mt-1 text-xs text-muted">Every payment to them, also future ones.</p>
+        </section>
+      )}
+      {senders.length > 0 && (
+        <section aria-labelledby="person-money-in">
+          <h3 id="person-money-in" className={head}>Money from them is</h3>
+          <div className="mt-1.5 flex flex-wrap gap-2 [&>button]:flex-1 [&>button]:basis-16" role="group" aria-label={`Money from ${title}`}>
+            {ANSWERS.map((a) => (
+              <button
+                key={a.key}
+                type="button"
+                aria-pressed={answered === a.key}
+                className={pressable}
+                onClick={() =>
+                  a.key === 'income'
+                    ? setIncome(senders[0].income_label && senders[0].income_label !== FAMILY ? senders[0].income_label : 'Income')
+                    : answer(a.key === 'family' ? { answer: 'income', label: FAMILY } : { answer: a.key })
+                }
+              >
+                {a.name}
+              </button>
+            ))}
+          </div>
+          {income !== null && (
+            <form
+              className="mt-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!rule.error) answer({ answer: 'income', label: rule.name })
+              }}
+            >
+              <label className="block text-xs text-muted" htmlFor="person-income">Income, labelled (1 to 30 characters)</label>
+              <div className="mt-1 flex flex-wrap gap-2">
+                <input
+                  id="person-income"
+                  value={income}
+                  onChange={(e) => setIncome(e.target.value)}
+                  aria-invalid={Boolean(rule.error)}
+                  className="min-h-11 min-w-32 flex-1 rounded-lg border border-line bg-surface px-3"
+                />
+                <Button type="submit" kind="primary" disabled={Boolean(rule.error)}>Save</Button>
+                <Button onClick={() => setIncome(null)}>Cancel</Button>
+              </div>
+              {rule.error && <p className="pt-1 text-xs text-danger" aria-live="polite">{rule.error}</p>}
+            </form>
+          )}
+          {answerMark && (
+            <p className="mt-1">
+              {answerMark.choice} <Pending op={answerMark} />
+            </p>
+          )}
+          <p className="mt-1 text-xs text-muted">Friend counts as paid back; Family and Income count as income.</p>
+        </section>
+      )}
+      {rows.length > 0 && (
+        <section aria-labelledby="person-recent">
+          <h3 id="person-recent" className={head}>Recent payments</h3>
+          <ul className="mt-1.5 divide-y divide-line rounded-lg border border-line">
+            {rows.slice(0, 10).map((t) => {
+              const mark = markFor(ops, t)
+              const note = mark.category ?? mark.failed
+              const shown = mark.category ? { ...t, category: mark.category.slug ?? t.category, category_name: mark.category.choice } : t
+              const line = (
+                <>
+                  <span className="min-w-[min(6rem,35vw)] flex-1">
+                    <span className="block truncate">{dayLabel(t.time_utc)}</span>
+                    <span className="block truncate text-xs text-muted">{subtitle(shown)}</span>
+                  </span>
+                  <Money paise={t.amount_paise} credit={isCredit(t)} exact />
+                </>
+              )
+              return (
+                <li key={t.id} className="px-3 py-1">
+                  {countsInSpent(t) ? (
+                    <button
+                      type="button"
+                      aria-expanded={openRow === t.id}
+                      className="flex min-h-11 w-full flex-wrap items-center gap-x-3 text-left"
+                      onClick={() => setOpenRow(openRow === t.id ? null : t.id)}
+                    >
+                      {line}
+                    </button>
+                  ) : (
+                    <div className="flex min-h-11 flex-wrap items-center gap-x-3">{line}</div>
+                  )}
+                  {note && <Pending op={note} />}
+                  {openRow === t.id && (
+                    <div className="pb-2">
+                      <p className="pb-1 text-xs text-muted">Just this one</p>
+                      <CategoryChips
+                        chips={chips}
+                        cats={cats}
+                        label={`Category for the payment of ${dayLabel(t.time_utc)}`}
+                        current={shown.category}
+                        onPick={(c) => {
+                          void enqueue(actions.setCategory(t, c, 'transaction', nameOf(t)))
+                          setOpenRow(null)
+                        }}
+                      />
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+          <div className="mt-1 flex justify-end">
+            <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => seePayments(p.key)}>
+              See all payments
+            </button>
+          </div>
+        </section>
+      )}
+    </div>
   )
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import type { Txn } from '../api/types.ts'
-import { actions, enqueue, isStuck, markFor, markText, personMark, shownName, STUCK_MS, timing, undo, useOutbox, type Op } from '../data/outbox.ts'
+import { actions, discard, enqueue, isStuck, markFor, markText, personMark, retry, shownName, STUCK_MS, timing, undo, useOutbox, waitingLabels, type Op } from '../data/outbox.ts'
 import { OpSheet } from './Sync.tsx'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { currentMonth, dayKey, dayLabel, fullLabel } from '../lib/dates.ts'
@@ -132,11 +132,11 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
             const mark = markFor(ops, t)
             const shown = mark.category ? { ...t, category: mark.category.slug ?? t.category, category_name: mark.category.choice } : t
             const label = mark.label ? (mark.label.choice === 'No label' ? '' : mark.label.choice) : t.label?.name
-            const note = [mark.category, mark.label].map((m) => m && markText(m)).find(Boolean)
+            const note = [mark.category, mark.label, mark.counted, mark.failed].map((m) => m && markText(m)).find(Boolean)
             return (
             <RowButton key={t.id} onClick={() => open({ txn: t.id })}>
               <CategoryTile slug={shown.category} />
-              <span className="min-w-0 flex-1">
+              <span className="min-w-[min(6rem,35vw)] flex-1">
                 <span className="block truncate">{nameOf(t)}</span>
                 <span className="block truncate text-xs text-muted">
                   {t.identifier && `${t.identifier} · `}
@@ -149,6 +149,7 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
               <Money
                 paise={t.amount_paise}
                 credit={isCredit(t)}
+                exact
                 className={t.role === 'duplicate' || t.role === 'ignored' ? 'text-muted line-through' : ''}
               />
             </RowButton>
@@ -170,8 +171,9 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
   const { ops } = useOutbox()
   const cats = load.status === 'ready' ? load.data.categories : []
   const labels = load.status === 'ready' ? load.data.labels : []
-  const waitingLabels = ops.flatMap((o) => (o.state === 'failed' ? [] : (o.targets.labels ?? [])))
-  const rule = labelName(newLabel, [...labels.map((l) => l.name), ...waitingLabels])
+  // A label made on the phone can be picked before it syncs (D-110): by name, as new_label.
+  const madeHere = waitingLabels(ops, labels.map((l) => l.name))
+  const rule = labelName(newLabel, [...labels.map((l) => l.name), ...madeHere])
   const counts = countsInSpent(txn)
   const mark = markFor(ops, txn)
   const item = nameOf(txn)
@@ -196,10 +198,15 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
     <Sheet title={item} onClose={onClose}>
       {step.kind === 'detail' && (
         <div className="px-4 py-4">
-          <p className="text-3xl font-semibold">
+          <p className="text-[min(1.875rem,11vw)] font-semibold whitespace-nowrap">
             <Money paise={txn.amount_paise} credit={isCredit(txn)} exact />
           </p>
           {txn.generic && <p className="mt-1 text-xs text-muted">Read automatically</p>}
+          {mark.failed && (
+            <p className="mt-2 text-sm wrap-break-word">
+              {mark.failed.kind} <Pending op={mark.failed} />
+            </p>
+          )}
           <dl className="mt-4 space-y-3 text-sm">
             <Item term="When" value={fullLabel(txn.time_utc)} />
             <Item term="Counted" value={mark.counted ? mark.counted.choice : roleText(txn)} mark={mark.counted} />
@@ -215,6 +222,9 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
           </dl>
           {person && (
             <div className="mt-2 flex flex-wrap justify-end gap-x-3">
+              <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => open({ person: person.key, act: null })}>
+                Person
+              </button>
               <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => open({ person: person.key, act: 'name' })}>
                 {person.named ? 'Rename' : 'Name'}
               </button>
@@ -259,7 +269,7 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
             <li key={c.slug}>
               <button type="button" className={choice} onClick={() => setStep({ kind: 'scope', slug: c.slug })}>
                 <CategoryTile slug={c.slug} />
-                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{c.name}</span>
                 {c.slug === (mark.category?.slug ?? txn.category) && <span className="shrink-0 text-sm text-muted">current</span>}
               </button>
             </li>
@@ -300,6 +310,14 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
                 </button>
               </li>
             ))}
+            {madeHere.map((name) => (
+              <li key={`new:${name}`}>
+                <button type="button" className={choice} onClick={() => save(actions.setLabel(txn, { new: name }, item))}>
+                  <span className="min-w-0 truncate">{name}</span>
+                  <span className="shrink-0 text-xs text-muted">{mark.label?.choice === name ? 'current · ' : ''}saved on phone</span>
+                </button>
+              </li>
+            ))}
           </ul>
           <form
             className="flex gap-2 border-t border-line px-4 pt-3"
@@ -328,7 +346,8 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
 
 /** "Saved on phone · syncing" beside a choice still in the outbox, with Undo while it can be
  *  undone; "Synced" a moment once it is on the server. After 2 minutes it says why, and a tap
- *  opens its details (D-107). */
+ *  opens its details (D-107). One the server refused says "Not saved" on its item, with Try
+ *  again and Discard (4H). */
 export function Pending({ op }: { op: Op }) {
   const [details, setDetails] = useState(false)
   const [, setNow] = useState(0)
@@ -355,6 +374,16 @@ export function Pending({ op }: { op: Op }) {
         <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => void undo(op)}>
           Undo
         </button>
+      )}
+      {op.state === 'failed' && (
+        <>
+          <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => void retry(op)}>
+            Try again
+          </button>
+          <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => void discard(op)}>
+            Discard
+          </button>
+        </>
       )}
     </span>
   )

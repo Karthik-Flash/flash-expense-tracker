@@ -25,7 +25,7 @@ export function Home() {
           <Wordmark height={22} />
         </h1>
         <div className="flex min-w-0 items-center gap-1">
-          <button type="button" onClick={() => open({ sheet: 'speed' })} className="min-h-11 min-w-0 text-right text-xs text-muted">
+          <button type="button" onClick={() => open({ sheet: 'speed' })} aria-label={`${__VERSION_LINE__}: speed and sync details`} className="min-h-11 min-w-0 text-right text-xs text-muted">
             {__VERSION_LINE__}
           </button>
           <button type="button" onClick={signOut} className="-mr-3 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted" aria-label="Sign out">
@@ -87,7 +87,7 @@ function ViewSwitch({ value, onChange }: { value: Mode; onChange: (m: Mode) => v
           type="button"
           aria-pressed={value === m}
           onClick={() => onChange(m)}
-          className={`min-h-9 min-w-14 rounded-md px-3 ${value === m ? 'bg-press font-medium text-ink' : 'text-muted'}`}
+          className={`min-h-11 min-w-14 rounded-md px-3 ${value === m ? 'bg-press font-medium text-ink' : 'text-muted'}`}
         >
           {m === 'list' ? 'List' : 'Chart'}
         </button>
@@ -118,7 +118,8 @@ function SummaryView({ m, txns }: { m: MonthData; txns: Txn[] }) {
       {s.stale && <Notice>Totals are being updated.</Notice>}
       <div className="px-4 pt-5 text-center">
         <p className="text-sm text-muted">Net</p>
-        <p className="mt-1 text-4xl font-semibold tracking-tight whitespace-nowrap tabular-nums">{rupees(s.net_paise)}</p>
+        {/* Fits a 360 px screen at 200 % text: never past 12vw (4H). */}
+        <p className="mt-1 text-[min(2.25rem,12vw)] font-semibold tracking-tight whitespace-nowrap tabular-nums">{rupees(s.net_paise)}</p>
         <p className="mt-2 text-sm text-muted tabular-nums">
           <span className="whitespace-nowrap">Spent {rupees(s.spent_paise)}</span> ·{' '}
           <span className="whitespace-nowrap">Paid back {rupees(s.paid_back_paise)}</span>
@@ -128,7 +129,7 @@ function SummaryView({ m, txns }: { m: MonthData; txns: Txn[] }) {
       {s.to_confirm.amount_paise > 0 && (
         <Section>
           <RowButton onClick={() => navigate({ ...HOME, tab: 'todo', month: view.month }, 'push')}>
-            <span className="min-w-0 flex-1">
+            <span className="min-w-[min(6rem,35vw)] flex-1">
               To confirm: <Money paise={s.to_confirm.amount_paise} /> from {s.to_confirm.senders}{' '}
               {s.to_confirm.senders === 1 ? 'person' : 'people'}
             </span>
@@ -136,8 +137,8 @@ function SummaryView({ m, txns }: { m: MonthData; txns: Txn[] }) {
           </RowButton>
         </Section>
       )}
-      <div className="mt-4 flex items-center justify-between gap-3 px-4">
-        <h2 className="truncate text-sm font-medium text-muted">Spent by category</h2>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4">
+        <h2 className="text-sm font-medium text-muted">Spent by category</h2>
         {parts.length > 0 && <ViewSwitch value={mode} onChange={setMode} />}
       </div>
       {parts.length === 0 && <Empty>No spending this month.</Empty>}
@@ -151,9 +152,9 @@ function SummaryView({ m, txns }: { m: MonthData; txns: Txn[] }) {
             {parts.map((p) => (
               <RowButton key={p.slug} onClick={() => open({ path: ['category', p.slug] })}>
                 <CategoryTile slug={p.slug} />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline gap-3">
-                    <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                <span className="min-w-[min(6rem,35vw)] flex-1">
+                  <span className="flex flex-wrap items-baseline gap-x-3">
+                    <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{p.name}</span>
                     <Money paise={p.amount_paise} />
                     <span className="w-9 shrink-0 text-right text-sm text-muted tabular-nums">{percentOf(p.amount_paise, s.spent_paise)}</span>
                   </span>
@@ -218,7 +219,7 @@ function Merchants({ rows, slug }: { rows: Merchant[]; slug: string }) {
     <Section title="Paid to">
       {rows.map((g) => (
         <RowButton key={g.name} onClick={() => open({ path: ['category', slug, g.name] })}>
-          <span className="min-w-0 flex-1">
+          <span className="min-w-[min(6rem,35vw)] flex-1">
             <span className="block truncate">{g.name}</span>
             <span className="text-xs text-muted">{g.count} {g.count === 1 ? 'payment' : 'payments'}</span>
           </span>
@@ -241,9 +242,9 @@ function Ledger({ rows }: { rows: PersonRow[] }) {
         {rows.map((p) => (
           // A row opens the person sheet: name, identifiers, Rename, Separate (4E).
           <RowButton key={p.key} onClick={() => open({ person: p.key })}>
-            <span className="min-w-0 flex-1">
-              <span className="flex items-baseline gap-3">
-                <span className="min-w-0 flex-1 truncate">{find(p.key) ? shownName(ops, find(p.key)!, p.name) : p.name}</span>
+            <span className="min-w-[min(6rem,35vw)] flex-1">
+              <span className="flex flex-wrap items-baseline gap-x-3">
+                <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{find(p.key) ? shownName(ops, find(p.key)!, p.name) : p.name}</span>
                 <span className="shrink-0 text-xs text-muted">Net</span>
                 <Money paise={p.net_paise} />
               </span>
