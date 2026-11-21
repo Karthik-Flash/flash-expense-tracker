@@ -4,7 +4,7 @@
 export const TABS = ['home', 'transactions', 'todo', 'labels'] as const
 export type Tab = (typeof TABS)[number] | 'dev'
 /** App-wide sheets, a flag in the URL: "?speed" (Speed), "?unsaved" (not saved). */
-export const SHEETS = ['speed', 'unsaved'] as const
+export const SHEETS = ['speed', 'unsaved', 'profile'] as const
 export type SheetName = (typeof SHEETS)[number]
 /** The person sheet opened at a step (4E): "?person=p_12&do=join". */
 export const PERSON_STEPS = ['name', 'join'] as const

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import type { Category, Sender, Snapshot, Transfer, Txn } from '../api/types.ts'
+import type { Category, PartyKind, Sender, Snapshot, Suggestion, Transfer, Txn } from '../api/types.ts'
 import { actions, checksView, enqueue, personMark, senderMark, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { dayLabel, istTime, timeLabel } from '../lib/dates.ts'
@@ -8,6 +8,7 @@ import { Button, CategoryChips, Empty, Header, Loaded, Money, Section } from '..
 import { seePayments, useNav } from '../state.tsx'
 import { isCredit, nameOf } from './common.ts'
 import { identifiersText, labelName, paymentsText, topCategories } from './derive.ts'
+import { AnswerButtons, type AnswerKey } from './Answers.tsx'
 import { Pending } from './Transactions.tsx'
 
 export function TodoScreen() {
@@ -23,9 +24,12 @@ export function TodoScreen() {
           const checks = checksView(transactions, ops)
           const chips = topCategories(transactions, categories)
           const personOf = (txnId: number) => transactions.find((x) => x.id === txnId)?.person_id ?? null
+          // The app thinks this person may be the owner or an investment (D-117, D-118).
+          const warnFor = (key: string | null | undefined): PartyKind | undefined =>
+            (todo.suggestions ?? []).find((x) => x.key === key)?.kind
           return (
             <>
-              {t.senders.length === 0 && t.merchants.length === 0 && t.transfers.length === 0 && t.waiting.length === 0 && checks.length === 0 && (
+              {t.senders.length === 0 && t.merchants.length === 0 && t.transfers.length === 0 && t.suggestions.length === 0 && t.waiting.length === 0 && checks.length === 0 && (
                 <Empty>Nothing to do.</Empty>
               )}
               {t.waiting.length > 0 && (
@@ -33,6 +37,14 @@ export function TodoScreen() {
                   {t.waiting.map((op) => <WaitingRow key={op.seq} op={op} />)}
                 </Section>
               )}
+              {(['self', 'investment'] as const).map((kind) => {
+                const mine = t.suggestions.filter((x) => x.kind === kind)
+                return mine.length > 0 && (
+                  <Section key={kind} title={kind === 'self' ? 'Is this you?' : 'Is this an investment?'}>
+                    {mine.map((x) => <SuggestionRow key={`${kind}:${x.key}`} x={x} />)}
+                  </Section>
+                )
+              })}
               {t.transfers.length > 0 && (
                 <Section title="Moved between your accounts?">
                   {t.transfers.map((x) => <TransferRow key={`${x.debit}:${x.credit}`} t={x} />)}
@@ -45,7 +57,7 @@ export function TodoScreen() {
               )}
               {t.senders.length > 0 && (
                 <Section title="Who sent you money?">
-                  {t.senders.map((s) => <SenderRow key={s.id} s={s} />)}
+                  {t.senders.map((s) => <SenderRow key={s.id} s={s} warn={warnFor(s.person_id)} />)}
                 </Section>
               )}
               {t.merchants.length > 0 && (
@@ -60,7 +72,7 @@ export function TodoScreen() {
               )}
               {t.answered.length > 0 && (
                 <Section title="Answered">
-                  {t.answered.map((s) => <SenderRow key={s.id} s={s} answered />)}
+                  {t.answered.map((s) => <SenderRow key={s.id} s={s} answered warn={warnFor(s.person_id)} />)}
                 </Section>
               )}
             </>
@@ -82,6 +94,27 @@ function WaitingRow({ op }: { op: Op }) {
         <Pending op={op} />
       </span>
       {op.state === 'failed' && op.message && <p className="text-xs text-muted wrap-break-word">{op.message}</p>}
+    </div>
+  )
+}
+
+/** "Is this you?" / "Is this an investment?" (D-117, D-118): only a question. Yes counts
+ *  every payment of theirs as a transfer between your accounts, or as an investment. */
+function SuggestionRow({ x }: { x: Suggestion }) {
+  const who = { key: x.key, txn_id: x.txn_id, name: x.name }
+  return (
+    <div className="px-4 py-2.5">
+      <span className="block truncate">{x.name ?? 'Person'}</span>
+      <p className="text-xs text-muted">{paymentsText(x.count)}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button className="flex-1" onClick={() => void enqueue(actions.setKind(who, x.kind))}>
+          {x.kind === 'self' ? "Yes, it's me" : 'Yes, an investment'}
+        </Button>
+        <Button className="flex-1" onClick={() => void enqueue(actions.dismissSuggestion(who, x.kind))}>No</Button>
+      </div>
+      <p className="mt-1 text-xs text-muted">
+        {x.kind === 'self' ? 'Yes: money to and from it is a transfer, in no total.' : 'Yes: money to and from it is not spending and not income.'}
+      </p>
     </div>
   )
 }
@@ -118,7 +151,7 @@ function CheckRow({ t }: { t: Txn }) {
         <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{item}</span>
         <Money paise={t.amount_paise} credit={isCredit(t)} exact />
       </div>
-      <p className="truncate text-xs text-muted">{dayLabel(t.time_utc)} · Read automatically</p>
+      <p className="truncate text-xs text-muted">{dayLabel(t.time_utc)} · {t.statement ? 'Read from the bank statement' : 'Read automatically'}</p>
       <div className="mt-2 flex flex-wrap gap-2">
         <Button className="flex-1" onClick={() => void enqueue(actions.looksRight(t, item))}>Looks right</Button>
         <Button className="flex-1" onClick={() => void enqueue(actions.notAPayment(t, item))}>Not a payment</Button>
@@ -135,9 +168,17 @@ function answerText(s: Sender): string {
   return 'Not answered'
 }
 
-function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
+function SenderRow({ s, answered = false, warn }: { s: Sender; answered?: boolean; warn?: PartyKind }) {
   const [mode, setMode] = useState<'answer' | 'family' | 'shown'>(answered ? 'shown' : 'answer')
   const [family, setFamily] = useState(s.income_label ?? 'Family')
+  const who = { key: s.person_id ?? `s:${s.id}`, txn_id: s.txn_id ?? 0, name: s.display_name }
+  const pick = (a: AnswerKey) => {
+    if (a === 'friend' || a === 'ignore') answer({ answer: a })
+    else if (a === 'family' || a === 'income') {
+      setFamily(a === 'family' ? (s.income_label ?? 'Family') : 'Income')
+      setMode('family')
+    } else if (s.txn_id) void enqueue(actions.setKind(who, a))
+  }
   const rule = labelName(family, [])
   // Saved on the phone first; the row moves to "Waiting to sync" (D-091).
   const answer = (a: Parameters<typeof actions.answerSender>[1]) => void enqueue(actions.answerSender(s, a))
@@ -169,10 +210,8 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
       )}
       {mode === 'answer' && (
         <>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button className="flex-1" onClick={() => answer({ answer: 'friend' })}>Friend</Button>
-            <Button className="flex-1" onClick={() => setMode('family')}>Family</Button>
-            <Button className="flex-1" onClick={() => answer({ answer: 'ignore' })}>Ignore</Button>
+          <div className="mt-2">
+            <AnswerButtons label={`Who is ${s.display_name ?? 'this sender'}?`} warn={warn} onAnswer={pick} />
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3">
             {person && (

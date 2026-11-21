@@ -9,6 +9,7 @@ export type Role =
   | 'self_transfer'
   | 'card_bill_excluded'
   | 'fd_move'
+  | 'investment'
   | 'duplicate'
   | 'ignored'
   | 'uncertain'
@@ -56,6 +57,10 @@ export interface Txn {
   label: { id: number; name: string } | null
   /** Read by the generic parser, for a bank with no parser of its own yet (D-101). */
   generic?: boolean
+  /** Read from the bank statement (4Z, D-120). */
+  statement?: boolean
+  /** The category is a guess from the name (D-119): "Guessed from the name". */
+  category_guessed?: boolean
   /** A generic row the owner has not checked yet: "Looks right" or "Not a payment". */
   check?: boolean
 }
@@ -108,6 +113,8 @@ export interface Person {
   txn_id: number
   /** null: no money came from them. */
   role: PersonRole | null
+  /** It's me or Investments (D-117, D-118); null or absent: neither. */
+  kind?: PartyKind | null
   /** Newest first: the names or UPI IDs the bank used, each with one of its transactions. */
   identifiers: { name: string | null; txn_id: number; from_file: boolean }[]
 }
@@ -132,6 +139,17 @@ export const SCHEMA_VERSION = 1
 export interface Merchant {
   name: string
   total_paise: number
+  count: number
+}
+
+export type PartyKind = 'self' | 'investment'
+
+/** A person the engine thinks may be the owner, or an investment: only a question. */
+export interface Suggestion {
+  kind: PartyKind
+  key: string
+  txn_id: number
+  name: string | null
   count: number
 }
 
@@ -192,7 +210,11 @@ export interface Snapshot {
     unnamed: number
     /** Moved between your accounts? (D-115). Absent in a phone copy from before 4A. */
     transfers?: Transfer[]
+    /** Is this you? Is this an investment? (D-117, D-118). Absent before 4Z. */
+    suggestions?: Suggestion[]
   }
+  /** "Your name as banks show it" (D-117). Absent before 4Z. */
+  profile?: { names: string[] }
   labels: LabelView[]
   categories: Category[]
   /** Everyone to name or join (4E); absent in a phone copy from before. */

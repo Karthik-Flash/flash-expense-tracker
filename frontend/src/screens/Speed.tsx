@@ -5,6 +5,7 @@ import { readTimings, type Timing } from '../data/local.ts'
 import { failedOps, useOutbox, waiting } from '../data/outbox.ts'
 import { speedRows } from '../data/store.ts'
 import { istTime } from '../lib/dates.ts'
+import { useNav } from '../state.tsx'
 import { Sheet } from '../ui.tsx'
 
 /** The outbox first (D-107): what is on the phone, what failed, the last try and success. */
@@ -66,9 +67,13 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
   }, [])
   const rows = speedRows((timings ?? []).slice(0, 10))
   const last = timings?.[0]
+  const { replace } = useNav()
   return (
     <Sheet title="Speed" onClose={onClose}>
       <div className="px-4 py-3 text-sm">
+        <button type="button" className="-mt-1 mb-2 min-h-11 text-left text-accent" onClick={() => replace({ sheet: 'profile' })}>
+          Your name as banks show it
+        </button>
         <SyncBlock />
         <h3 className="mt-4 text-xs font-medium text-muted">Targets</h3>
         <ul className="mt-1 space-y-0.5">

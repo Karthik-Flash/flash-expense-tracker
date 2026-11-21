@@ -10,6 +10,7 @@ import { AppContext, navigate, useNav, useScrollMemory, useView, type AppState }
 import { CategoryDetail, Home } from './screens/Home.tsx'
 import { LabelDetail, Labels } from './screens/Labels.tsx'
 import { Login } from './screens/Login.tsx'
+import { ProfileSheet } from './screens/Profile.tsx'
 import { SpeedSheet } from './screens/Speed.tsx'
 import { UnsavedSheet } from './screens/Sync.tsx'
 import { PersonSheet } from './screens/People.tsx'
@@ -149,6 +150,7 @@ function Shell({ view }: { view: View }) {
       <Nav view={view} />
       {path && <Painted path={path} />}
       {view.sheet === 'speed' && <SpeedSheet onClose={back} />}
+      {view.sheet === 'profile' && <ProfileSheet onClose={back} />}
       {view.sheet === 'unsaved' && <UnsavedSheet onClose={back} />}
       {view.person && !view.sheet && <PersonSheet key={`${view.person}:${view.act}`} personKey={view.person} act={view.act} onClose={back} />}
     </div>
@@ -203,7 +205,7 @@ function TodoCount() {
   const { ops } = useOutbox()
   if (load.status !== 'ready') return null
   const t = todoView(load.data.todo, ops) // answers waiting to sync are not counted
-  const n = t.senders.length + t.merchants.length + t.transfers.length + checksView(load.data.transactions, ops).length
+  const n = t.senders.length + t.merchants.length + t.transfers.length + t.suggestions.length + checksView(load.data.transactions, ops).length
   if (!n) return null
   return (
     <span
