@@ -51,7 +51,7 @@ def test_shape(client, data) -> None:
     assert s["generated_at"].endswith("Z") and set(s["engine_versions"]) >= {"merchant"}
     assert [m["month"] for m in s["months"]] == sorted(m["month"] for m in s["months"])
     assert set(s["months"][0]) == {"month", "summary", "changes", "chart", "merchants", "people"}
-    assert set(s["todo"]) == {"senders", "answered", "merchants", "unnamed"}
+    assert set(s["todo"]) == {"senders", "answered", "merchants", "unnamed", "transfers"}
     assert len(s["categories"]) == 20
 
 

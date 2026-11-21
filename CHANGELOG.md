@@ -4,6 +4,21 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 4A: money correctness (21 Nov 2026)
+
+- `statement-check`: the HDFC NetBanking statement against the app, per
+  month: what matches, what only one side has, likely causes (no SMS for
+  this kind, month edge, foreign currency, reversed, a second alert, a card
+  or another account), and Spent and Net with the missing rows counted.
+  Counts and rupee sums only, safe to paste (D-114).
+- Money moved between your HDFC and SBI accounts: a shared UPI/IMPS
+  reference makes both legs a transfer at once; the same amount within 30
+  minutes without one is asked in To-do, "Moved between your accounts?"
+  (D-115).
+- `statement-names`: names from the statement for senders shown only as a
+  UPI ID or a masked one, after the owner approves; never over the owner's
+  own names, never joins people (D-116).
+
 ## Phase 4H: people actions, payback rule, polish (21 Nov 2026)
 
 - History: the AI attribution lines were removed from every commit message

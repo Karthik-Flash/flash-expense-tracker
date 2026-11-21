@@ -25,11 +25,12 @@ progress**: 4C (install and update prompt), 4B-1 (phone copy) and 4B-2
 (offline queue) done 19 Nov; 4B-3 (offline boot), 4E (people, faster
 To-do, logo options) and 4F-A (generic parser for other banks, payback
 audit, refresh after deploy, logo C2) done 20 Nov; 4F-B (the CORS fix for
-blocked taps, a queue that cannot get stuck, SBI parser) and 4H (history
+blocked taps, a queue that cannot get stuck, SBI parser), 4H (history
 without AI attribution, person sheet actions, payback-audit any-answer rule
-and `--restore`, polish pass) done 21 Nov; next: the owner force-pushes the
-rewritten history, checks the update, runs the counts, then Phase 5 and the
-pilot.
+and `--restore`, polish pass) and 4A (statement check, own-account
+transfers, statement names) done 21 Nov; next: the owner runs the
+statement check on two months, answers the transfer questions, then Phase 5
+and the pilot.
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -497,6 +498,33 @@ edge, text squeezed to less than half). `--root <frontend folder>` shoots
 another checkout (a `git worktree` of an older commit, with `node_modules`
 linked). Pictures stay outside the repo; only the page is committed.
 
+### Statement check, transfers and statement names (4A, from `backend\`)
+
+Download the HDFC statement from NetBanking as **Delimited** (not PDF, not
+Excel) into `D:\FlashPrivate\` (one normal month and one messy month). The
+commands read the file and print; nothing is stored. Run a recompute first if
+the app says "being updated".
+
+```powershell
+# 1. The statement against the app (SAFE TO PASTE: counts and rupee sums per month)
+.\.venv\Scripts\python.exe -m app.cli statement-check --file D:\FlashPrivate\<normal>.txt
+.\.venv\Scripts\python.exe -m app.cli statement-check --file D:\FlashPrivate\<messy>.txt
+#    PRIVATE (screen only, never paste): the unmatched rows, one per line
+.\.venv\Scripts\python.exe -m app.cli statement-check --file D:\FlashPrivate\<normal>.txt --details
+# 2. Names for senders shown only as a UPI ID (SAFE TO PASTE: counts; a dry run)
+.\.venv\Scripts\python.exe -m app.cli statement-names --file D:\FlashPrivate\<normal>.txt --file D:\FlashPrivate\<messy>.txt
+#    PRIVATE (screen only): the proposed names
+.\.venv\Scripts\python.exe -m app.cli statement-names --file D:\FlashPrivate\<normal>.txt --file D:\FlashPrivate\<messy>.txt --show
+#    Only after the planner's OK: write them (counts; ends with a recompute)
+.\.venv\Scripts\python.exe -m app.cli statement-names --file D:\FlashPrivate\<normal>.txt --file D:\FlashPrivate\<messy>.txt --apply
+```
+
+"balance breaks" should be 0; anything else means a row was read wrongly:
+paste the count only. Transfers between your HDFC and SBI accounts need no
+command: after the deploy's recompute, pairs with one UPI reference are
+transfers, and close pairs without one appear in To-do as "Moved between
+your accounts?" (answer Yes or No on the phone).
+
 ### Other banks and paybacks: commands after the 4F-A deploy (from `backend\`)
 
 Render runs migration `0009`. The first time the phone (or any read) asks
@@ -829,9 +857,10 @@ gh repo view --web                                # open the repo in the browser
 
 ## Open items
 
-1. Bank statement check (step 4A): one normal and one messy month against
-   the statement, "match" or the difference in rupees. 4A also settles the
-   unticked "merged refund" check in NOTES (one event or two, D-064).
+1. Bank statement check (4A, built 21 Nov): the owner runs `statement-check`
+   on one normal and one messy month and pastes the SAFE counts; the planner
+   decides on `statement-names --apply`. It also settles the unticked
+   "merged refund" check (one event or two, D-064).
 2. After the 4H push: `payback-audit` (the D-111 rule) and `payback-audit
    --restore` (dry run) from the cheat sheet; the planner decides on
    `--restore --apply`. Delete the cron-job.org job "Flash API warm 07-01
@@ -896,6 +925,18 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-21: Phase 4A, money correctness
+
+- `stmt-hdfc-1.0.0` reads the HDFC Delimited statement (from the right, so
+  commas in narrations are fine; balance check), `statement-check` per IST
+  month with likely causes and Spent/Net with statement-only debits (D-114).
+- `reconcile-1.5.0`: SBI accounts learned from SBI messages; a shared
+  12-digit reference links an own-account transfer automatically; the same
+  amount within 30 minutes is asked in To-do (`PUT /api/v1/transfers/…`,
+  `todo.transfers`) (D-115).
+- `statement-names`: payer names for bare or masked UPI senders, owner
+  approved; migration `0012` `parties.name_source` (D-116).
 
 ### 2026-11-21: Phase 4H, people actions, payback rule, polish
 

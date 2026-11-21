@@ -22,6 +22,7 @@ import {
   type Snapshot,
   type SnapshotAnswer,
   type Summary,
+  type Transfer,
   type Txn,
 } from './types.ts'
 import { nameOf } from '../screens/common.ts'
@@ -75,6 +76,8 @@ interface Row {
   label: number | null
   /** Read by the generic parser (another bank, D-101). */
   generic?: boolean
+  /** The bank, when it is not HDFC: a leg of a possible own-account transfer (D-115). */
+  bank?: string
 }
 
 /** Small deterministic generator: the same demo every time. */
@@ -159,6 +162,9 @@ function build(): Row[] {
   add([2026, 11, 12, 13, 20], 340, 'Campus Bookshop', 'uncategorised', other)
   add([2026, 11, 15, 10, 5], 2000, null, 'cash', other)
   add([2026, 11, 14, 19, 30], 500, 'Priya N', 'other', { ...other, direction: 'credit', role: 'uncertain' })
+  // Money moved from HDFC to the owner's SBI account, no shared reference: asked (D-115).
+  add([2026, 11, 16, 10, 0], 3000, 'TEST OWNER', 'people')
+  add([2026, 11, 16, 10, 12], 3000, 'TEST OWNER', 'other', { direction: 'credit', role: 'uncertain', bank: 'SBI' })
 
   return rows
     .sort((a, b) => a.time.localeCompare(b.time))
@@ -192,6 +198,8 @@ export class FakeApi implements Api {
   private parties = 0
   // Checks (4F-A): rows the owner said "Looks right" about.
   private checked = new Set<number>()
+  // Own-account transfers (4A): pairs the owner answered, "debit:credit".
+  private moves = new Set<string>()
 
   setState(state: DemoState): void {
     this.state = state
@@ -397,7 +405,12 @@ export class FakeApi implements Api {
         engine_versions: { demo: '1' },
         months,
         transactions,
-        todo: { senders: senders.filter((s) => s.status === 'to_confirm'), answered: senders.filter((s) => s.status !== 'to_confirm'), ...todo(transactions) },
+        todo: {
+          senders: senders.filter((s) => s.status === 'to_confirm'),
+          answered: senders.filter((s) => s.status !== 'to_confirm'),
+          ...todo(transactions),
+          transfers: this.transfers(),
+        },
         labels,
         categories: CATEGORIES,
         people: this.peopleOf(transactions),
@@ -506,6 +519,8 @@ export class FakeApi implements Api {
     const txn = /^\/transactions\/(\d+)\/(category|label)$/.exec(path)
     if (sender && method === 'PUT') return this.answerSender(decodeURIComponent(sender[1]), b as unknown as SenderAnswer)
     if (sender && method === 'DELETE') return this.resetSender(decodeURIComponent(sender[1]))
+    const move = /^\/transfers\/(\d+)\/(\d+)$/.exec(path)
+    if (move && method === 'PUT') return this.answerTransfer(Number(move[1]), Number(move[2]), String(b.verdict))
     if (path === '/labels' && method === 'POST') return void this.createLabel(String(b.name))
     if (txn?.[2] === 'category' && method === 'PUT') return this.setCategory(Number(txn[1]), String(b.category), b.scope as 'merchant' | 'transaction')
     if (txn?.[2] === 'label' && method === 'PUT') {
@@ -569,6 +584,27 @@ export class FakeApi implements Api {
     const id = Math.max(0, ...this.labelNames.keys()) + 1
     this.labelNames.set(id, clean)
     return id
+  }
+
+  /** As snapshot.transfers: the possible own-account transfers no answer settled (D-115). */
+  private transfers(): Transfer[] {
+    const visible = this.visible()
+    const debit = visible.find((r) => r.name === 'TEST OWNER' && r.direction === 'debit')
+    const credit = visible.find((r) => r.bank === 'SBI' && r.direction === 'credit')
+    if (!debit || !credit || this.moves.has(`${debit.id}:${credit.id}`)) return []
+    return [{
+      debit: debit.id, credit: credit.id, amount_paise: debit.amount, from_bank: 'HDFC', to_bank: 'SBI',
+      debit_time_utc: debit.time, credit_time_utc: credit.time,
+    }]
+  }
+
+  /** As owner_actions.answer_transfer: same makes both legs a transfer; different drops it. */
+  private answerTransfer(a: number, b: number, verdict: string): void {
+    if (verdict !== 'same' && verdict !== 'different') throw new ApiError(422, 'verdict must be same or different')
+    const pair = this.transfers().find((t) => (t.debit === a && t.credit === b) || (t.debit === b && t.credit === a))
+    if (!pair) throw new ApiError(404, 'These two payments are not a possible transfer.')
+    this.moves.add(`${pair.debit}:${pair.credit}`)
+    if (verdict === 'same') for (const id of [pair.debit, pair.credit]) this.roleAnswer.set(id, 'self_transfer')
   }
 
   /** As owner_actions.label_named: the label of this name, made when there is none (D-110). */

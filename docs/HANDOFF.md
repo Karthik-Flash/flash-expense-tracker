@@ -22,6 +22,9 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   checked cross-origin); the outbox cannot get stuck (D-105); writes commit
   before the recompute (D-106); clearer sync wording (D-107); SBI parser
   (D-108); payback-audit honours explicit answers.
+- 4A (21 Nov): `stmt-hdfc-1.0.0` and `statement-check` (D-114), own-account
+  transfers by shared reference or the owner's answer (`reconcile-1.5.0`,
+  D-115), `statement-names` (D-116, migration `0012`). Next: Phase 5.
 - 4H (21 Nov): person sheet actions (D-110), payback-audit counts any
   owner answer on record and has `--restore` (D-111), the API warm job
   retired (D-112), UI tokens and one money/date format (D-113).
@@ -30,9 +33,9 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   [history-rewrite-20261121.md](history-rewrite-20261121.md). Enable the
   hook once per clone: `git config core.hooksPath .githooks`.
 - Engine versions: parsers `hdfc-1.1.1`, `sbi-1.0.0` and `generic-1.0.0`
-  (other banks), `merchant-1.1.1`, `reconcile-1.4.0`, `categorise-1.1.0`.
-- Alembic head: `0010` (recompute marks, `parties.answered_at`).
-- Decisions: D-001 to D-113 ([DECISIONS.md](DECISIONS.md)).
+  (other banks), `merchant-1.1.1`, `reconcile-1.5.0`, `categorise-1.1.0`; statement reader `stmt-hdfc-1.0.0`.
+- Alembic head: `0012` (`parties.name_source`; `0011` was not used).
+- Decisions: D-001 to D-116 ([DECISIONS.md](DECISIONS.md)).
 - Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
   lint/typecheck/tests/build, and the cross-origin check
   (`node scripts/cross-origin-check.mjs` from `frontend\`).
