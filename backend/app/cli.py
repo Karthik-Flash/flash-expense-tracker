@@ -18,6 +18,8 @@
   bank-survey
   generic-preview
   redact-sample --family <bank> [--review-dir DIR] | --approve <bank> [--review-dir DIR]
+  statement-check --file <path> [--file <path> ...] [--details]
+  statement-names --file <path> [--file <path> ...] [--show | --apply]
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
@@ -42,6 +44,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.engine import statement_check, statement_hdfc
 from app.engine.categorise import CATEGORIES, CATEGORISE_VERSION, SPENDING_ROLES, UNCATEGORISED
 from app.engine.merchant import MERCHANT_VERSION, channel_for, normalise_merchant, parts
 from app.engine.money import format_inr
@@ -77,7 +80,7 @@ from app.models import (
     TxnLabel,
     TxnLink,
 )
-from app.pipeline import payback_audit, sample_export, survey
+from app.pipeline import payback_audit, sample_export, statement, survey
 from app.pipeline.owner_actions import ActionError, answer_sender, senders
 from app.pipeline.owner_load import (
     OwnerFileError,
@@ -315,7 +318,9 @@ def cmd_merchant_stats(session: Session, args: argparse.Namespace) -> None:
 
 PRIVATE = "PRIVATE: do not paste this into any chat or file."
 # Role rules that come from a link or an owner decision, not from one message.
-LINK_OR_OWNER_RULES = frozenset({"OWNER_role", "OWNER_link", "DUP_autopay_card", "ST_pair"})
+LINK_OR_OWNER_RULES = frozenset(
+    {"OWNER_role", "OWNER_link", "DUP_autopay_card", "ST_reference", "ST_pair"}
+)
 
 
 def is_terminal() -> bool:
@@ -1122,6 +1127,144 @@ def payback_restore(session: Session, apply: bool) -> int:
     return run_recompute(session, "owner")
 
 
+def _statements(paths: list[Path]) -> tuple[list, int, int] | None:
+    """Rows of every file (oldest first), lines skipped and balance breaks; None on an error."""
+    rows, skipped, breaks = [], 0, 0
+    for path in paths:
+        try:
+            read = statement_hdfc.read(path.read_text(encoding="utf-8-sig", errors="replace"))
+        except OSError as exc:
+            print(f"cannot read a --file ({type(exc).__name__})", file=sys.stderr)
+            return None
+        except statement_hdfc.StatementError as exc:
+            print(f"not read: {exc}", file=sys.stderr)
+            return None
+        rows += read.rows
+        skipped += read.skipped
+        breaks += statement_hdfc.check_balances(read.rows)
+    rows.sort(key=lambda r: r.date)  # stable: file order inside a day
+    return rows, skipped, breaks
+
+
+def _rs(paise: int) -> str:
+    return format_inr(paise)
+
+
+def cmd_statement_check(session: Session, args: argparse.Namespace) -> int:
+    """D-114. The statement against the app's HDFC rows. Counts and aggregate rupees (SAFE);
+    --details lists the unmatched rows (PRIVATE, terminal only)."""
+    if args.details and (refused := refuse_without_terminal("statement-check --details")):
+        return refused
+    read = _statements(args.file)
+    if read is None:
+        return 2
+    rows, skipped, breaks = read
+    if not rows:
+        print("statement-check: no rows found", file=sys.stderr)
+        return 1
+    try:
+        p = plan(session, settings.owner_id)
+    except OwnerDataError as exc:
+        print(f"statement-check failed: {exc}", file=sys.stderr)
+        return 1
+    if reason := stale_reason(p):
+        print(f"statement-check: stored results are stale ({reason}). Run: python -m app.cli "
+              "recompute", file=sys.stderr)  # fmt: skip
+        return 1
+    app = statement.app_rows(session, settings.owner_id, rows[0].date, rows[-1].date)
+    months = statement_check.check(rows, app)
+    print("statement-check (counts and rupee sums only; SAFE TO PASTE)")
+    print(f"reader {statement_hdfc.STATEMENT_VERSION}: files {len(args.file)}, rows {len(rows)}, "
+          f"lines skipped {skipped}, balance breaks {breaks}")  # fmt: skip
+    if breaks:
+        print("  a balance break means a row was read wrongly: the figures below may be off")
+    for key, m in months.items():
+        print(f"month {key}")
+        print(
+            f"  statement debits  {m.stmt_debits.count:>5} {_rs(m.stmt_debits.paise):>18}   "
+            f"credits {m.stmt_credits.count:>5} {_rs(m.stmt_credits.paise):>18}"
+        )
+        print(
+            f"  app HDFC debits   {m.app_debits.count:>5} {_rs(m.app_debits.paise):>18}   "
+            f"credits {m.app_credits.count:>5} {_rs(m.app_credits.paise):>18}"
+        )
+        print(
+            f"  matched {sum(m.matched.values())} (by reference {m.matched['reference']}, "
+            f"by amount and day {m.matched['amount_day']})"
+        )
+        print(f"  statement only    {m.stmt_only.count:>5} {_rs(m.stmt_only.paise):>18}")
+        print(f"  app only          {m.app_only.count:>5} {_rs(m.app_only.paise):>18}")
+        print(f"  amount mismatches {m.mismatches.count:>5} {_rs(m.mismatches.paise):>18}")
+        print("  unmatched by likely cause")
+        for cause in statement_check.CAUSES:
+            side = m.causes[cause]
+            print(f"    {cause:<22}{side.count:>5} {_rs(side.paise):>18}")
+        t = statement.month_totals(session, settings.owner_id, key)
+        adjusted = t.spent_paise + m.stmt_only_debits.paise
+        print(
+            f"  app:   Spent {_rs(t.spent_paise)}, Paid back {_rs(t.paid_back_paise)}, "
+            f"Net {_rs(t.net_paise)}"
+        )
+        print(
+            f"  with statement-only debits as spend: Spent {_rs(adjusted)}, "
+            f"Net {_rs(adjusted - t.paid_back_paise)} (difference {_rs(m.stmt_only_debits.paise)})"
+        )
+    if args.details:
+        print(PRIVATE)
+        for key, m in months.items():
+            for side, cause, item in m.unmatched:
+                if side == "statement":
+                    print(
+                        f"{key} statement {item.date} {item.direction:<6} "
+                        f"{_rs(item.amount_paise):>16} {cause:<22} {item.narration[:60]}"
+                    )
+                else:
+                    print(
+                        f"{key} app       {item.day} {item.direction:<6} "
+                        f"{_rs(item.amount_paise):>16} {cause:<22} transaction {item.id}"
+                    )
+        print(PRIVATE)
+    return 0
+
+
+def cmd_statement_names(session: Session, args: argparse.Namespace) -> int:
+    """D-116. Payer names for nameless UPI credits, by the 12-digit reference. Counts (SAFE);
+    --show lists the pairs (PRIVATE, terminal only); --apply writes them as owner data."""
+    if args.show and args.apply:
+        print("use --show or --apply, not both", file=sys.stderr)
+        return 2
+    if args.show and (refused := refuse_without_terminal("statement-names --show")):
+        return refused
+    read = _statements(args.file)
+    if read is None:
+        return 2
+    rows, _skipped, breaks = read
+    found = statement.plan_names(session, settings.owner_id, rows)
+    print("statement-names (counts only; SAFE TO PASTE)")
+    line("statement rows", len(rows))
+    line("balance breaks", breaks)
+    line("nameless UPI credits matched", found.credits)
+    line("of those with a usable name", found.named)
+    line("already named: left alone", found.already_named)
+    line("two names for one party: left", found.conflicts)
+    line("parties to name", len(found.proposals))
+    line("names two parties would share", found.shared_names)
+    if found.shared_names:
+        print("  never joined automatically: use Same as… on the phone if they are one person")
+    if args.show:
+        print(PRIVATE)
+        for raw, name in found.pairs:
+            print(f"  {raw[:40]:<40} -> {name}")
+        print(PRIVATE)
+        return 0
+    if not args.apply:
+        print("dry run: nothing saved. To name them: --apply (after the planner's OK)")
+        return 0
+    changed = statement.apply_names(session, settings.owner_id, found)
+    print(f"named {changed} {'party' if changed == 1 else 'parties'} (source statement)")
+    return run_recompute(session, "owner")
+
+
 def cmd_bank_survey(session: Session, args: argparse.Namespace) -> int:
     """D-100. Counts only, by sender family (not private), kind and parse status."""
     found = survey.bank_survey(session, settings.owner_id)
@@ -1268,6 +1411,23 @@ def build_parser() -> argparse.ArgumentParser:
     which.add_argument("--family", help="the bank, as bank-survey names it (e.g. SBI)")
     which.add_argument("--approve", metavar="FAMILY", help="scan again, copy to data/sample/")
     rs.add_argument("--review-dir", type=Path, help="default D:/FlashPrivate/review")
+    sc = sub.add_parser(
+        "statement-check",
+        help="the HDFC statement against the app, per IST month (counts and rupee sums)",
+        description=statement_check.__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sc.add_argument("--file", type=Path, action="append", required=True,
+                    help="an HDFC NetBanking Delimited statement; repeat for more")  # fmt: skip
+    sc.add_argument("--details", action="store_true", help="PRIVATE: list the unmatched rows")
+    sn = sub.add_parser(
+        "statement-names",
+        help="payer names for nameless UPI credits, from the statement (counts; dry run)",
+    )
+    sn.add_argument("--file", type=Path, action="append", required=True,
+                    help="an HDFC NetBanking Delimited statement; repeat for more")  # fmt: skip
+    sn.add_argument("--show", action="store_true", help="PRIVATE: list the proposed names")
+    sn.add_argument("--apply", action="store_true", help="name them (owner data, source statement)")
     return parser
 
 
@@ -1290,6 +1450,8 @@ COMMANDS = {
     "bank-survey": cmd_bank_survey,
     "generic-preview": cmd_generic_preview,
     "redact-sample": cmd_redact_sample,
+    "statement-check": cmd_statement_check,
+    "statement-names": cmd_statement_names,
 }
 
 

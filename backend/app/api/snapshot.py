@@ -19,7 +19,7 @@ from app.api import v1
 from app.api.auth import current_owner
 from app.engine.categorise import UNCATEGORISED
 from app.engine.reconcile import COUNTED, IST
-from app.models import Label, Transaction
+from app.models import Label, OwnerLinkDecision, Transaction, TxnLink
 from app.pipeline.recompute import VERSIONS
 
 SCHEMA_VERSION = 1
@@ -146,6 +146,46 @@ def todo_merchants(items: list[dict]) -> tuple[list[dict], int]:
     return sorted(groups.values(), key=lambda g: -g["total_paise"]), unnamed
 
 
+def transfers(session, owner) -> list[dict]:
+    """Moved between your accounts? (D-115): the engine's self-transfer candidates no owner
+    answered yet, newest first. Amount, banks and times: the legs are in `transactions`."""
+    answered = {
+        (a, b)
+        for a, b in session.execute(
+            select(OwnerLinkDecision.txn_a, OwnerLinkDecision.txn_b).where(
+                OwnerLinkDecision.owner_id == owner, OwnerLinkDecision.kind == "self_transfer"
+            )
+        )
+    }
+    links = session.execute(
+        select(TxnLink.txn_a, TxnLink.txn_b).where(
+            TxnLink.owner_id == owner,
+            TxnLink.kind == "self_transfer",
+            TxnLink.status == "candidate",
+        )
+    ).all()
+    ids = {i for pair in links for i in pair}
+    legs = {
+        t.id: t
+        for t in session.scalars(select(Transaction).where(Transaction.id.in_(ids)))
+    } if ids else {}  # fmt: skip
+    out = []
+    for a, b in links:
+        if (a, b) in answered or a not in legs or b not in legs:
+            continue
+        debit, credit = (legs[a], legs[b]) if legs[a].direction == "debit" else (legs[b], legs[a])
+        out.append({
+            "debit": debit.id,
+            "credit": credit.id,
+            "amount_paise": debit.amount_paise,
+            "from_bank": debit.bank,
+            "to_bank": credit.bank,
+            "debit_time_utc": v1._iso(debit.txn_time_utc),
+            "credit_time_utc": v1._iso(credit.txn_time_utc),
+        })  # fmt: skip
+    return sorted(out, key=lambda x: (x["debit_time_utc"], x["debit"]), reverse=True)
+
+
 def build(session, owner) -> dict:
     """The snapshot document, without `generated_at`."""
     stale, last = v1.freshness(session, owner)
@@ -182,6 +222,7 @@ def build(session, owner) -> dict:
             "answered": [s for s in senders if s["status"] != "to_confirm"],
             "merchants": todo,
             "unnamed": unnamed,
+            "transfers": transfers(session, owner),
         },
         "labels": [v1.label_detail(owner, session, i) for i in label_ids],
         "people": v1.people_directory(session, owner),

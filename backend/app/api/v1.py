@@ -444,6 +444,23 @@ def looks_right(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
     return ops.write(session, owner, op, action, recomputes=False)
 
 
+class TransferAnswer(Body):
+    verdict: Literal["same", "different"]
+
+
+@router.put("/transfers/{txn_a}/{txn_b}")
+def answer_transfer(
+    owner: Owner, session: Db, op: ops.OpDep, txn_a: int, txn_b: int, body: TransferAnswer
+):
+    """Moved between your accounts? same: both legs self_transfer; different: not (D-115)."""
+
+    def action() -> dict:
+        a, b = owner_actions.answer_transfer(session, owner, txn_a, txn_b, body.verdict, "app")
+        return {"txn_a": a, "txn_b": b, "verdict": body.verdict}
+
+    return ops.write(session, owner, op, action, body.model_dump())
+
+
 @router.put("/transactions/{txn_id}/ignore")
 def not_a_payment(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
     """Not a payment: the owner role ignored, in no total (D-103)."""

@@ -1,0 +1,19 @@
+                                                             TEST BANK LTD (FAKE)
+Account Branch : TEST BRANCH                    Account No :XXXXXXXX0001
+Statement From : 01/11/26 To : 30/11/26
+
+  Date     ,Narration                                                                     ,Value Dat,Debit Amount       ,Credit Amount      ,Chq/Ref Number   ,Closing Balance
+  01/11/26  ,UPI-TEST SHOP ONE-testshop1@okaxis-UTIB0000001-631100000001-UPI               ,01/11/26 ,            250.00 ,              0.00 ,0000631100000001 ,        49750.00
+  02/11/26  ,UPI-TEST PERSON B-test.b@okhdfcbank-HDFC0000001-631100000002-SPLIT DINNER     ,02/11/26 ,              0.00 ,           1500.00 ,0000631100000002 ,        51250.00
+  03/11/26  ,NEFT CR-SBIN0000001-TEST EMPLOYER PVT LTD-NOV STIPEND, HOSTEL-N312260000000001,03/11/26 ,              0.00 ,          10000.00 ,N312260000000001 ,        61250.00
+  05/11/26  ,ACH D- TEST INSURANCE LTD-0000000001                                          ,05/11/26 ,            999.00 ,              0.00 ,0000000000000000 ,        60251.00
+  10/11/26  ,ATW-512345XXXXXX0001-S1AN0001-TEST CITY                                       ,10/11/26 ,           2000.00 ,              0.00 ,0000000000000101 ,        58251.00
+  15/11/26  ,POS 512345XXXXXX0001 TEST STORE                                               ,15/11/26 ,            450.50 ,              0.00 ,0000000000000102 ,        57800.50
+  30/11/26  ,CREDIT INTEREST CAPITALISED                                                   ,30/11/26 ,              0.00 ,             12.00 ,0000000000000000 ,        57812.50
+  30/11/26  ,SMS CHG FOR QTR ENDED SEP26 INCL GST                                          ,30/11/26 ,             17.70 ,              0.00 ,0000000000000000 ,        57794.80
+
+  **Continue**
+STATEMENT SUMMARY :-
+Opening Balance     Dr Count    Cr Count
+50000.00            5           3
+Generated On: 01/12/26 This is a computer generated statement (FAKE).

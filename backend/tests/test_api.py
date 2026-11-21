@@ -47,7 +47,8 @@ def test_every_data_route_needs_a_login(client) -> None:
     paths = app.openapi()["paths"]
     data_routes = [(m, p) for p, ops in paths.items() if p.startswith("/api/v1") for m in ops]
     # 4E: people name, clear name, join, separate. 4F-A: check, ignore, count again.
-    assert len(data_routes) == 21
+    # 4A: a transfer answer.
+    assert len(data_routes) == 22
     for method, path in data_routes:
         url = re.sub(r"\{[^}]+\}", "1", path)
         response = client.request(method.upper(), url, json={})

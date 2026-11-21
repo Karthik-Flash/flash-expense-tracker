@@ -21,8 +21,10 @@ from app.engine.merchant import normalise_merchant
 from app.engine.parsers.generic import HINT as GENERIC
 from app.models import (
     LABEL_MAX,
+    VERDICTS,
     Label,
     OwnerCategory,
+    OwnerLinkDecision,
     OwnerRole,
     Party,
     PartyText,
@@ -30,6 +32,7 @@ from app.models import (
     TxnCheck,
     TxnDerived,
     TxnLabel,
+    TxnLink,
 )
 
 ANSWERS = ("friend", "income", "ignore")
@@ -277,6 +280,52 @@ def clear_label(session: Session, owner_id: uuid.UUID, txn_id: int) -> None:
         session.flush()
 
 
+def answer_transfer(
+    session: Session, owner_id: uuid.UUID, txn_a: int, txn_b: int, verdict: str, source: str
+) -> tuple[int, int]:
+    """ "Moved between your accounts?" (D-115): same makes both legs self_transfer; different
+    removes the pair for good. Only a pair the engine proposed (or one already answered).
+    One leg can be "same" with one other leg only."""
+    if verdict not in VERDICTS:
+        raise ActionError("invalid", "verdict must be same or different")
+    a, b = sorted((txn_a, txn_b))
+    if a == b:
+        raise ActionError("invalid", "a transfer needs two different payments")
+    for i in (a, b):
+        _transaction(session, owner_id, i)
+    kind = "self_transfer"
+    proposed = session.scalar(
+        select(TxnLink.id).where(
+            TxnLink.owner_id == owner_id, TxnLink.kind == kind, TxnLink.txn_a == a,
+            TxnLink.txn_b == b,
+        )
+    )  # fmt: skip
+    d = OwnerLinkDecision
+    row = session.scalar(
+        select(d).where(d.owner_id == owner_id, d.kind == kind, d.txn_a == a, d.txn_b == b)
+    )
+    if proposed is None and row is None:
+        raise ActionError("not_found", "these two payments are not a possible transfer")
+    if verdict == "same":
+        other = session.scalar(
+            select(d.id).where(
+                d.owner_id == owner_id,
+                d.kind == kind,
+                d.verdict == "same",
+                (d.txn_a.in_((a, b))) | (d.txn_b.in_((a, b))),
+                ~((d.txn_a == a) & (d.txn_b == b)),
+            )
+        )
+        if other is not None:
+            raise ActionError("conflict", "one of these payments is already a transfer")
+    if row is None:
+        row = OwnerLinkDecision(owner_id=owner_id, kind=kind, txn_a=a, txn_b=b)
+        session.add(row)
+    row.verdict, row.decided_at, row.source = verdict, datetime.now(UTC), source
+    session.flush()
+    return a, b
+
+
 # The checked transaction, for a route that must fail before writing anything else.
 transaction_of = _transaction
 
@@ -365,7 +414,7 @@ def name_person(
     """The owner's name for the person of this transaction, shown everywhere it appears."""
     name = clean_name(name, "a name")
     party = party_for(session, owner_id, txn_id, source)
-    party.display_name = name
+    party.display_name, party.name_source = name, source
     session.flush()
     return party
 
@@ -375,7 +424,7 @@ def clear_name(session: Session, owner_id: uuid.UUID, txn_id: int) -> None:
     party = session.get(Party, d.party_id) if d.party_id is not None else None
     if party is None or party.display_name is None:
         raise ActionError("not_found", "this person has no name to clear")
-    party.display_name = None
+    party.display_name = party.name_source = None
     session.flush()
 
 
@@ -426,11 +475,12 @@ def join_person(
     for row in moving:
         row.ended_at = now
     if old is not None:
-        target.display_name = target.display_name or old.display_name
+        if not target.display_name and old.display_name:
+            target.display_name, target.name_source = old.display_name, old.name_source
         target.category = target.category or old.category
     if not target.display_name and target.source != "file" and into.display_name:
         # "Same as Rohit V": the person keeps the name it is shown by (the owner's words).
-        target.display_name = into.display_name[:MAX_NAME]
+        target.display_name, target.name_source = into.display_name[:MAX_NAME], source
     session.flush()
     for text in texts:
         session.add(PartyText(owner_id=owner_id, party_id=target.id, text=text, source=source))

@@ -33,9 +33,13 @@ candidate changes no role and no total.
              DUP_same_amount    same bank, account, direction and amount inside 10 minutes,
                                 not two different references: always a candidate
              DUP_legacy         a pair recorded at import that no rule found: candidate
-  self_transfer: ST_pair        debit on one own account, credit on another, same amount,
-                                24 hours. Unique and one leg names the other's account:
-                                linked, and both legs are self_transfer. Else candidate
+  self_transfer: ST_reference   debit on one own account, credit on another, same amount
+                                and the same 12-digit UPI/IMPS reference, 24 hours. Unique:
+                                linked (the shared reference proves it, D-115). Else candidate
+                 ST_pair        debit on one own account, credit on another, same amount, no
+                                shared reference. One leg names the other's account (owner
+                                text), 24 hours, unique: linked. Else, within 30 minutes:
+                                a candidate the owner answers ("Moved between your accounts?")
   refund: RF_same_amount        refund and an earlier purchase on the same card or account,
                                 same amount, 30 days. Unique and same merchant: linked
           RF_partial            larger purchase, same merchant: always a candidate
@@ -56,7 +60,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from app.engine.merchant import MERCHANT_VERSION, Merchant, channel_for, normalise_merchant, parts
 
-RECONCILE_VERSION = "reconcile-1.4.0"
+RECONCILE_VERSION = "reconcile-1.5.0"
 VERSIONS = {"merchant": MERCHANT_VERSION, "reconcile": RECONCILE_VERSION}
 
 ROLES = (
@@ -87,6 +91,7 @@ RULES = (
     "OWNER_role",
     "OWNER_link",
     "DUP_autopay_card",
+    "ST_reference",
     "ST_pair",
     "FD_channel",
     "FD_own_text",
@@ -111,6 +116,7 @@ LINK_RULES = (
     "DUP_autopay_card",
     "DUP_same_amount",
     "DUP_legacy",
+    "ST_reference",
     "ST_pair",
     "RF_same_amount",
     "RF_partial",
@@ -123,6 +129,7 @@ LINK_REASONS = (
     "same_amount",  # DUP_same_amount
     "recorded_at_import",  # DUP_legacy
     "different_references",  # DUP_legacy, the two sides carry different references
+    "same_reference",  # ST_reference, linked
     "names_partner_account",  # ST_pair, linked
     "no_own_text",  # ST_pair, neither leg names the other's account
     "same_merchant",  # RF_same_amount, linked
@@ -144,8 +151,15 @@ TRACKED_WINDOW = timedelta(days=60)
 DUP_LINK_WINDOW = timedelta(minutes=10)
 DUP_CANDIDATE_WINDOW = timedelta(hours=24)
 TRANSFER_WINDOW = timedelta(hours=24)
+# Two own accounts, same amount, no shared reference and no owner text: only this close is
+# a transfer the owner is asked about (D-115).
+TRANSFER_CANDIDATE_WINDOW = timedelta(minutes=30)
 # Channels whose last 4 is a bank account (not a card): money can arrive there.
 ACCOUNT_CHANNELS = frozenset({"upi", "netbanking", "neft", "imps", "nach", "emi", "cash"})
+# Banks whose every money template with a last 4 is about a bank account, also without a
+# channel ("Your A/C X1234 has a credit…"): SBI has no card template (D-108, D-115).
+ACCOUNT_ONLY_BANKS = frozenset({"SBI"})
+_REF12 = re.compile(r"(?<!\d)\d{12}(?!\d)")
 FD_WINDOW = timedelta(days=3)
 REFUND_WINDOW = timedelta(days=30)
 
@@ -659,8 +673,9 @@ def _transfers(
     """Design B2 S2: the second leg of a transfer between two own accounts.
 
     Own accounts are the owner's list plus the inferred ones (D-077): every bank account
-    the messages themselves are about. Only a leg that names the other leg's account (owner
-    text) links; any other unique pair is a candidate.
+    the messages themselves are about. A shared 12-digit reference links (ST_reference); a
+    leg that names the other leg's account (owner text) links (ST_pair); any other pair
+    within 30 minutes is a candidate. Two different references are two payments.
     """
     account_of = _account_index(accounts)
     inferred = inferred_accounts(rows)
@@ -677,6 +692,7 @@ def _transfers(
         if open_role and t.id not in run.duplicate_of:
             on[t.id] = account
     legs = [t for t in rows if t.id in on]
+    by_reference: dict[Pair, tuple[str, str]] = {}
     compatible: dict[Pair, tuple[str, str]] = {}
     for d, c in _close_pairs(
         [t for t in legs if t.direction == "debit"],
@@ -684,31 +700,61 @@ def _transfers(
         lambda t: t.amount_paise,
         TRANSFER_WINDOW,
     ):
-        if on[d.id] != on[c.id]:
-            named = ("owner", points_at.get(d.id)) == on[c.id] or (
-                "owner",
-                points_at.get(c.id),
-            ) == on[d.id]
-            compatible[_pair(d, c)] = (
-                ("linked", "names_partner_account") if named else ("candidate", "no_own_text")
-            )
-    _emit(run, "self_transfer", "ST_pair", compatible)
+        if on[d.id] == on[c.id]:
+            continue
+        ref_d, ref_c = upi_reference(d.reference), upi_reference(c.reference)
+        if ref_d and ref_d == ref_c:
+            by_reference[_pair(d, c)] = ("linked", "same_reference")
+            continue
+        if ref_d and ref_c:  # two different references: two payments
+            continue
+        named = ("owner", points_at.get(d.id)) == on[c.id] or (
+            "owner",
+            points_at.get(c.id),
+        ) == on[d.id]
+        if named:
+            compatible[_pair(d, c)] = ("linked", "names_partner_account")
+        elif abs(d.txn_time_utc - c.txn_time_utc) <= TRANSFER_CANDIDATE_WINDOW:
+            compatible[_pair(d, c)] = ("candidate", "no_own_text")
+    _emit(run, "self_transfer", "ST_reference", by_reference)
+    proven = {i for pair in by_reference for i in pair}  # a leg with a shared reference
+    _emit(
+        run,
+        "self_transfer",
+        "ST_pair",
+        {p: v for p, v in compatible.items() if not set(p) & proven},
+    )
     _owner_only(run, "self_transfer")
     for link in run.linked("self_transfer"):
-        rule = "ST_pair" if link.decided_by == "engine" else "OWNER_link"
+        if link.decided_by == "owner":
+            match = ("self_transfer", "OWNER_link", "owner")
+        elif link.rule == "ST_reference":
+            match = ("self_transfer", "ST_reference", "engine")
+        else:
+            match = ("self_transfer", "ST_pair", "owner")
         for i in (link.txn_a, link.txn_b):
             if run.role(i) != "self_transfer":
-                run.put(i, ("self_transfer", rule, "owner"))
+                run.put(i, match)
+
+
+def upi_reference(reference: str | None) -> str | None:
+    """The 12-digit UPI or IMPS reference in a reference text, when it holds exactly one."""
+    found = _REF12.findall(reference or "")
+    return found[0] if len(found) == 1 else None
 
 
 def inferred_accounts(txns: Iterable[Txn]) -> frozenset[tuple[str, str]]:
     """(bank, last 4) of every bank account a message is about: the owner's own (D-077).
 
     A bank SMS reports a movement on the owner's account, so its last 4 is the owner's.
-    Card channels are left out: a card cannot receive a transfer.
+    Card channels are left out: a card cannot receive a transfer. For SBI every money
+    template with a last 4 is about the account, also those without a channel (D-115).
     """
     return frozenset(
-        (t.bank, t.account_last4) for t in txns if t.account_last4 and t.channel in ACCOUNT_CHANNELS
+        (t.bank, t.account_last4)
+        for t in txns
+        if t.account_last4
+        and (t.channel in ACCOUNT_CHANNELS or (t.channel is None and t.bank in ACCOUNT_ONLY_BANKS))
     )
 
 

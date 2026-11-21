@@ -75,6 +75,8 @@ ACCOUNT_KINDS = ("bank_account", "credit_card", "wallet", "fd")
 IDENTIFIER_KINDS = ("last4", "text")
 PARTY_KINDS = ("person", "business", "unsure")  # unsure: no role answer yet (D-096)
 OWNER_SOURCES = ("file", "terminal", "app")  # who wrote an owner row
+# Who gave a party its display name (D-116): an owner source, or the bank statement.
+NAME_SOURCES = (*OWNER_SOURCES, "statement")
 OWNER_LINK_KINDS = ("duplicate", "self_transfer", "card_bill", "refund", "fd")
 VERDICTS = ("same", "different")
 OWNER_ROLES = (
@@ -306,6 +308,10 @@ class Party(Base):
         UniqueConstraint("owner_id", "label", name="uq_party_label"),
         CheckConstraint(_in("kind", PARTY_KINDS), name="ck_party_kind"),
         CheckConstraint(_in("source", OWNER_SOURCES), name="ck_party_source"),
+        CheckConstraint(
+            "name_source IS NULL OR " + _in("name_source", NAME_SOURCES),
+            name="ck_party_name_source",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigId, primary_key=True)
@@ -322,6 +328,9 @@ class Party(Base):
     # When the owner last answered Friend or Family for this party (4F-B); null: never, or
     # before 4F-B. payback-audit never calls an answered party silent.
     answered_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    # Who gave display_name (D-116): app, terminal, file or statement; null: no name, or a
+    # name from before 4A. statement-names never overwrites a name the owner gave.
+    name_source: Mapped[str | None] = mapped_column(String(10))
 
 
 class PartyText(Base):

@@ -15,6 +15,7 @@ from app.engine.reconcile import (
     Result,
     Txn,
     derive,
+    inferred_accounts,
     totals,
 )
 from tests.test_reconcile import DAY, OWNER, T0, credit, txn
@@ -334,7 +335,9 @@ def out_of_hdfc(id: int = 1, party: str | None = "TEST OWNER", **fields) -> Txn:
     return txn(id, party=party, channel="netbanking", **fields)  # HDFC 0001; the text names SBI
 
 
-def into_sbi(id: int = 2, party: str | None = "test.other@okaxis", at=T0 + HOUR, **fields) -> Txn:
+def into_sbi(
+    id: int = 2, party: str | None = "test.other@okaxis", at=T0 + 10 * MIN, **fields
+) -> Txn:
     values = {"bank": "SBI", "account_last4": "0003", "txn_time_utc": at}
     return credit(party, id=id, **(values | fields))
 
@@ -431,6 +434,101 @@ def test_owner_decides_a_self_transfer_pair() -> None:
     }
     fixed = OwnerData(roles={1: "spend"}, links={("self_transfer", 1, 2): "same"})
     assert roles(derive(txns, fixed)) == {1: "spend", 2: "self_transfer"}  # a role decision wins
+
+
+# --- own-account transfers with no owner list: reference and time (4A, D-115) ------
+
+
+REF = "312345678901"
+
+
+def hdfc_out(id: int = 1, ref: str | None = REF, **fields) -> Txn:
+    """A UPI debit on HDFC 0001 to a name: alone it is spend."""
+    return txn(id, party="TEST PERSON A", **({"amount_paise": 500_000, "reference": ref} | fields))
+
+
+def sbi_in(id: int = 2, ref: str | None = REF, at=T0 + 5 * MIN, **fields) -> Txn:
+    """An SBI credit (S04: no channel) on 0003 from a name: alone it is uncertain."""
+    values = {"bank": "SBI", "account_last4": "0003", "channel": None, "txn_time_utc": at,
+              "amount_paise": 500_000, "reference": ref}  # fmt: skip
+    return credit("TEST PERSON A", id=id, **(values | fields))
+
+
+def transfer_links(result) -> list[tuple]:
+    return [(x.txn_a, x.txn_b, x.status, x.rule, x.reason) for x in result.links
+            if x.kind == "self_transfer"]  # fmt: skip
+
+
+def test_a_shared_reference_links_two_own_accounts_automatically() -> None:
+    txns = [hdfc_out(), sbi_in(at=T0 + 20 * HOUR)]  # SBI learned from its own message (3.1)
+    result = derive(txns)
+    assert transfer_links(result) == [(1, 2, "linked", "ST_reference", "same_reference")]
+    assert {(d.role, d.rule, d.basis) for d in result.roles.values()} == {
+        ("self_transfer", "ST_reference", "engine")
+    }
+    t = totals(txns, result.roles, *EVER)
+    assert (t.spent_paise, t.paid_back_paise, t.to_confirm_paise) == (0, 0, 0)
+    # The reference inside a longer text counts; an SBI "UPI/<ref>/…" path too.
+    path = derive([hdfc_out(), sbi_in(ref=f"UPI/{REF}/X0003/TEST")])
+    assert transfer_links(path)[0][2:] == ("linked", "ST_reference", "same_reference")
+
+
+def test_no_shared_reference_within_30_minutes_is_only_a_candidate() -> None:
+    result = derive([hdfc_out(ref=None), sbi_in(ref=None, at=T0 + 30 * MIN)])
+    assert transfer_links(result) == [(1, 2, "candidate", "ST_pair", "no_own_text")]
+    assert roles(result) == {1: "spend", 2: "uncertain"}  # nothing changes until the owner says
+    yes = derive([hdfc_out(ref=None), sbi_in(ref=None)], links({("self_transfer", 1, 2): "same"}))
+    assert roles(yes) == {1: "self_transfer", 2: "self_transfer"}
+    no = derive(
+        [hdfc_out(ref=None), sbi_in(ref=None)], links({("self_transfer", 1, 2): "different"})
+    )
+    assert transfer_links(no) == [] and roles(no) == {1: "spend", 2: "uncertain"}
+
+
+@pytest.mark.parametrize(
+    ("credit_leg", "why"),
+    [
+        (sbi_in(ref=None, amount_paise=499_999), "different amount"),
+        (sbi_in(ref=None, at=T0 + 31 * MIN), "31 minutes"),
+        (sbi_in(ref=None, at=T0 - 31 * MIN), "31 minutes before"),
+        (sbi_in(ref=None, bank="HDFC", account_last4="0001", channel="upi"), "same account"),
+        (sbi_in(ref="312345678902"), "two different references"),
+        (sbi_in(ref=REF, amount_paise=499_999), "same reference, different amount"),
+        (sbi_in(ref=REF, at=T0 + 25 * HOUR), "same reference, more than a day"),
+        (sbi_in(ref=None, channel="debit_card"), "a card is not an account"),
+    ],
+)
+def test_transfer_near_misses_change_nothing(credit_leg: Txn, why: str) -> None:
+    debit = hdfc_out(ref=None if credit_leg.reference is None else REF)
+    result = derive([debit, credit_leg])
+    assert transfer_links(result) == [], why
+    assert roles(result) == {**roles(derive([debit])), **roles(derive([credit_leg]))}
+
+
+def test_two_candidates_for_one_debit_stay_candidates() -> None:
+    txns = [hdfc_out(ref=None), sbi_in(2, ref=None), sbi_in(3, ref=None, at=T0 + 25 * MIN)]
+    assert transfer_links(derive(txns)) == [
+        (1, 2, "candidate", "ST_pair", "no_own_text"),
+        (1, 3, "candidate", "ST_pair", "no_own_text"),
+    ]
+    # Two credits carrying the debit's reference: never linked, both candidates.
+    shared = derive([hdfc_out(), sbi_in(2), sbi_in(3, at=T0 + 25 * MIN)])
+    assert [x[2:] for x in transfer_links(shared)] == [
+        ("candidate", "ST_reference", "several_partners"),
+        ("candidate", "ST_reference", "several_partners"),
+    ]
+    assert roles(shared) == {1: "spend", 2: "uncertain", 3: "uncertain"}
+
+
+def test_a_reference_link_takes_the_leg_out_of_time_candidates() -> None:
+    txns = [hdfc_out(), sbi_in(2), sbi_in(3, ref=None, at=T0 + 10 * MIN)]
+    assert transfer_links(derive(txns)) == [(1, 2, "linked", "ST_reference", "same_reference")]
+
+
+def test_sbi_accounts_are_learned_from_sbi_messages() -> None:
+    sbi = sbi_in(ref=None)
+    assert ("SBI", "0003") in inferred_accounts([sbi])
+    assert ("HDFC", "0001") not in inferred_accounts([hdfc_out(channel=None)])  # HDFC: channel
 
 
 def test_one_account_number_under_two_own_accounts_is_refused() -> None:
