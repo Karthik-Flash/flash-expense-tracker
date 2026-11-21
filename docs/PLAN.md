@@ -198,10 +198,15 @@ PDF, into `D:\FlashPrivate`.
   category, so Spent never drops because a log is missing; the wallet shows
   cash in hand (withdrawn minus logged); logging works offline through the
   outbox. Designed with the planner first.
-- [ ] 4A Statement check: a PRIVATE CLI that reads a NetBanking statement
-  file from `D:\FlashPrivate` and prints only count and rupee differences
-  per IST month, with likely causes. The owner runs it on one normal and one
-  messy month.
+- [x] 4A Money correctness (21 Nov 2026, D-114 to D-116): `stmt-hdfc-1.0.0`
+  reads the HDFC Delimited statement (balance check); `statement-check`
+  compares it with the app per IST month (counts and rupee sums SAFE,
+  likely causes, Spent/Net with statement-only debits); own-account
+  transfers: SBI accounts learned, a shared 12-digit reference links
+  automatically (`reconcile-1.5.0`), other pairs within 30 minutes are asked
+  in To-do; `statement-names` gives masked senders the statement's payer
+  name, owner-approved (`--apply`), migration `0012`. The owner runs it on
+  one normal and one messy month. Next: Phase 5.
 - [ ] 4D Multi-month analysis.
 
 ## Phase 5: Pilot-ready Android app (8-day target)

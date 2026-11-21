@@ -383,7 +383,8 @@ include both ends.
 | `duplicate` | `DUP_autopay_card` | Two debits, same bank, card last 4 and amount; one `e_mandate`, one `debit_card` or `credit_card`; not two different brands; at most 24 hours apart | Linked (`unique_10min`) at most 10 minutes apart; candidate (`within_24h`) beyond | The earliest (then lowest id) keeps its role; the other is `duplicate` |
 | `duplicate` | `DUP_same_amount` | Same bank, `account_last4`, direction and amount, at most 10 minutes apart, not a pair of the rule above, and not two different references (D-069) | Always a candidate (`same_amount`) | none |
 | `duplicate` | `DUP_legacy` | A pair from `legacy_pairs`, both active, that no rule found | Always a candidate: `different_references` when both sides carry a reference and they differ, else `recorded_at_import` | none |
-| `self_transfer` | `ST_pair` | A debit and a credit of the same amount on two different listed own bank accounts or wallets, at most 24 hours apart; both legs unexplained or `ST_own_text` | Linked (`names_partner_account`) when one leg's text names the account the other leg is on; else candidate (`no_own_text`) | Both legs `self_transfer` (rule `ST_pair`, basis owner) |
+| `self_transfer` | `ST_reference` (`reconcile-1.5.0`, D-115) | A debit and a credit of the same amount on two different own bank accounts (listed or inferred), carrying the same 12-digit UPI/IMPS reference (`upi_reference`: the reference text holds exactly one), at most 24 hours apart; both legs unexplained or `ST_own_text` | Linked (`same_reference`): the shared reference proves it | Both legs `self_transfer` (rule `ST_reference`, basis engine) |
+| `self_transfer` | `ST_pair` | As above with no shared reference (two different references are two payments) | Linked (`names_partner_account`) when one leg's text names the account the other leg is on, at most 24 hours apart; else, at most 30 minutes apart, candidate (`no_own_text`): the owner answers "Moved between your accounts?" | Both legs `self_transfer` (rule `ST_pair`, basis owner) |
 | `refund` | `RF_same_amount` | A refund and a purchase (role `spend` or `card_bill_counted`) of the same amount, same bank and `account_last4`, purchase at most 30 days before | Linked (`same_merchant`) when the merchant keys are equal; else candidate (`different_merchant`) | none: a refund is role `refund`, linked or not |
 | `refund` | `RF_partial` | As above with a larger purchase and equal merchant keys; only for a refund with no full-amount pair and no owner link | Always a candidate (`partial`) | none |
 | `fd` | `FD_pair` | An `FD_channel` credit and an unexplained credit, same bank and amount, at most 3 days apart | Always a candidate (`second_credit`) | none |
@@ -519,8 +520,37 @@ else by merchant key. Nothing changes for data without unsure parties.
   owner-decided) and status (`to_confirm` while any credit is uncertain or an
   engine-guessed payback). Answers live in `app/pipeline/owner_actions.py`.
 - **Inferred own accounts** (D-077): `inferred_accounts(txns)` is every
-  (bank, last 4) of a message on a bank account channel. The self-transfer
-  pair rule uses them next to the owner's list; such a pair is a candidate
+  (bank, last 4) of a message on a bank account channel. Since
+  `reconcile-1.5.0` (D-115) an SBI message with a last 4 counts too when it
+  has no channel ("Your A/C X1234 has a credit…"): SBI has no card template.
+  The self-transfer rules use them next to the owner's list: a shared
+  12-digit reference links; otherwise a pair is a candidate (30 minutes)
   unless an owner text names the account.
+
+## Statement reader and check (`stmt-hdfc-1.0.0`, D-114)
+
+- `app/engine/statement_hdfc.py` reads an HDFC NetBanking "Delimited"
+  statement (plain text, comma-separated, padded fields; header Date,
+  Narration, Value Dat, Debit Amount, Credit Amount, Chq/Ref Number, Closing
+  Balance, matched trimmed and case-insensitively). A row is read from the
+  right: the last five fields are fixed, the first is the date (dd/mm/yy,
+  an IST day), the rest is the narration, which may hold commas. Lines
+  before the header and lines that are not rows are skipped. Each row gets
+  its channel (upi, neft, imps, rtgs, atm, pos, nach, interest, charges,
+  netbanking, cash, other), and for UPI the name and UPI ID, and the
+  12-digit reference (one in the narration, else the reference field after
+  leading zeros). `check_balances` counts rows whose closing balance is not
+  the previous one plus credit minus debit: a bad read shows there first.
+  Pure, stdlib only; meant to be reused by the Phase 6 statement import.
+- `app/engine/statement_check.py` matches statement rows to the app's HDFC
+  rows (any role but duplicate, the statement's IST days): the same
+  reference and direction first, then the same amount and direction on the
+  same day, then a day apart; never one row twice. Per IST month: totals of
+  both sides, matched (by reference / by amount and day), statement-only,
+  app-only, amount mismatches, and every unmatched row's likely cause:
+  `no_sms`, `month_edge`, `foreign_currency`, `reversed_or_failed`,
+  `duplicate_alert`, `card_or_other_account`, `unknown` (rules in the
+  module docstring). `app/pipeline/statement.py` reads the app side and the
+  month's Spent and Paid back as stored.
 - `reconcile-stats` adds "inferred own accounts" and "self-transfers by
   basis". `credit-review [--list]`: owner only, terminal only.

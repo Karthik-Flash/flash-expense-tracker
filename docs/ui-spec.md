@@ -341,6 +341,22 @@ wrap under their terms and buttons grow.
   Counted line shows a waiting choice with "Saved on phone · syncing" and Undo.
 - Offline, all three wait in the outbox like every other answer (D-091).
 
+## Moved between your accounts? (4A, D-115)
+
+- **To-do section** "Moved between your accounts?", after "Saved on phone"
+  and before "Check these payments": one card per pair the engine is not
+  sure of (the same amount left one of the owner's accounts and reached
+  another within 30 minutes, with no shared reference). The card: "HDFC to
+  SBI" and the amount (paise only when not zero); under it "Tue 17 Nov,
+  10:00 out · 10:12 in"; buttons "Yes, my accounts" and "No"; a muted
+  line "Yes: neither counts as spending or money in."
+- An answer leaves the list at once, waits under "Saved on phone" ("Moved
+  between my accounts" or "Not a transfer") and goes through the outbox,
+  offline too. Totals change only when the server's numbers arrive. The To-do
+  badge counts these cards.
+- A pair with a shared 12-digit reference is never asked: it is a transfer
+  already.
+
 ## Label names
 
 Trimmed (inner runs of spaces become one), 1 to 30 characters, and refused

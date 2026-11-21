@@ -1349,3 +1349,61 @@ screen width. Every control is at least 44 px; every text colour meets AA
 in both themes; every two category colours are at least 10 apart
 (CIEDE2000; eight nudged by 0.4 to 3.7). `src/colours.test.ts` checks the
 colour rules.
+
+## D-114 Statement reader and statement check (2026-11-21)
+
+`stmt-hdfc-1.0.0` (`app/engine/statement_hdfc.py`, pure, stdlib) reads the
+HDFC NetBanking "Delimited" statement: header matched trimmed and
+case-insensitively, each row read from the right (the last five fields are
+fixed; a narration may hold commas), dd/mm/yy dates as IST days, amounts in
+paise, preamble and footer skipped, an overdrawn balance with a minus sign.
+Narration parts: channel; for UPI the name and UPI ID; the 12-digit
+reference when exactly one is in the narration, else in the reference field
+after leading zeros. The closing balances are checked row by row; breaks are
+counted and printed first. `statement-check --file …` compares the
+statement with the app's HDFC rows of the statement's days (every role but
+duplicate): the same reference and direction first, then the same amount
+and direction on the same day, then a day apart, never one row twice. Per
+IST month it prints, SAFE to paste: both sides' debits and credits (count,
+rupees), matched (by reference, by amount and day), statement-only and
+app-only (count, rupees), amount mismatches (count, rupee difference), the
+unmatched rows by likely cause (`no_sms`, `month_edge`, `foreign_currency`,
+`reversed_or_failed`, `duplicate_alert`, `card_or_other_account`,
+`unknown`), and Spent, Paid back and Net as the app shows them next to the
+same with statement-only debits counted as spend (reversals and month edges
+left out; statement-only credits never lower Net). `--details` lists the
+unmatched rows: PRIVATE, terminal only. The statement is never stored.
+
+## D-115 Own-account transfers: a shared reference is automatic, everything else is asked (2026-11-21)
+
+`reconcile-1.5.0`. SBI accounts are learned from SBI messages like HDFC's
+(D-077); an SBI message with a last 4 and no channel counts, as every SBI
+template is about the account. A debit on one own account and a credit on
+another, same amount, carrying the same 12-digit UPI/IMPS reference, within
+24 hours, unique: linked (`ST_reference`, reason `same_reference`), both legs
+`self_transfer`. Anything else is never automatic: the same amount on two
+own accounts within 30 minutes, no shared reference (two different
+references are two payments), is a candidate (`ST_pair`, `no_own_text`), and
+the owner answers in To-do "Moved between your accounts?": Yes is an owner
+link "same" (both legs `self_transfer`), No is "different" (the pair is gone
+for good). `PUT /api/v1/transfers/{debit}/{credit}` through the outbox; a leg
+can be "same" with one other leg only. Two possible partners stay
+candidates. An owner text that names the other account still links within
+24 hours, as before. No migration (links have no rule constraint).
+
+## D-116 Statement names are owner-approved display names (2026-11-21)
+
+`statement-names --file …` finds, for each HDFC UPI credit whose sender is a
+bare or masked UPI ID, the statement row with the same 12-digit reference
+and takes the payer name from its narration (a usable name: letters, at most
+30 characters). Default: counts only (SAFE): credits matched, names found,
+parties already named, conflicts, parties to name, names two parties would
+share. `--show` lists the proposed pairs (PRIVATE, terminal only).
+`--apply`, after the planner's OK, sets the name as owner data only on a
+party with no display name (a party is made for the sender when there is
+none, as "Name" does); never over a name the owner or the file gave; never
+joins parties (two parties with one name are reported; the owner can use
+Same as…); then recomputes. Migration `0012` adds `parties.name_source`
+(app, terminal, file or statement; the app and terminal set it with every
+name from now on), so statement names stay told apart and nothing is
+overwritten; the party's texts and history are untouched.
