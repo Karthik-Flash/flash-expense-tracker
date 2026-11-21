@@ -34,7 +34,7 @@ export function OpSheet({ op, onClose }: { op: Op; onClose: () => void }) {
 export function UnsavedSheet({ onClose }: { onClose: () => void }) {
   const failed = failedOps(useOutbox().ops)
   return (
-    <Sheet title="Couldn't save" onClose={onClose}>
+    <Sheet title="Not saved" onClose={onClose}>
       {failed.length === 0 ? (
         <Empty>Everything is saved.</Empty>
       ) : (

@@ -483,7 +483,9 @@ def set_label(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: Label
         label_id = body.label_id
         if body.new_label is not None:
             owner_actions.transaction_of(session, owner, txn_id)  # a missing one: 404 first
-            label_id = owner_actions.create_label(session, owner, body.new_label, "app").id
+            # A label made offline and picked again before it synced (D-110): the same name
+            # finds the label the earlier action made.
+            label_id = owner_actions.label_named(session, owner, body.new_label, "app").id
         owner_actions.set_label(session, owner, txn_id, label_id, "app")
         return {"id": txn_id, "label_id": label_id}
 

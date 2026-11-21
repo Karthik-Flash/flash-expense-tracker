@@ -204,7 +204,7 @@ test('a 4xx fails that op only; Retry keeps the op_id, Discard drops it', async 
   assert.deepEqual(states(), ['failed', 'confirmed', 'failed'])
   assert.equal(syncState().ops[0].last_error, 'rejected')
   assert.equal(syncState().ops[0].message, 'TEST 404')
-  assert.deepEqual(syncLine(syncState().ops, false).failed, "2 couldn't save")
+  assert.deepEqual(syncLine(syncState().ops, false).failed, '2 not saved')
   await retry(syncState().ops[0])
   await drain()
   assert.equal(syncState().ops[0].op_id, first.op_id)

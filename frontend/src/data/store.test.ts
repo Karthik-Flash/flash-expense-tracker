@@ -195,8 +195,8 @@ test('freshness in IST', () => {
   assert.equal(agoPhrase(now - 20_000, now), 'just now')
   assert.equal(agoPhrase(now - 5 * 60_000, now), '5 min ago')
   assert.equal(agoPhrase(now - 2 * 3600_000 - 60_000, now), '2 h ago')
-  assert.equal(agoPhrase(Date.parse('2026-11-18T16:10:00Z'), now), 'yesterday 21:40')
-  assert.equal(agoPhrase(Date.parse('2026-11-16T16:10:00Z'), now), 'Mon 16 Nov 21:40')
+  assert.equal(agoPhrase(Date.parse('2026-11-18T16:10:00Z'), now), 'yesterday, 21:40')
+  assert.equal(agoPhrase(Date.parse('2026-11-16T16:10:00Z'), now), 'Mon 16 Nov, 21:40')
   // 00:20 IST on the 19th is today in IST, though still the 18th in UTC.
   assert.equal(agoPhrase(Date.parse('2026-11-18T18:50:00Z'), now), '15 h ago')
   assert.equal(freshnessLine({ fetchedAt: null, refreshing: false, failed: false }), '')
@@ -208,7 +208,7 @@ test('Speed sheet rows from stored timings', () => {
     { at: Date.parse('2026-11-18T16:10:00Z'), local_ms: null, fresh_ms: null, request_ms: 90000, result: 'timeout', bytes: null, cold: true },
   ])
   assert.deepEqual(rows, [
-    { when: 'Thu 19 Nov 08:30', boot: 'local copy', local: '412 ms', fresh: '3.3 s', result: '200' },
-    { when: 'Wed 18 Nov 21:40', boot: '–', local: '–', fresh: '–', result: 'timeout, cold' },
+    { when: 'Thu 19 Nov, 08:30', boot: 'local copy', local: '412 ms', fresh: '3.3 s', result: '200' },
+    { when: 'Wed 18 Nov, 21:40', boot: '–', local: '–', fresh: '–', result: 'timeout, cold' },
   ])
 })

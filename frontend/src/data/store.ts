@@ -7,7 +7,7 @@ import { useSyncExternalStore } from 'react'
 import type { Api } from '../api/client.ts'
 import { bootPath, clearBoot } from '../boot.ts'
 import { SCHEMA_VERSION, type Person, type Snapshot } from '../api/types.ts'
-import { dayLabel, timeLabel, today } from '../lib/dates.ts'
+import { istTime, timeLabel, today } from '../lib/dates.ts'
 import { addTiming, dropSnapshot, readLocal, saveLocal, touchLocal, wipeLocal, type Meta, type Timing } from './local.ts'
 
 const REFRESH_EVERY_MS = 5 * 60_000
@@ -275,15 +275,15 @@ export function usePeople(): { people: Person[]; find: (key: string | null | und
   return { people, find: (key) => (key ? people.find((p) => p.key === key) : undefined) }
 }
 
-/** "just now", "5 min ago", "2 h ago", "yesterday 21:40", "Tue 17 Nov 21:40" (IST). */
+/** "just now", "5 min ago", "2 h ago", "yesterday, 21:40", "Tue 17 Nov, 21:40" (IST). */
 export function agoPhrase(then: number, now = Date.now()): string {
   const minutes = Math.floor((now - then) / 60_000)
   if (minutes < 1) return 'just now'
   if (minutes < 60) return `${minutes} min ago`
   if (today(then) === today(now)) return `${Math.floor(minutes / 60)} h ago`
   const iso = new Date(then).toISOString()
-  if (today(then) === today(now - 86_400_000)) return `yesterday ${timeLabel(iso)}`
-  return `${dayLabel(iso)} ${timeLabel(iso)}`
+  if (today(then) === today(now - 86_400_000)) return `yesterday, ${timeLabel(iso)}`
+  return istTime(then)
 }
 
 /** The muted line under the month: how fresh the numbers are. `signIn`: the failure is a
@@ -298,9 +298,8 @@ export function freshnessLine(d: Pick<DataState, 'fetchedAt' | 'refreshing' | 'f
 /** The Speed sheet's table: time (IST), boot path, phone copy in ms, fresh data in s, result. */
 export function speedRows(timings: Timing[]): { when: string; boot: string; local: string; fresh: string; result: string }[] {
   return timings.map((t) => {
-    const iso = new Date(t.at).toISOString()
     return {
-      when: `${dayLabel(iso)} ${timeLabel(iso)}`,
+      when: istTime(t.at),
       boot: t.boot ?? '–',
       local: t.local_ms === null ? '–' : `${t.local_ms} ms`,
       fresh: t.fresh_ms === null ? '–' : `${(t.fresh_ms / 1000).toFixed(1)} s`,

@@ -40,3 +40,4 @@ dev-dist/
 Thumbs.db
 .claude/settings.local.json
 dist-xo/
+screens-out/

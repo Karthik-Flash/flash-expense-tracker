@@ -162,7 +162,16 @@ def test_new_label_in_one_write(client, data, db_engine) -> None:
     assert made.status_code == 200
     item = next(x for x in all_transactions(client) if x["id"] == t["id"])
     assert item["label"]["name"] == "Test Goa"
-    assert send(client, "PUT", path, {"new_label": "test goa"}, uuid.uuid4()).status_code == 409
+    # D-110: a label made offline and picked again before it synced: the same name, any
+    # case, finds the label the first write made; no second label, no conflict.
+    other = next(x for x in all_transactions(client) if x["id"] != t["id"])
+    again = f"/api/v1/transactions/{other['id']}/label"
+    assert send(client, "PUT", again, {"new_label": "test  goa"}, uuid.uuid4()).status_code == 200
+    labelled = {x["id"]: x["label"] for x in all_transactions(client)}
+    assert labelled[other["id"]] == labelled[t["id"]] == item["label"]
+    assert count(db_engine, Label) == 1
+    created = send(client, "POST", "/api/v1/labels", {"name": "test goa"}, uuid.uuid4())
+    assert created.status_code == 409  # making a label of a taken name is still a conflict
     assert send(client, "PUT", path, {"label_id": 1, "new_label": "X"}).status_code == 422
     assert send(client, "PUT", path, {}).status_code == 422
     gone = send(client, "PUT", "/api/v1/transactions/999999/label", {"new_label": "Test Lost"})

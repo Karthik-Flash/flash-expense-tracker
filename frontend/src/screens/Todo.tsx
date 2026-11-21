@@ -1,10 +1,10 @@
 import { useState } from 'react'
 
 import type { Category, Sender, Snapshot, Txn } from '../api/types.ts'
-import { actions, checksView, discard, enqueue, personMark, retry, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
+import { actions, checksView, enqueue, personMark, senderMark, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { dayLabel } from '../lib/dates.ts'
-import { Button, Empty, Header, Loaded, Money, Section } from '../ui.tsx'
+import { Button, CategoryChips, Empty, Header, Loaded, Money, Section } from '../ui.tsx'
 import { seePayments, useNav } from '../state.tsx'
 import { isCredit, nameOf } from './common.ts'
 import { identifiersText, labelName, paymentsText, topCategories } from './derive.ts'
@@ -74,15 +74,7 @@ function WaitingRow({ op }: { op: Op }) {
         <span className="min-w-0 truncate">{op.choice}</span>
         <Pending op={op} />
       </span>
-      {op.state === 'failed' && (
-        <>
-          {op.message && <p className="text-xs text-muted wrap-break-word">{op.message}</p>}
-          <div className="mt-1 flex flex-wrap gap-2">
-            <Button onClick={() => void retry(op)}>Try again</Button>
-            <Button onClick={() => void discard(op)}>Drop this change</Button>
-          </div>
-        </>
-      )}
+      {op.state === 'failed' && op.message && <p className="text-xs text-muted wrap-break-word">{op.message}</p>}
     </div>
   )
 }
@@ -92,9 +84,9 @@ function CheckRow({ t }: { t: Txn }) {
   const item = nameOf(t)
   return (
     <div className="px-4 py-2.5">
-      <div className="flex items-baseline gap-3">
-        <span className="min-w-0 flex-1 truncate">{item}</span>
-        <Money paise={t.amount_paise} credit={isCredit(t)} />
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{item}</span>
+        <Money paise={t.amount_paise} credit={isCredit(t)} exact />
       </div>
       <p className="truncate text-xs text-muted">{dayLabel(t.time_utc)} · Read automatically</p>
       <div className="mt-2 flex flex-wrap gap-2">
@@ -122,12 +114,12 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
   const { ops } = useOutbox()
   const { open } = useNav()
   const person = usePeople().find(s.person_id)
-  const mark = person && personMark(ops, person.key)
+  const mark = (person && personMark(ops, person.key)) || failedOf(senderMark(ops, [s.id]))
   const under = identifiersText(person)
   return (
     <div className="px-4 py-2.5">
-      <div className="flex items-baseline gap-3">
-        <span className="min-w-0 flex-1 truncate">{person ? shownName(ops, person, s.display_name ?? 'Bank transfer in') : (s.display_name ?? 'Bank transfer in')}</span>
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{person ? shownName(ops, person, s.display_name ?? 'Bank transfer in') : (s.display_name ?? 'Bank transfer in')}</span>
         <Money paise={s.total_paise} credit />
       </div>
       {under && <p className="truncate text-xs text-muted">{under}</p>}
@@ -155,6 +147,7 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
           <div className="mt-1 flex flex-wrap gap-x-3">
             {person && (
               <>
+                <button type="button" className={QUIET} onClick={() => open({ person: person.key, act: null })}>Person</button>
                 <button type="button" className={QUIET} onClick={() => open({ person: person.key, act: 'name' })}>Name</button>
                 <button type="button" className={QUIET} onClick={() => open({ person: person.key, act: 'join' })}>Same as…</button>
               </>
@@ -200,39 +193,34 @@ function SenderRow({ s, answered = false }: { s: Sender; answered?: boolean }) {
 
 const QUIET = 'min-h-11 text-sm text-accent'
 
+/** A refused answer stays on its card: "Not saved", with Try again and Discard (4H). */
+const failedOf = (op: Op | undefined) => (op?.state === 'failed' ? op : undefined)
+
 function MerchantRow({ m, cats, chips, who }: { m: Snapshot['todo']['merchants'][number]; cats: Category[]; chips: Category[]; who: string | null }) {
   const when = paymentsText(m.count, m.last_time_utc)
   // "All from" as before: every payment to them, past and future (D-091 outbox).
   const pick = (c: Category) => void enqueue(actions.setCategory({ id: m.txn_id, display_name: m.name }, c, 'merchant', m.name))
+  const failed = useOutbox().ops.filter((o) => o.state === 'failed' && o.targets.merchants?.includes(m.name)).at(-1)
   return (
     <div className="px-4 py-2.5">
-      <div className="flex items-baseline gap-3">
-        <span className="min-w-0 flex-1 truncate">{m.name}</span>
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{m.name}</span>
         <Money paise={m.total_paise} />
       </div>
       <p className="truncate text-xs text-muted">{when}</p>
-      {chips.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-2" role="group" aria-label={`Quick categories for ${m.name}`}>
-          {chips.map((c) => (
-            <Button key={c.slug} onClick={() => pick(c)}>{c.name}</Button>
-          ))}
+      {failed && (
+        <p className="text-sm">
+          {failed.choice} <Pending op={failed} />
+        </p>
+      )}
+      <div className="mt-1.5">
+        <CategoryChips chips={chips} cats={cats} onPick={pick} label={`${m.name}, ${when}`} />
+      </div>
+      {who && (
+        <div className="flex justify-end">
+          <button type="button" className={QUIET} onClick={() => seePayments(who)}>See payments</button>
         </div>
       )}
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <select
-          aria-label={`More categories for ${m.name}, ${when}`}
-          value=""
-          onChange={(e) => {
-            const picked = cats.find((c) => c.slug === e.target.value)
-            if (picked) pick(picked)
-          }}
-          className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-sm"
-        >
-          <option value="">{chips.length ? 'More…' : 'Pick a category'}</option>
-          {cats.filter((c) => c.slug !== 'uncategorised').map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-        </select>
-        {who && <button type="button" className={QUIET} onClick={() => seePayments(who)}>See payments</button>}
-      </div>
     </div>
   )
 }

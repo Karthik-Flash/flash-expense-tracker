@@ -2,15 +2,16 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
-import { moneyIn, rupees, rupeesExact } from './lib/money.ts'
+import { rupees } from './lib/money.ts'
 import { monthLabel, shiftMonth } from './lib/dates.ts'
 import { catColor, categoryIcon } from './screens/common.ts'
 import { freshnessLine, useData, type Load } from './data/store.ts'
 import { syncLine, useOutbox } from './data/outbox.ts'
 import { expire, useAuth } from './auth.ts'
+import type { Category } from './api/types.ts'
 import { useNav } from './state.tsx'
 
-/** Under the month: "Updated 5 min ago · 3 waiting to sync · 1 couldn't save", "Updating…",
+/** Under the month: "Updated 5 min ago · 3 saved on phone, syncing · 1 not saved", "Updating…",
  *  or "Offline · showing data from …". The failed count opens its sheet. */
 export function Freshness() {
   const data = useData()
@@ -68,8 +69,8 @@ export function Money({ paise, credit = false, exact = false, className = '' }: 
   exact?: boolean
   className?: string
 }) {
-  const text = credit ? moneyIn(paise, exact) : exact ? rupeesExact(paise) : rupees(paise)
-  return <span className={`shrink-0 whitespace-nowrap tabular-nums ${credit ? 'text-positive' : ''} ${className}`}>{text}</span>
+  const text = rupees(paise, exact, credit)
+  return <span className={`ml-auto shrink-0 whitespace-nowrap tabular-nums ${credit ? 'text-positive' : ''} ${className}`}>{text}</span>
 }
 
 export function Header({ title, back, lead, children }: { title: string; back?: () => void; lead?: ReactNode; children?: ReactNode }) {
@@ -107,8 +108,8 @@ export function Section({ title, children, aside, sticky = false }: { title?: st
   return (
     <section className="mt-4 px-4">
       {title && (
-        <div className={`flex items-baseline justify-between gap-3 py-2 ${sticky ? 'sticky top-0 z-10 -mx-4 bg-bg px-4' : ''}`}>
-          <h2 className="truncate text-sm font-medium text-muted">{title}</h2>
+        <div className={`flex flex-wrap items-baseline justify-between gap-x-3 py-2 ${sticky ? 'sticky top-0 z-10 -mx-4 bg-bg px-4' : ''}`}>
+          <h2 className="min-w-0 text-sm font-medium wrap-break-word text-muted">{title}</h2>
           {aside}
         </div>
       )}
@@ -118,7 +119,8 @@ export function Section({ title, children, aside, sticky = false }: { title?: st
 }
 
 export function RowButton({ onClick, children, label }: { onClick?: () => void; children: ReactNode; label?: string }) {
-  const body = <div className="flex min-h-14 items-center gap-3 px-4 py-2.5">{children}</div>
+  // At large text sizes the amount moves under the name instead of squeezing it (4H).
+  const body = <div className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">{children}</div>
   return onClick ? (
     <button type="button" onClick={onClick} aria-label={label} className="block w-full text-left active:bg-press">
       {body}
@@ -156,6 +158,44 @@ export function Button({ children, onClick, kind = 'plain', disabled, type = 'bu
     >
       {children}
     </button>
+  )
+}
+
+/** One-tap category chips (the owner's most used, up to 4) and "More…" with every category.
+ *  `current`: the chip that is chosen now (pressed). */
+export function CategoryChips({ chips, cats, onPick, label, current }: {
+  chips: Category[]
+  cats: Category[]
+  onPick: (c: Category) => void
+  label: string
+  current?: string
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2" role="group" aria-label={label}>
+      {chips.map((c) => (
+        <button
+          key={c.slug}
+          type="button"
+          aria-pressed={c.slug === current}
+          onClick={() => onPick(c)}
+          className="min-h-11 rounded-lg border border-line bg-surface px-3 text-sm aria-pressed:border-accent aria-pressed:font-medium"
+        >
+          {c.name}
+        </button>
+      ))}
+      <select
+        aria-label={`More categories, ${label}`}
+        value=""
+        onChange={(e) => {
+          const picked = cats.find((c) => c.slug === e.target.value)
+          if (picked) onPick(picked)
+        }}
+        className="min-h-11 min-w-0 flex-1 basis-28 rounded-lg border border-line bg-surface px-3 text-sm"
+      >
+        <option value="">{chips.length ? 'More…' : 'Pick a category'}</option>
+        {cats.filter((c) => c.slug !== 'uncategorised').map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+      </select>
+    </div>
   )
 }
 

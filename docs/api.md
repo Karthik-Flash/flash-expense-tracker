@@ -40,7 +40,7 @@ owner's transaction, label or sender is "404 not found".
 | PUT | `/api/v1/senders/{id}` | `{"answer": "friend"}`, `{"answer": "income", "label": "..."}` or `{"answer": "ignore"}` |
 | DELETE | `/api/v1/senders/{id}` | Forget the answer: the sender is to confirm again |
 | PUT | `/api/v1/transactions/{id}/category` | `{"category": slug, "scope": "merchant" \| "transaction"}` |
-| PUT | `/api/v1/transactions/{id}/label` | `{"label_id"}`, or `{"new_label": name}` to make a label and attach it in one write (409 when the name exists): at most one label per transaction |
+| PUT | `/api/v1/transactions/{id}/label` | `{"label_id"}`, or `{"new_label": name}` to attach the label of that name, made in the same write when the owner has none (any case, spaces tidied; D-110: a label made offline can be picked again before it syncs): at most one label per transaction |
 | DELETE | `/api/v1/transactions/{id}/label` | Remove the label (also when there is none) |
 | PUT | `/api/v1/people/{txn}/name` | `{"name"}`: name the person of transaction `txn` (D-096) |
 | DELETE | `/api/v1/people/{txn}/name` | Clear that name (404 when there is none) |

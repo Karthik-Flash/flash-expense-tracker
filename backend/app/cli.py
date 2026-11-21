@@ -14,7 +14,7 @@
   category-stats
   category-review [--uncategorised] [--list]
   credit-review [--list]
-  payback-audit [--fix [--apply]]
+  payback-audit [--fix [--apply] | --restore [--apply]]
   bank-survey
   generic-preview
   redact-sample --family <bank> [--review-dir DIR] | --approve <bank> [--review-dir DIR]
@@ -1073,9 +1073,14 @@ def cmd_credit_review(session: Session, args: argparse.Namespace) -> int:
 
 def cmd_payback_audit(session: Session, args: argparse.Namespace) -> int:
     """D-099. Counts and IST month keys only; --fix is a dry run, --fix --apply changes."""
-    if args.apply and not args.fix:
-        print("--apply needs --fix (run --fix first: it is a dry run)", file=sys.stderr)
+    if args.fix and args.restore:
+        print("use --fix or --restore, not both", file=sys.stderr)
         return 2
+    if args.apply and not (args.fix or args.restore):
+        print("--apply needs --fix or --restore (run it first: it is a dry run)", file=sys.stderr)
+        return 2
+    if args.restore:
+        return payback_restore(session, args.apply)
     found = payback_audit.audit(session, settings.owner_id)
     print("payback-audit (counts only)")
     print(payback_audit.RULE)
@@ -1098,6 +1103,22 @@ def cmd_payback_audit(session: Session, args: argparse.Namespace) -> int:
         return 0
     changed = payback_audit.fix(session, settings.owner_id)
     print(f"changed {changed} {'party' if changed == 1 else 'parties'} to kind unsure")
+    return run_recompute(session, "owner")
+
+
+def payback_restore(session: Session, apply: bool) -> int:
+    """D-111. Undo an earlier --fix --apply where a Friend answer is on record. Counts only."""
+    parties = payback_audit.restorable(session, settings.owner_id)
+    credits = payback_audit.credits_of(session, settings.owner_id, [p.id for p in parties])
+    print("payback-audit --restore (counts only)")
+    print("restore: kind person again for a party the fix changed that has a Friend answer")
+    line("parties to restore", len(parties))
+    line("their credits", credits)
+    if not apply:
+        print("dry run: nothing saved. To restore them: --restore --apply")
+        return 0
+    restored = payback_audit.restore(session, settings.owner_id)
+    print(f"restored {restored} {'party' if restored == 1 else 'parties'} to kind person")
     return run_recompute(session, "owner")
 
 
@@ -1223,7 +1244,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     pa.add_argument("--fix", action="store_true", help="dry run: what the repair would change")
-    pa.add_argument("--apply", action="store_true", help="with --fix: make the change")
+    pa.add_argument(
+        "--restore", action="store_true", help="dry run: undo an earlier fix where answered"
+    )
+    pa.add_argument("--apply", action="store_true", help="with --fix or --restore: make it")
     sub.add_parser(
         "bank-survey",
         help="counts of messages by sender family, kind and parse status",

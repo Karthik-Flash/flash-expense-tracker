@@ -41,7 +41,9 @@
 :root {
   color-scheme: light dark;
   /* Category colours (docs/ui-spec.md): icon, tile tint, bar and chart slice. Each has
-     at least 3:1 against the surface and against its own tile, in both themes. */
+     at least 3:1 against the surface and against its own tile, in both themes, and every
+     two are at least 10 apart (CIEDE2000), so neighbouring ring segments and rows read
+     apart (4H, D-113: eight colours nudged by 0.4 to 3.7). */
   --tile-tint: 13%;
   --cat-food_drinks: #a66535;
   --cat-groceries: #508659;
@@ -54,14 +56,14 @@
   --cat-entertainment: #49578d;
   --cat-education: #206173;
   --cat-rent_hostel: #785e40;
-  --cat-emi_loans: #3d4e69;
+  --cat-emi_loans: #34485e;
   --cat-investments: #2c6e5a;
   --cat-gifts_donations: #7a4058;
   --cat-people: #388b94;
   --cat-cash: #60612c;
   --cat-card_bill: #7d7d9b;
-  --cat-fees_charges: #804034;
-  --cat-other: #594f3a;
+  --cat-fees_charges: #7d3e32;
+  --cat-other: #574d38;
   --cat-uncategorised: #7a7a7a;
 }
 
@@ -75,17 +77,17 @@
     --cat-bills_recharges: #cbb67b;
     --cat-subscriptions: #b9a2d5;
     --cat-health: #dc8b89;
-    --cat-personal_care: #d6b0d1;
+    --cat-personal_care: #e1bbdc;
     --cat-entertainment: #8796cb;
-    --cat-education: #659cad;
+    --cat-education: #6193a7;
     --cat-rent_hostel: #b39a7d;
-    --cat-emi_loans: #7787a2;
-    --cat-investments: #70a995;
-    --cat-gifts_donations: #b57c91;
+    --cat-emi_loans: #73829b;
+    --cat-investments: #6fa996;
+    --cat-gifts_donations: #b2798e;
     --cat-people: #65acb4;
     --cat-cash: #979968;
-    --cat-card_bill: #aeaeca;
-    --cat-fees_charges: #bf8073;
+    --cat-card_bill: #acafca;
+    --cat-fees_charges: #b77c6c;
     --cat-other: #8f8571;
     --cat-uncategorised: #b4b4b4;
   }
