@@ -5,7 +5,7 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
 [PLAN.md](PLAN.md).
 
-## Current state (Phase 4, 20 Nov 2026)
+## Current state (Phase 4, 21 Nov 2026)
 
 - Phases 0 to 3 are done. Order from here ([PLAN.md](PLAN.md)): 4E (done),
   4F (second bank), then Phase 5 (pilot-ready Android app: multi-user with
@@ -22,6 +22,9 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   checked cross-origin); the outbox cannot get stuck (D-105); writes commit
   before the recompute (D-106); clearer sync wording (D-107); SBI parser
   (D-108); payback-audit honours explicit answers.
+- 4H (21 Nov): person sheet actions (D-110), payback-audit counts any
+  owner answer on record and has `--restore` (D-111), the API warm job
+  retired (D-112), UI tokens and one money/date format (D-113).
 - History rewritten 21 Nov to drop AI attribution lines (D-109): `main`
   before 4H is `c216442` (was `076ee9f`); map in
   [history-rewrite-20261121.md](history-rewrite-20261121.md). Enable the
@@ -29,12 +32,13 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 - Engine versions: parsers `hdfc-1.1.1`, `sbi-1.0.0` and `generic-1.0.0`
   (other banks), `merchant-1.1.1`, `reconcile-1.4.0`, `categorise-1.1.0`.
 - Alembic head: `0010` (recompute marks, `parties.answered_at`).
-- Decisions: D-001 to D-108 ([DECISIONS.md](DECISIONS.md)).
+- Decisions: D-001 to D-113 ([DECISIONS.md](DECISIONS.md)).
 - Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
   lint/typecheck/tests/build, and the cross-origin check
   (`node scripts/cross-origin-check.mjs` from `frontend\`).
-- Cron: the warm job needs a non-browser User-Agent; its fallback is
-  `HEAD /health` (D-098).
+- Cron: only the 03:30 IST Supabase heartbeat. The API warm job is
+  retired (D-112: its pings got 503 and never woke Render; the phone copy
+  covers cold starts).
 - Live: app https://flash-expense-tracker.vercel.app, API
   https://flash-expense-tracker.onrender.com (more under "Live URLs").
 - The app: real login (Supabase Auth) and data (`/api/v1`), every screen,
@@ -86,7 +90,7 @@ Monorepo.
 | Database | Postgres (Supabase free, Singapore, Session pooler; Data API exposes only `keepalive`, D-053); SQLite for local and tests | Supabase |
 | Frontend | Vite 8, React 19, TypeScript 7, Tailwind 4, vite-plugin-pwa 2.0.0, @supabase/supabase-js 2.119.0, idb 8.0.4 (fake-indexeddb 6.2.8 in tests) | Vercel |
 | Tools | pytest 9.2.0, ruff 0.17.4, httpx 0.28.1 | GitHub Actions |
-| Keep-alive | cron-job.org calls `keepalive.ping()` via the Data API (D-053); a second job keeps Render warm | |
+| Keep-alive | cron-job.org calls `keepalive.ping()` via the Data API (D-053); no job keeps Render warm (D-112) | |
 
 The stack is locked. Never install a package you cannot verify (PyPI owner,
 source repo); ask first (D-010).
@@ -195,13 +199,9 @@ use Render: cron-job.org "Flash DB heartbeat" sends
 pause. The Data API exposes only the `keepalive` schema; never add `public`
 (D-053). `/health/db` with `X-Ping-Token` stays for manual checks.
 
-A second job, "Flash API warm 07-01 IST", sends `GET
-https://flash-expense-tracker.onrender.com/health` with the header `Accept:
-application/json` every 10 minutes in hours
-07 to 23 and 00 IST (last ping 00:50), so the API is awake when the owner
-uses the app. `/health` never touches the database
-(`backend/app/api/health.py`). It uses about 560 of Render's 750 free hours a
-month. The daily 03:30 IST Supabase keepalive job is unchanged.
+The API warm job ("Flash API warm 07-01 IST") is retired (D-112): its pings
+got 503 from the sleeping free service and never woke it; the phone copy
+covers a cold start. The daily 03:30 IST Supabase keepalive job stays.
 
 ## Data pipeline as built
 
@@ -279,8 +279,8 @@ Real import (14 Nov): 917 messages stored, 720 parsed, 678 transactions,
 14. Later list: a friendlier Home, still minimal; revisit with 4D.
 
 Known limits: HDFC and INR only; the card bill pair rule waits for credit
-card SMS; the server sleeps when idle (about a minute to wake; kept awake
-07:00 to 00:50 IST by the warm job); import takes about 6 minutes for 917
+card SMS; the server sleeps when idle (about a minute to wake; the phone
+copy covers it, D-112); import takes about 6 minutes for 917
 messages; Starlette's httpx warning is accepted (D-010).
 
 ## Where decisions live

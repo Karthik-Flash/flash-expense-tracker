@@ -1123,6 +1123,9 @@ stored app answer (`client_ops` "PUT /api/v1/senders/<id>", 2xx) for the
 sender the party is now. A Friend answer from before 4B-2, or from the
 terminal, on a party that also has a category still cannot be told apart.
 
+Corrected again in 4H: see D-111 (any owner answer on record, and
+`--restore`).
+
 ## D-100 Bank survey and redacted samples for another bank (2026-11-20)
 
 `bank-survey` prints counts only: sender family (the bank of the sender
@@ -1263,3 +1266,86 @@ an amount stays "not counted yet" (`no_template`; a card message is
 `card_no_template`: no SBI card shape in the sample yet, and a credit card is
 never read as a debit card). SBI rows carry no check flag. The generic
 parser keeps serving the other registered banks; HDFC is unchanged.
+
+## D-109 No AI attribution in commits; history rewritten (2026-11-21)
+
+The owner does not want "Co-Authored-By: Claude …", "Claude-Session: …",
+"Generated with Claude Code" or similar lines in this project's commits or
+pull requests, past or future. On 21 Nov the history was rewritten with
+built-in git (`git filter-branch --msg-filter … --tag-name-filter cat`,
+branches and tags): 116 of 160 commits lost such a line and the blank lines
+it left at the end; nothing else changed (same trees, authors, dates,
+parents' shape, 160 commits, 9 tags). A mirror backup is outside the repo;
+old to new SHAs and how to restore are in
+[history-rewrite-20261121.md](history-rewrite-20261121.md). SHAs quoted in
+older notes are the old ones. Prevention: `attribution` (`commit` and `pr`
+empty, `sessionUrl` false) in `.claude/settings.json`; `.githooks/commit-msg`
+rejects such lines (enable per clone with `git config core.hooksPath
+.githooks`; tested by `scripts/test_commit_msg_hook.py`); a rule in
+CLAUDE.md.
+
+## D-110 Act on a person from the person sheet (2026-11-21)
+
+The person sheet starts with three quiet sections, in order: "Payments to
+them count as" (category chips: the owner's most used, up to four, and
+More…; a pick is the party default, `scope: merchant` on one of their
+payments, so it covers every payment to them under any name or UPI ID, and
+future ones), "Money from them is" (Friend / Family / Ignore / Income, only
+when they sent money; one sender answer per sender) and "Recent payments"
+(the last 10; a spending row takes "just this one" with the same chips;
+"See all payments"). Everything goes through the outbox (D-091) and works
+offline; the changed row or line shows "Saved on phone · syncing"; no total
+changes on the phone (D-088). The sheet opens from a ledger row and from
+"Person" on To-do sender cards and transaction sheets. Two carry-overs: a
+label made offline can be picked on another payment before it syncs (it is
+sent as `new_label` again, and the API's `new_label` now finds the owner's
+label of that name, any case, instead of answering 409; `POST /labels` with
+a taken name is still 409); a change the server refused is shown on its
+item too ("Not saved · reason", Try again, Discard), not only in the Not
+saved sheet.
+
+## D-111 payback-audit counts any owner answer on record; --restore (2026-11-21)
+
+Corrects D-099 (and its 4F-B note). A party is never "silent" when any
+owner sender answer (Friend, Family or Income) is on record for it, from any
+source: `parties.answered_at`; the newest stored app write for its sender
+(`client_ops`, 2xx) being a PUT that is not Ignore (a later "Ask me again
+later" forgets it; the body is told by its stored request hash); or an
+owner role decision Paid back or Income on one of its credits (app,
+terminal or owner file). Answers made before 4B-2 in the app, or before
+4F-B in the terminal, left no record and cannot be told apart; such a party
+is still listed (one Friend tap brings it back). `payback-audit --restore`
+undoes an earlier `--fix --apply` where a Friend answer is now on record:
+parties of kind unsure with source terminal (what the fix leaves), no
+income label and a category, with `answered_at` or a stored app Friend
+answer, get kind person back (the fix only ever turns person into unsure).
+Dry run by default (counts only); `--restore --apply` writes and
+recomputes. A party with only per-credit role decisions is not restored:
+kind person would count all its credits as Paid back, so Net never goes
+down without an owner answer. No migration.
+
+## D-112 The API warm job is retired (2026-11-21)
+
+cron-job.org's "Flash API warm 07-01 IST" pinged `/health` every 10
+minutes. A sleeping free Render service answered those pings 503 and did
+not wake, so the job cost free hours and did nothing; the phone copy
+(D-089, D-095) already shows the app at once while the server wakes. The
+owner deletes the job. The 03:30 IST Supabase heartbeat (D-053) stays.
+`/health` (GET and HEAD, D-098) stays for manual checks.
+
+## D-113 UI tokens and formatting rules (2026-11-21)
+
+One set of tokens (spacing in 4 px steps with a 16 px gutter, 8 px radius,
+type 12/14/16/18/20 and capped figures; `docs/ui-spec.md` "Tokens"), one
+voice ("Could not …" for errors, "Not saved" for a refused change, Indian
+English spellings), no shadows, gradients, glow or emoji. Money has one
+formatter (`lib/money.ts` `rupees`): Indian grouping always; totals in whole
+rupees; a transaction's own amount with paise only when they are not zero.
+Dates and times in IST have one set: day "Tue 17 Nov", moment "Tue 17 Nov,
+14:05", full "Tue 17 Nov 2026, 14:05", month "Nov 2026". At 200 % text on a
+360 px screen nothing scrolls sideways or overlaps: a row's amount moves
+under its name, and Net, the ring and the tab names are capped by the
+screen width. Every control is at least 44 px; every text colour meets AA
+in both themes; every two category colours are at least 10 apart
+(CIEDE2000; eight nudged by 0.4 to 3.7). `src/colours.test.ts` checks the
+colour rules.

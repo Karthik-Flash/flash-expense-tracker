@@ -182,6 +182,17 @@ PDF, into `D:\FlashPrivate`.
   answers; SBI parser `sbi-1.0.0` (53 of 110 sample messages read, was 24).
   Next (proposed): the owner updates, checks that the 22:42 tap syncs, runs
   the counts; then Phase 5.
+- [x] 4H History, people actions, polish (21 Nov 2026, D-109 to D-113): AI
+  attribution lines removed from history (rewritten, mapping and backup),
+  and kept out (settings, hook); the person sheet changes a person's
+  category default, sender answer and single payments; payback-audit counts
+  any owner answer on record, with `--restore`; offline labels can be
+  picked before they sync; a refused change shows on its item; the API warm
+  job retired; a polish pass (one money and date format, 200 % text at 360
+  px, 44 px targets, category colours 10 apart, UI tokens). Next
+  (proposed): the owner force-pushes the rewritten history, runs
+  `payback-audit --restore` (dry run first), checks the person sheet on the
+  phone; then Phase 5.
 - [ ] 4G Cash wallet, after 4F and before 4D: ATM withdrawals keep counting
   as Spent under "Cash"; logging a cash expense moves that amount into its
   category, so Spent never drops because a log is missing; the wallet shows

@@ -4,6 +4,28 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 4H: people actions, payback rule, polish (21 Nov 2026)
+
+- History: the AI attribution lines were removed from every commit message
+  (history rewritten; old to new SHAs in
+  [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md)) and
+  are kept out by a commit hook and the project settings (D-109).
+- The person sheet changes how a person's payments count (a category for
+  all of them), what money from them is (Friend, Family, Ignore, Income) and
+  any of their last 10 payments, without opening each one; offline too
+  (D-110).
+- payback-audit never calls a party silent when any Friend, Family or
+  Income answer is on record; `--restore` undoes an earlier fix where a
+  Friend answer is now on record (D-111).
+- A label made offline can be picked on another payment before it syncs; a
+  change the server refused says "Not saved" on its item, with Try again
+  and Discard (D-110).
+- The API warm job is retired; the phone copy covers a cold start (D-112).
+- Polish: transaction amounts show paise only when not zero; one date
+  format set; every screen fits 360 px at 200 % text; 44 px targets; eight
+  category colours nudged so no two are close; "Not saved" wording; UI
+  tokens written down (D-113).
+
 ## Phase 4F-B: taps that always sync, SBI parser (21 Nov 2026)
 
 - Fixed: since 4B-2 the browser blocked every change sent from the phone

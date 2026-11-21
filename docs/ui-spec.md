@@ -13,11 +13,28 @@ information.
   most 480 px.
 - System font stack (`system-ui`, `-apple-system`, `Segoe UI`, `Roboto`).
   Every number uses tabular figures. Sizes are in rem, so the system text
-  size scales everything; at 200 % rows grow and buttons wrap, and nothing is
-  cut off except long names.
-- 8 px radius, 1 px hairline borders, no heavy shadows. Lists are bordered
-  cards of rows; rows are at least 56 px tall, every control at least 44 px.
+  size scales everything; at 200 % on a 360 px screen rows grow, a row's
+  amount moves under its name (a name keeps at least `min(6rem, 35vw)`), buttons wrap,
+  and nothing scrolls sideways (4H). Four figures are capped by the screen
+  width so they fit at 200 %: Net (`min(2.25rem, 12vw)`), a label's or a
+  transaction's amount (`min(1.875rem, 11vw)`), the ring (`min(14rem,
+  78vw)`) and its centre, and the tab names (`min(0.75rem, 3.3vw)`).
+- 8 px radius, 1 px hairline borders, no shadows. Lists are bordered cards
+  of rows; rows are at least 56 px tall, every control at least 44 px.
 - Long names truncate with an ellipsis. Amounts never wrap.
+
+### Tokens (D-113)
+
+Every screen uses these and nothing else (Tailwind names; `index.css`).
+
+| Token | Values | Used for |
+| --- | --- | --- |
+| Spacing | 4 px steps: 1 (4), 2 (8), 3 (12), 4 (16), 6 (24), 10 (40); half steps 0.5, 1.5, 2.5 inside rows | 16 px side gutter (`px-4`), 8 px between buttons, 12 px between a tile and its text |
+| Radius | `rounded-lg` 8 px; `rounded-md` 6 px inside a segmented control; `rounded-full` for bars and the To-do count | cards, buttons, inputs, sheets (top corners), tiles |
+| Type | `text-xs` 12, `text-sm` 14, base 16, `text-lg` 18 (screen titles), `text-xl` 20 (a full-page message); figures 24 to 36 (capped as above) | muted notes, rows, titles, Net |
+| Weight | 400; 500 for names and buttons; 600 for titles and figures | |
+| Lines | 1 px `line` borders and dividers | cards, rows, sheet header |
+| Colour | the tokens under Colour; category colours only for tiles, bars and slices | |
 - Bottom navigation, four tabs: Home, Transactions, To-do (with a count),
   Labels, each an icon above its label. Detail screens have a back control
   in the header.
@@ -106,10 +123,18 @@ category colour.
   (`color-mix` in `index.css`), with the icon in the full colour.
 - Every colour has at least 3:1 against the surface (lowest 3.62:1 light,
   4.83:1 dark) and against its own tile (lowest 3.16:1 light, 3.67:1 dark).
-- Twenty colours cannot all be far apart at low chroma: the closest pairs
-  (card bill and uncategorised; rent and cash) differ by about 4 to 5 OKLab
-  units. Identity never rests on colour alone: every tile has its icon and
-  every bar, slice and legend row its name.
+- Every two colours are at least 10 apart in CIEDE2000, in both themes, so
+  neighbouring ring segments and list rows read apart whatever the order
+  (4H). Eight pairs were closer (light: entertainment and EMI 7.4, health
+  and fees 9.4, rent and other 9.7; dark: education and people 6.9, health
+  and fees 7.6, shopping and personal care 7.8, entertainment and EMI 8.5,
+  subscriptions and personal care 8.5, subscriptions and card bill 9.1,
+  shopping and gifts 9.3, groceries and investments 9.97). The less used
+  colour of each moved by the smallest step that clears 10 (0.4 to 3.7):
+  light EMI, fees, other; dark education, fees, personal care, EMI, card
+  bill, gifts, investments. `src/colours.test.ts` checks all of this and the
+  text contrast. Identity still never rests on colour alone: every tile has
+  its icon and every bar, slice and legend row its name.
 
 | Category | Light | Dark |
 | -------- | ----- | ---- |
@@ -120,18 +145,18 @@ category colour.
 | bills_recharges | `#8f7835` | `#cbb67b` |
 | subscriptions | `#7d659a` | `#b9a2d5` |
 | health | `#a24f4e` | `#dc8b89` |
-| personal_care | `#a27a9d` | `#d6b0d1` |
+| personal_care | `#a27a9d` | `#e1bbdc` |
 | entertainment | `#49578d` | `#8796cb` |
-| education | `#206173` | `#659cad` |
+| education | `#206173` | `#6193a7` |
 | rent_hostel | `#785e40` | `#b39a7d` |
-| emi_loans | `#3d4e69` | `#7787a2` |
-| investments | `#2c6e5a` | `#70a995` |
-| gifts_donations | `#7a4058` | `#b57c91` |
+| emi_loans | `#34485e` | `#73829b` |
+| investments | `#2c6e5a` | `#6fa996` |
+| gifts_donations | `#7a4058` | `#b2798e` |
 | people | `#388b94` | `#65acb4` |
 | cash | `#60612c` | `#979968` |
-| card_bill | `#7d7d9b` | `#aeaeca` |
-| fees_charges | `#804034` | `#bf8073` |
-| other | `#594f3a` | `#8f8571` |
+| card_bill | `#7d7d9b` | `#acafca` |
+| fees_charges | `#7d3e32` | `#b77c6c` |
+| other | `#574d38` | `#8f8571` |
 | uncategorised | `#7a7a7a` | `#b4b4b4` |
 
 ## Ring chart
@@ -182,11 +207,20 @@ link on every row, ads, promo cards.
 
 - Plain and short: "Spent", "Paid back", "To confirm", "Net". No exclamation
   marks; no "journey" or "insights".
-- Rupees with Indian grouping: `₹1,23,456`. Overviews round to whole rupees
-  (half away from zero); transaction detail shows paise (`₹1,23,456.78`). A
-  minus is the real minus sign (`−₹1,500`).
-- Dates and times in IST (fixed +05:30): "Tue 17 Nov", "14:05"; detail shows
-  "Tue 17 Nov 2026, 14:05". Months: "Nov 2026".
+- Money (D-113), one formatter (`lib/money.ts` `rupees`): Indian grouping
+  everywhere (`₹1,00,000`, `₹12,34,567`). Totals (Net, Spent, a category, a
+  person, a merchant, a label) in whole rupees, half away from zero. A
+  transaction's own amount (its row, its sheet, a To-do check, the person
+  sheet's recent payments) shows paise only when they are not zero:
+  `₹450`, `₹450.25`. Money in has a plus (`+₹450`); a minus is the real
+  minus sign (`−₹1,500`).
+- Dates and times in IST (fixed +05:30), one set (D-113): a day "Tue 17
+  Nov" (rows, day headers, cards); a moment "Tue 17 Nov, 14:05" (sync
+  details, Speed, freshness after yesterday); a transaction in full "Tue 17
+  Nov 2026, 14:05" (its sheet); a time "14:05"; a month "Nov 2026".
+- One voice: Indian English spellings as used ("Uncategorised"); errors
+  start "Could not …"; a change the server refused is "Not saved" (its
+  item, the line under the month, the sheet title).
 
 ## Screens
 
@@ -254,10 +288,26 @@ wrap under their terms and buttons grow.
   muted text under it, or after it on a transaction row.
 - **To-do sender card**: under Friend / Family / Ignore, quiet text buttons
   "Name", "Same as…" and "See payments".
+- **Person sheet actions** (4H, D-110), first in the sheet, quiet and
+  compact, in this order:
+  - "Payments to them count as": the category chips (the owner's most used,
+    up to four; the one every payment to them has now is pressed) and
+    "More…". A pick is the party default ("All from"): every payment to the
+    person, whichever name or UPI ID the bank used, also future ones. Shown
+    only when they were paid.
+  - "Money from them is": Friend / Family / Ignore / Income (Income asks for
+    its label). Shown only when they sent money. One write per sender.
+  - "Recent payments": the last 10 (day, category or what the row is,
+    amount); a spending row opens the same chips for "just this one". "See
+    all payments" below.
+  Each change goes through the outbox and shows "Saved on phone · syncing"
+  on the changed row or line; no total moves on the phone. The sheet opens
+  from a ledger row, from "Person" on a To-do sender card and from "Person"
+  on a transaction sheet.
 - **Person sheet** (`?person=`): the name, "Answer: Friend", the identifiers
   (each with Separate when the person has more than one; "From the owner
   file" instead when the file set it), then Rename (Name), Same as…, Clear
-  name, See payments; from the ledger also "This month with <name>" (the
+  name; from the ledger also "This month with <name>" (the
   month's Sent, Got back and rows). A footnote: "Names and joins are yours:
   they change no amount, only who is who."
 - **Same as…**: a list of everyone (search by name or UPI ID), each with its
@@ -273,7 +323,7 @@ wrap under their terms and buttons grow.
 - **See payments** (sender and merchant cards, the person sheet):
   Transactions of that person across all months, titled "Payments with
   <name>" with "Show all" instead of the month switcher.
-- **Merchant cards**: up to four one-tap category chips (the owner's most
+- **Merchant cards**: the same chips component as the person sheet: up to four one-tap category chips (the owner's most
   used categories, by how many rows they set, then all rows; never by money)
   and "More…" for the full list. A chip means "All from" that merchant.
 
@@ -315,7 +365,7 @@ most 30 characters."); Create stays disabled until the name is fine.
   5 s or less"), the last launch (phone copy ms, fresh data s, request ms,
   size, result) and a plain table of the last 10 launches (time IST, local
   ms, fresh s, result; "cold" when the request took over 10 s), and a Sync
-  block (waiting, couldn't save, last drain: time, sent, seconds; last
+  block (waiting, not saved, last drain: time, sent, seconds; last
   error). Measured on the phone and kept there (D-090). In the URL as
   `?speed`, so Back closes it.
 - **Speed: Boot** (4B-3, D-095): a Boot block (path of the last launch:
@@ -344,12 +394,19 @@ most 30 characters."); Create stays disabled until the name is fine.
 - **To-do**: a sender or merchant with an answer waiting leaves its list
   and the tab's count, and shows in "Saved on phone" at the top: "Rohit V",
   then "Friend · Saved on phone · syncing · Undo". A change the server
-  answered with a conflict stays there with "Try again" and "Drop this
-  change".
+  answered with a conflict stays there with "Not saved · needs your
+  choice", "Try again" and "Discard".
+- **Refused on its item** (4H): a change the server refused also stays on
+  the item it was about (transaction row and sheet, person sheet, To-do
+  card): "Not saved · <reason>" with "Try again" and "Discard". The item
+  keeps the server's value meanwhile.
 - **Labels**: a label being made shows at the top of the list with
-  "Waiting to sync" and no totals.
-- **Sync line**: the freshness line gains "· 3 saved on phone, syncing"; "1 couldn't
-  save" is a link to the **Couldn't save** sheet (`?unsaved`): each refused
+  "Waiting to sync" and no totals. A transaction sheet lists it among the
+  labels ("saved on phone") so another payment can take it before it syncs;
+  that sends the same name as `new_label`, and the server finds the label
+  the first change made (D-110).
+- **Sync line**: the freshness line gains "· 3 saved on phone, syncing"; "1 not
+  saved" is a link to the **Not saved** sheet (`?unsaved`): each refused
   change with what it was, its item, the server's reason, Retry and Discard.
   After a lasting 401, or when the server refused the stored session at
   launch, the line says "Not synced · showing data from …" and "Sign in to
@@ -387,7 +444,13 @@ targets, the last launch, the launches table and the boot block.
   "Starting up, this can take about a minute" with one thin progress bar that
   slows as it goes. No spinner wall. After any answer, a slow load shows only
   "Loading".
-- **Empty month**: one line, "Nothing recorded in Nov 2026."
+- **Empty** (one calm line, no illustration): a month "Nothing recorded in
+  Nov 2026."; a month with no spending "No spending this month."; To-do
+  "Nothing to do."; Labels "No labels yet."; People "No money to or from
+  people this month."; Not saved "Everything is saved."
+- **No spinner over content**: loading is the word "Loading" where the
+  content goes, or "Updating…" on the freshness line while the old numbers
+  stay.
 - **Error**: "Could not load", the reason, and "Try again". No network:
   "Could not reach the server. Check the connection and try again." A 503:
   "The server is not ready yet. Try again in a minute."

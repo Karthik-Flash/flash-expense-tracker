@@ -25,8 +25,11 @@ progress**: 4C (install and update prompt), 4B-1 (phone copy) and 4B-2
 (offline queue) done 19 Nov; 4B-3 (offline boot), 4E (people, faster
 To-do, logo options) and 4F-A (generic parser for other banks, payback
 audit, refresh after deploy, logo C2) done 20 Nov; 4F-B (the CORS fix for
-blocked taps, a queue that cannot get stuck, SBI parser) done 21 Nov; next:
-the owner checks the update, runs the counts, then Phase 5 and the pilot.
+blocked taps, a queue that cannot get stuck, SBI parser) and 4H (history
+without AI attribution, person sheet actions, payback-audit any-answer rule
+and `--restore`, polish pass) done 21 Nov; next: the owner force-pushes the
+rewritten history, checks the update, runs the counts, then Phase 5 and the
+pilot.
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -160,8 +163,8 @@ New session? Start with [docs/HANDOFF.md](docs/HANDOFF.md).
   | Env: DATABASE_URL, PING_TOKEN, CORS_ORIGINS,        |
   |      SUPABASE_URL, AUTH_USERS, PYTHON_VERSION       |
   | Sleeps after 15 min idle; cold start ~50 s          |
-  | Kept awake 07:00-00:50 IST by cron-job.org          |
-  | GET /health every 10 min, Accept: application/json  |
+  | Not kept awake (D-112): the phone copy covers it    |
+  |                                                     |
   +-----------------------------------------------------+
                                    |
                                    | 3. Postgres over TLS (sslmode=require)
@@ -238,16 +241,11 @@ Until 15 Nov 2026 the job called Render's `/health/db` (D-052). Asleep,
 Render served its browser loading page to cron-job.org ("output too large")
 and never woke, so every run failed.
 
-A second cron-job.org job, "Flash API warm 07-01 IST", keeps Render awake in
-the hours the owner uses the app: `GET https://flash-expense-tracker.onrender.com/health`
-every 10 minutes from 07:00 to 00:50 IST (hours 07 to 23 and 00), with the
-header `Accept: application/json`. `/health`
-never touches the database (`backend/app/api/health.py`). It uses about 560
-of Render's 750 free hours a month. The 03:30 IST Supabase heartbeat above
-is unchanged and still the only thing that keeps Supabase from pausing.
-The job needs a non-browser User-Agent (cron-job.org's own is fine); if a
-browser-like one ever gets the waking page again, switch the job to
-`HEAD /health` (200, no body, no database, D-098).
+The API warm job ("Flash API warm 07-01 IST") is retired (21 Nov 2026,
+D-112): its pings got 503 from a sleeping free Render service and never
+woke it, and the phone copy (D-089, D-095) already covers a cold start.
+Delete it in cron-job.org (owner step). The 03:30 IST Supabase heartbeat
+above stays: it is the only thing that keeps Supabase from pausing.
 
 ### Flow 3: you push code
 
@@ -486,6 +484,19 @@ offline-then-online in headless Edge. It prints every preflight and write
 with its status and ends with `CROSS-ORIGIN CHECK: PASS` (exit 0) or `FAIL`.
 Run it whenever headers, CORS or the outbox change.
 
+### Screens for design review (4H, D-113)
+
+```powershell
+cd frontend; node scripts/screens.mjs --out <folder>    # demo data, Edge, 360 px: light, dark, 200 % text
+node scripts/screens-page.mjs --after <folder> --before <folder>   # docs\design\screens-4h.html
+```
+
+`screens.mjs` starts the demo dev server (FAKE data) and writes one JPEG
+per screen and mode plus `report.json` (sideways scroll, elements past the
+edge, text squeezed to less than half). `--root <frontend folder>` shoots
+another checkout (a `git worktree` of an older commit, with `node_modules`
+linked). Pictures stay outside the repo; only the page is committed.
+
 ### Other banks and paybacks: commands after the 4F-A deploy (from `backend\`)
 
 Render runs migration `0009`. The first time the phone (or any read) asks
@@ -499,6 +510,10 @@ updated" wait. Run these in order; each prints counts only unless marked.
 .\.venv\Scripts\python.exe -m app.cli payback-audit --fix
 # 3. Only after the planner says so: make the change (counts; ends with a recompute)
 .\.venv\Scripts\python.exe -m app.cli payback-audit --fix --apply
+# 3b. (4H, D-111) Undo an earlier --apply where a Friend answer is on record (dry run, SAFE TO PASTE)
+.\.venv\Scripts\python.exe -m app.cli payback-audit --restore
+#     Only after the planner says so: restore them (counts; ends with a recompute)
+.\.venv\Scripts\python.exe -m app.cli payback-audit --restore --apply
 # 4. Your messages by bank, kind and parse status (SAFE TO PASTE: sender codes and counts)
 .\.venv\Scripts\python.exe -m app.cli bank-survey
 # 5. What the generic parser would read, before any reparse (SAFE TO PASTE: counts)
@@ -817,19 +832,22 @@ gh repo view --web                                # open the repo in the browser
 1. Bank statement check (step 4A): one normal and one messy month against
    the statement, "match" or the difference in rupees. 4A also settles the
    unticked "merged refund" check in NOTES (one event or two, D-064).
-2. After the 4F-A deploy the owner runs the counts in the NOTES cheat sheet
-   ("Other banks and paybacks"): `payback-audit`, `bank-survey`,
-   `generic-preview`, `redact-sample`. The planner decides on
-   `payback-audit --fix --apply`, a reparse and 4F-B. (Logo: C picked, C2
-   applied in 4F-A.)
+2. After the 4H push: `payback-audit` (the D-111 rule) and `payback-audit
+   --restore` (dry run) from the cheat sheet; the planner decides on
+   `--restore --apply`. Delete the cron-job.org job "Flash API warm 07-01
+   IST" (D-112). Run `git config core.hooksPath .githooks` in every clone
+   (D-109).
 3. November data ends at the 14 Nov 2026 export; live SMS is Phase 5.
 4. Not counted: 153 messages from banks without a parser (SBI, ICICI, India
    Post, Kotak, PhonePe) and 44 foreign-currency messages (D-035). Since
    4F-A the generic parser reads the banks among them after a reparse (not
    PhonePe, an app); `generic-preview` counts what it would read first.
-5. Close category colour pairs (OKLab distance about 4 to 5, such as card
-   bill and uncategorised); icons and names carry identity (D-081).
-6. Not checked: real iOS, screen readers, 200 % text on the 3F-3 screens.
+5. Category colours: every two are now at least 10 apart (CIEDE2000, 4H,
+   D-113, checked by `src/colours.test.ts`); icons and names still carry
+   identity (D-081).
+6. Not checked: real iOS, screen readers. 200 % text at 360 px was checked
+   on every screen and sheet in headless Edge on demo data (4H,
+   `docs/design/screens-4h.html`), not on a real phone.
    The 4B-3 offline boot was checked on a production build in headless
    Edge (service worker on, offline emulation, a seeded FAKE session, a
    stand-in auth and API), not yet on the real phone.
@@ -862,8 +880,8 @@ gh repo view --web                                # open the repo in the browser
 14. Later list: a friendlier Home, still minimal; revisit with 4D.
 
 Known limits: HDFC and INR only; the card bill pair rule waits for credit
-card SMS; the server sleeps when idle (about a minute to wake; kept awake
-07:00 to 00:50 IST by the warm job); import takes about 6 minutes for 917
+card SMS; the server sleeps when idle (about a minute to wake; the phone
+copy covers it, D-112); import takes about 6 minutes for 917
 messages; Starlette's httpx warning is accepted (D-010).
 
 Also on record (NOTES only):
@@ -878,6 +896,27 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-21: Phase 4H, people actions, payback rule, polish
+
+- Person sheet (D-110): "Payments to them count as" (chips, the party
+  default), "Money from them is" (Friend / Family / Ignore / Income),
+  "Recent payments" (last 10, "just this one"); all through the outbox,
+  offline too. Opens from ledger rows and "Person" on To-do cards and
+  transaction sheets.
+- payback-audit (D-111): any Friend, Family or Income answer on record
+  (answered_at, newest stored app answer, role decisions on its credits)
+  is never silent; `--restore [--apply]` undoes an earlier fix where a
+  Friend answer is on record.
+- Carry-overs: `new_label` reuses a same-name label so an offline label can
+  be picked again (D-110); a refused change shows "Not saved" on its item;
+  the API warm job is retired (D-112).
+- Polish (D-113): one money formatter (paise only when not zero on a
+  transaction), one date set, rows that wrap at 200 % text, 44 px segmented
+  control, capped Net/ring/tab names, "Not saved" wording, eight category
+  colours nudged (all pairs at least 10 apart), tokens in ui-spec.
+  Screens before and after: `docs/design/screens-4h.html`.
+- No migration.
 
 ### 2026-11-21: history rewrite (no AI attribution)
 
