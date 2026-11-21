@@ -203,7 +203,7 @@ function TodoCount() {
   const { ops } = useOutbox()
   if (load.status !== 'ready') return null
   const t = todoView(load.data.todo, ops) // answers waiting to sync are not counted
-  const n = t.senders.length + t.merchants.length + checksView(load.data.transactions, ops).length
+  const n = t.senders.length + t.merchants.length + t.transfers.length + checksView(load.data.transactions, ops).length
   if (!n) return null
   return (
     <span

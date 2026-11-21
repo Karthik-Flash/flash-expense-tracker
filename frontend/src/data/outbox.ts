@@ -10,7 +10,7 @@
 import { useSyncExternalStore } from 'react'
 
 import { ApiError, type Api, type SendRequest } from '../api/client.ts'
-import type { Category, Person, PersonRole, Sender, SenderAnswer, Snapshot, Txn } from '../api/types.ts'
+import type { Category, Person, PersonRole, Sender, SenderAnswer, Snapshot, Transfer, Txn } from '../api/types.ts'
 import { deleteOp, putOp, readOutbox } from './local.ts'
 import { asksSoFar, dataState, onApplied, onReset, refresh } from './store.ts'
 
@@ -486,6 +486,7 @@ export function markText(op: Op, now = Date.now()): string {
 }
 
 const isCheck = (o: Op) => o.path.endsWith('/check') || o.path.endsWith('/ignore')
+const isTransfer = (o: Op) => o.path.startsWith('/transfers/')
 
 /** The newest action that changes this row's category, label or count (failed ones do not),
  *  and the newest one about the row the server refused (`failed`), so the row says so (4H). */
@@ -558,13 +559,19 @@ export function todoView(todo: Snapshot['todo'], ops: Op[]) {
   const live = ops.filter((o) => o.state !== 'failed')
   const senders = new Set(live.flatMap((o) => o.targets.senders ?? []))
   const merchants = new Set(live.filter((o) => o.path.endsWith('/category')).flatMap((o) => o.targets.merchants ?? []))
+  const moved = new Set(live.filter(isTransfer).map((o) => o.path))
   return {
     senders: todo.senders.filter((s) => !senders.has(s.id)),
     answered: todo.answered.filter((s) => !senders.has(s.id)),
     merchants: todo.merchants.filter((m) => !merchants.has(m.name)),
+    transfers: (todo.transfers ?? []).filter((t) => !moved.has(transferPath(t))),
     waiting: [
       ...live.filter(
-        (o) => o.targets.senders?.length || (o.targets.merchants?.length && o.kind.startsWith('All from')) || (isCheck(o) && o.method === 'PUT'),
+        (o) =>
+          o.targets.senders?.length ||
+          (o.targets.merchants?.length && o.kind.startsWith('All from')) ||
+          (isCheck(o) && o.method === 'PUT') ||
+          isTransfer(o),
       ),
       ...ops.filter((o) => o.state === 'failed' && o.last_error === 'needs_choice'), // the choice, inline (D-107)
     ],
@@ -579,6 +586,8 @@ export function syncLine(ops: Op[], signIn: boolean): { waiting: string; failed:
 }
 
 // --- The owner actions as outbox entries -------------------------------------------------
+
+const transferPath = (t: Pick<Transfer, 'debit' | 'credit'>) => `/transfers/${t.debit}/${t.credit}`
 
 const ANSWER_TEXT = { friend: 'Friend', income: 'Family', ignore: 'Ignored' } as const
 
@@ -666,6 +675,19 @@ export const actions = {
       path: `/people/${p.txn_id}/join`,
       body: role ? { into: into.txn_id, role } : { into: into.txn_id },
       targets: { people: [p.key, into.key] },
+    }
+  },
+  /** "Moved between your accounts?" (D-115): Yes, both legs are a transfer; No, they are not. */
+  answerTransfer(t: Transfer, same: boolean, item: string): NewOp {
+    const choice = same ? 'Moved between my accounts' : 'Not a transfer'
+    return {
+      kind: `Transfer: ${same ? 'Yes' : 'No'}`,
+      item,
+      choice,
+      method: 'PUT',
+      path: transferPath(t),
+      body: { verdict: same ? 'same' : 'different' },
+      targets: { txns: [t.debit, t.credit] },
     }
   },
   // Checks (D-101, D-103): a row read automatically, and Not a payment for any row.

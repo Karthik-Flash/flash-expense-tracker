@@ -1,9 +1,9 @@
 import { useState } from 'react'
 
-import type { Category, Sender, Snapshot, Txn } from '../api/types.ts'
+import type { Category, Sender, Snapshot, Transfer, Txn } from '../api/types.ts'
 import { actions, checksView, enqueue, personMark, senderMark, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
 import { usePeople, useSnapshot } from '../data/store.ts'
-import { dayLabel } from '../lib/dates.ts'
+import { dayLabel, istTime, timeLabel } from '../lib/dates.ts'
 import { Button, CategoryChips, Empty, Header, Loaded, Money, Section } from '../ui.tsx'
 import { seePayments, useNav } from '../state.tsx'
 import { isCredit, nameOf } from './common.ts'
@@ -25,10 +25,17 @@ export function TodoScreen() {
           const personOf = (txnId: number) => transactions.find((x) => x.id === txnId)?.person_id ?? null
           return (
             <>
-              {t.senders.length === 0 && t.merchants.length === 0 && t.waiting.length === 0 && checks.length === 0 && <Empty>Nothing to do.</Empty>}
+              {t.senders.length === 0 && t.merchants.length === 0 && t.transfers.length === 0 && t.waiting.length === 0 && checks.length === 0 && (
+                <Empty>Nothing to do.</Empty>
+              )}
               {t.waiting.length > 0 && (
                 <Section title="Saved on phone">
                   {t.waiting.map((op) => <WaitingRow key={op.seq} op={op} />)}
+                </Section>
+              )}
+              {t.transfers.length > 0 && (
+                <Section title="Moved between your accounts?">
+                  {t.transfers.map((x) => <TransferRow key={`${x.debit}:${x.credit}`} t={x} />)}
                 </Section>
               )}
               {checks.length > 0 && (
@@ -75,6 +82,29 @@ function WaitingRow({ op }: { op: Op }) {
         <Pending op={op} />
       </span>
       {op.state === 'failed' && op.message && <p className="text-xs text-muted wrap-break-word">{op.message}</p>}
+    </div>
+  )
+}
+
+/** The same amount left one of your accounts and reached another within 30 minutes, with no
+ *  shared reference to prove it (D-115). Yes: neither counts; No: both stay as they are. */
+function TransferRow({ t }: { t: Transfer }) {
+  const item = `${t.from_bank} to ${t.to_bank}`
+  const answer = (same: boolean) => void enqueue(actions.answerTransfer(t, same, item))
+  return (
+    <div className="px-4 py-2.5">
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{item}</span>
+        <Money paise={t.amount_paise} exact />
+      </div>
+      <p className="text-xs text-muted">
+        {istTime(Date.parse(t.debit_time_utc))} out · {timeLabel(t.credit_time_utc)} in
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button className="flex-1" onClick={() => answer(true)}>Yes, my accounts</Button>
+        <Button className="flex-1" onClick={() => answer(false)}>No</Button>
+      </div>
+      <p className="mt-1 text-xs text-muted">Yes: neither counts as spending or money in.</p>
     </div>
   )
 }

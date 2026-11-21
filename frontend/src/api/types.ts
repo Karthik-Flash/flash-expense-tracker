@@ -135,6 +135,18 @@ export interface Merchant {
   count: number
 }
 
+/** A possible transfer between two of the owner's accounts, same amount, no shared reference
+ *  (D-115). Yes: both legs are a transfer (in no total); No: the pair is dropped. */
+export interface Transfer {
+  debit: number
+  credit: number
+  amount_paise: number
+  from_bank: string
+  to_bank: string
+  debit_time_utc: string
+  credit_time_utc: string
+}
+
 /** One row of the People ledger. Net = Sent - Got back; To confirm never lowers it. */
 export interface PersonRow {
   key: string
@@ -178,6 +190,8 @@ export interface Snapshot {
     /** `last_time_utc`: the newest payment (absent in a phone copy from before 4B-2). */
     merchants: (Merchant & { txn_id: number; last_time_utc?: string })[]
     unnamed: number
+    /** Moved between your accounts? (D-115). Absent in a phone copy from before 4A. */
+    transfers?: Transfer[]
   }
   labels: LabelView[]
   categories: Category[]
