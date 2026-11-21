@@ -1,0 +1,8 @@
+{
+  "appId": "app.flashexpense.android",
+  "appName": "Flash",
+  "webDir": "dist-android",
+  "android": {
+    "path": "../mobile/android"
+  }
+}

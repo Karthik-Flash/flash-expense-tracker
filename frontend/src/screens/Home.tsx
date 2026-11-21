@@ -11,6 +11,7 @@ import { navigate, useApp, useNav } from '../state.tsx'
 import { Bar, CategoryTile, Empty, Figure, Freshness, Header, Icon, Loaded, Money, MonthSwitcher, Notice, RowButton, Section } from '../ui.tsx'
 import { nameOf } from './common.ts'
 import { identifiersText, isPersonTxn, monthData, monthTxns, personKey } from './derive.ts'
+import { SmsPrompt } from './BankSms.tsx'
 import { Ring } from './Ring.tsx'
 import { TxnList } from './Transactions.tsx'
 
@@ -35,6 +36,7 @@ export function Home() {
       </header>
       <MonthSwitcher month={month} setMonth={(m) => replace({ month: m })} latest={currentMonth()} />
       <Freshness />
+      <SmsPrompt open={() => open({ sheet: 'sms' })} />
       <Loaded load={load} retry={retry}>
         {(s) => {
           const m = monthData(s, month)

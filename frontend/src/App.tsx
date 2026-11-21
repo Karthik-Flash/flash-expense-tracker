@@ -3,10 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, DEMO, demoApi } from './api/index.ts'
 import { DEMO_STATES, type DemoState } from './api/fake.ts'
 import { markPainted, type BootPath } from './boot.ts'
-import { refreshToken, signIn, signOut, useAuth } from './auth.ts'
+import { beforeSignOut, refreshToken, signIn, signOut, useAuth } from './auth.ts'
 import { checksView, startOutbox, syncState, todoView, unsynced, useOutbox } from './data/outbox.ts'
-import { clearData, startData, useData, useSnapshot } from './data/store.ts'
+import { clearData, refresh, startData, useData, useSnapshot } from './data/store.ts'
 import { AppContext, navigate, useNav, useScrollMemory, useView, type AppState } from './state.tsx'
+import { isNativeApp, signOutPhone, startSms } from './native/sms.ts'
+import { BankSmsSheet } from './screens/BankSms.tsx'
 import { CategoryDetail, Home } from './screens/Home.tsx'
 import { LabelDetail, Labels } from './screens/Labels.tsx'
 import { Login } from './screens/Login.tsx'
@@ -22,6 +24,8 @@ import { UpdateBar } from './update.ts'
 import { HOME, type Tab, type View } from './view.ts'
 
 const SIGNED_IN = 'flash-demo-signed-in'
+// Sign-out revokes this phone's device token while the login still works (5A, D-122).
+beforeSignOut(() => signOutPhone(api))
 const TABS: [Tab, string, string][] = [
   ['home', 'Home', 'house'],
   ['transactions', 'Transactions', 'receipt-text'],
@@ -70,7 +74,9 @@ export default function App() {
   // After the first paint: the phone copy of this login, then the server (D-089), then the
   // outbox (D-091). Nothing here holds up the first screen (D-095).
   useEffect(() => {
-    if (status === 'in' && user) void startData(api, user).then(() => startOutbox(api, refreshToken))
+    if (status === 'in' && user) void startData(api, user)
+        .then(() => startOutbox(api, refreshToken))
+        .then(() => startSms(refresh, user)) // the Android app: an upload refreshes the snapshot
   }, [status, user])
   if (DEMO && view.tab === 'dev') return <Logos />
   // Not reached: startAuth decides from the device before the first render (D-095).
@@ -93,7 +99,8 @@ export default function App() {
             }}
           />
         )}
-        <UpdateBar aboveNav={status === 'in'} />
+        {/* The Android app updates by a new APK: no service worker there (D-125). */}
+        {!isNativeApp() && <UpdateBar aboveNav={status === 'in'} />}
         {asking > 0 && <SignOutSheet count={asking} stay={() => setAsking(0)} leave={leaveNow} />}
       </div>
     </AppContext.Provider>
@@ -152,6 +159,7 @@ function Shell({ view }: { view: View }) {
       {view.sheet === 'speed' && <SpeedSheet onClose={back} />}
       {view.sheet === 'profile' && <ProfileSheet onClose={back} />}
       {view.sheet === 'unsaved' && <UnsavedSheet onClose={back} />}
+      {view.sheet === 'sms' && <BankSmsSheet onClose={back} />}
       {view.person && !view.sheet && <PersonSheet key={`${view.person}:${view.act}`} personKey={view.person} act={view.act} onClose={back} />}
     </div>
   )

@@ -9,6 +9,7 @@ import {
   type Category,
   type CategoryAmount,
   type ChartSlice,
+  type Device,
   type LabelView,
   type Merchant,
   type MonthData,
@@ -208,6 +209,10 @@ export class FakeApi implements Api {
   private kinds = new Map<string, PartyKind>()
   private dismissed = new Set<string>()
   private ownerNames: string[] = []
+  // Phones that upload bank SMS (5A): one demo phone, so the list has a row.
+  private devices: Device[] = [
+    { device_id: '00000000-0000-4000-8000-000000000001', name: 'Demo phone', created_utc: '2026-11-20T04:30:00.000Z', last_seen_utc: '2026-11-21T15:10:00.000Z', revoked_utc: null },
+  ]
 
   setState(state: DemoState): void {
     this.state = state
@@ -457,6 +462,8 @@ export class FakeApi implements Api {
           suggestions: this.suggestions(),
         },
         profile: { names: [...this.ownerNames] },
+        devices: this.devices.map((d) => ({ ...d })),
+        sms: { newest_utc: transactions[0]?.time_utc ?? null },
         labels,
         categories: CATEGORIES,
         people: this.peopleOf(transactions),
@@ -585,7 +592,25 @@ export class FakeApi implements Api {
       return this.setLabel(Number(txn[1]), id)
     }
     if (txn?.[2] === 'label' && method === 'DELETE') return this.clearLabel(Number(txn[1]))
+    const device = /^\/devices\/([^/]+)$/.exec(path)
+    if (device && method === 'DELETE') {
+      const d = this.devices.find((x) => x.device_id === device[1])
+      if (!d) throw new ApiError(404, 'No such device.')
+      d.revoked_utc ??= new Date().toISOString()
+      return
+    }
     throw new ApiError(404, 'Not found.')
+  }
+
+  /** As POST /devices (5A): this phone and a demo token; the same id again replaces it. */
+  registerDevice(deviceId: string, name: string): Promise<{ token: string }> {
+    return this.respond(() => {
+      const now = new Date().toISOString()
+      const known = this.devices.find((d) => d.device_id === deviceId)
+      if (known) Object.assign(known, { name, revoked_utc: null })
+      else this.devices.push({ device_id: deviceId, name, created_utc: now, last_seen_utc: null, revoked_utc: null })
+      return { token: `demo-token-${crypto.randomUUID()}` }
+    })
   }
 
   /** As owner_actions.looks_right, not_a_payment and count_again (D-101, D-103). */

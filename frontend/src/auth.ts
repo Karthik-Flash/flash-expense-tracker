@@ -172,10 +172,18 @@ export async function expire(note = ''): Promise<void> {
   }
 }
 
+const signOutHooks: (() => Promise<void>)[] = []
+
+/** Work for sign-out while the login still works (5A: revoke this phone's device token). */
+export function beforeSignOut(hook: () => Promise<void>): void {
+  signOutHooks.push(hook)
+}
+
 /** Sign out on this device: the phone copy and the outbox are deleted first. `note` is shown
  *  on the login screen. The app asks first when actions have not synced (D-093). */
 export async function signOut(note = ''): Promise<void> {
   if (state.status === 'out') return
+  for (const hook of signOutHooks) await hook().catch(() => {})
   await clearData()
   set({ status: 'out', note })
   try {

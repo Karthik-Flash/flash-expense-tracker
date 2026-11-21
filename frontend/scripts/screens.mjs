@@ -153,6 +153,40 @@ await shot('sheet-speed', true)
 await go(`/home${M}&unsaved`)
 await sleep(800)
 await shot('sheet-unsaved', true)
+await go(`/home${M}&sms`) // 5A: in a browser, the phones and Revoke
+await sleep(800)
+await shot('sheet-sms', true)
+// 5A: the Android app's steps, with a stand-in plugin set on the dev server's own module.
+const android = (status) =>
+  js(`import('/src/native/sms.ts').then(async (m) => {
+    const s = ${JSON.stringify(status)}
+    const answer = async () => s
+    m.setPluginForTests({ status: answer, requestSms: answer, openAppInfo: async () => {}, connect: answer, disconnect: answer, startHistory: answer, syncNow: answer, addListener: async () => ({ remove: async () => {} }) })
+    await m.loadSms()
+    return true
+  })`)
+const phone = { available: true, deviceId: '00000000-0000-4000-8000-000000000001', deviceName: 'Demo phone', permission: 'granted', connected: true, revoked: false, queued: 0, awaiting: 0, dropped: 0, lastError: '', batteryUnrestricted: true, manufacturer: 'samsung' }
+await go(`/home${M}`)
+await android({ ...phone, permission: 'prompt', connected: false })
+await sleep(800)
+await shot('home-android')
+await go(`/home${M}&sms`)
+await sleep(800)
+await shot('sheet-sms-permission', true)
+await android({ ...phone, permission: 'denied', connected: false })
+await sleep(800)
+await shot('sheet-sms-blocked', true)
+await android(phone)
+await sleep(800)
+await shot('sheet-sms-period', true)
+const on = { ...phone, cursorMs: Date.UTC(2026, 10, 20), historyFromMs: Date.UTC(2026, 7, 22), queued: 2, lastUpload: { at: Date.UTC(2026, 10, 21, 9), stored: 3 }, lastAttempt: { at: Date.UTC(2026, 10, 21, 9, 5), result: 'server_error' }, lastError: 'server_error', batteryUnrestricted: false }
+await android(on)
+await sleep(800)
+await shot('sheet-sms-on', true)
+await go(`/home${M}&speed`)
+await sleep(800)
+await shot('sheet-speed-android', true)
+await js(`import('/src/native/sms.ts').then((m) => { m.setPluginForTests(null); return true })`)
 await go('/home?m=2026-01')
 await sleep(800)
 await shot('home-empty-month')

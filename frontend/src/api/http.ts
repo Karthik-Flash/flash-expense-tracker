@@ -35,7 +35,7 @@ export class HttpApi implements Api {
   }
 
   /** The snapshot's response, or an ApiError. */
-  private async request(method: string, path: string, init: { headers?: Record<string, string>; signal?: AbortSignal } = {}) {
+  private async request(method: string, path: string, init: { headers?: Record<string, string>; signal?: AbortSignal; body?: string } = {}) {
     const unreachable = new ApiError(0, errorText(0, null))
     let token: string | null
     try {
@@ -58,6 +58,7 @@ export class HttpApi implements Api {
           [HEADER.accept]: 'application/json',
           ...init.headers,
         },
+        body: init.body,
       })
     } catch (e) {
       if (init.signal?.aborted) throw e
@@ -80,6 +81,14 @@ export class HttpApi implements Api {
       throw new ApiError(502, errorText(502, null)) // not JSON: a waking server's page
     }
     return { status: 200, etag: response.headers.get('ETag') ?? '', snapshot, bytes: new TextEncoder().encode(text).length }
+  }
+
+  async registerDevice(deviceId: string, name: string): Promise<{ token: string }> {
+    const body = JSON.stringify({ device_id: deviceId, name })
+    const response = await this.request('POST', '/devices', { headers: { [HEADER.contentType]: 'application/json' }, body, signal: AbortSignal.timeout(90_000) })
+    const answer = (await response.json().catch(() => null)) as { token?: unknown } | null
+    if (typeof answer?.token !== 'string') throw new ApiError(502, errorText(502, null))
+    return { token: answer.token }
   }
 
   /** One owner action from the outbox, with its Idempotency-Key. A 401 or 403 is answered,

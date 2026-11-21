@@ -65,6 +65,7 @@ function server(snapshot: () => Promise<SnapshotAnswer> = async () => ({ status:
   let release = () => {}
   const api: Api = {
     demo: false,
+    registerDevice: async () => ({ token: 'test-token' }),
     snapshot: () => snapshot(),
     async send(req: SendRequest) {
       const mode = modes.shift() ?? 'ok'
