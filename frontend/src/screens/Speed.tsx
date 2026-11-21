@@ -93,7 +93,9 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
           <p className="mt-1 text-muted">{timings ? 'No launches measured yet.' : 'Loading'}</p>
         )}
         {rows.length > 0 && (
-          <table className="mt-4 w-full text-left tabular-nums">
+          // At large text sizes the table scrolls inside its box; the page never scrolls sideways.
+          <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-left tabular-nums">
             <caption className="pb-1 text-left text-xs font-medium text-muted">{rows.length === 1 ? 'Last launch' : `Last ${rows.length} launches`}</caption>
             <thead className="text-xs text-muted">
               <tr>
@@ -116,6 +118,7 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         <BootBlock />
         <p className="mt-4 text-xs text-muted">Measured on this phone and kept only here. Never sent anywhere.</p>

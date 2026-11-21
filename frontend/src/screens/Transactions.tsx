@@ -190,7 +190,7 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
     void enqueue(change)
     onClose()
   }
-  const choice = 'flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2 text-left active:bg-press'
+  const choice = 'flex min-h-12 w-full flex-wrap items-center justify-between gap-x-3 px-4 py-2 text-left active:bg-press'
   const category = mark.category ? mark.category.choice : `${txn.category_name} · ${txn.category_basis === 'owner' ? 'set by you' : 'automatic'}`
   const label = mark.label ? mark.label.choice : (txn.label?.name ?? 'None')
 
