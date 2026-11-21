@@ -54,6 +54,10 @@ owner's transaction, label or sender is "404 not found".
 | PUT | `/api/v1/people/{txn}/kind` | `{"kind": "self" \| "investment"}`: It's me or Investments for the person of `txn` (D-117, D-118); every payment of the party, both ways |
 | DELETE | `/api/v1/people/{txn}/kind` | Undo: the party gets back the kind it had (404 when it is neither) |
 | PUT | `/api/v1/people/{txn}/suggestion` | `{"kind"}`: No to "Is this you?" / "Is this an investment?": not asked again |
+| POST | `/api/v1/devices` | `{"device_id": uuid, "name"}` (5A, D-122): registers this phone; 201 with `{"device", "token"}`. The token is shown only here. Not an outbox write |
+| GET | `/api/v1/devices` | `{"devices": [...]}`: every phone of the owner (never a token or hash) |
+| DELETE | `/api/v1/devices/{device_id}` | Revoke: its token stops at once (an outbox write; revoking twice is the same answer; 404 for another owner's) |
+| POST | `/api/v1/ingest/sms` | The device token only (below): a batch of bank SMS from the phone |
 | HEAD | `/health` | 200, no body, no database (D-098): the warm job's fallback |
 
 **Writes** are saved with source `app` and are idempotent. Since 4F-B
@@ -70,7 +74,44 @@ preflight first. The API allows exactly the headers and methods in
 `frontend/src/api/headers.ts` (Authorization, Accept, Content-Type,
 If-None-Match, Idempotency-Key, X-Defer-Recompute; GET, PUT, POST, DELETE)
 from the origins in `CORS_ORIGINS`, and exposes `ETag`. Every request is
-logged as one line: method, route template, status, duration.
+logged as one line: method, route template, status, duration. Only three
+kinds of origin are ever allowed, whatever `CORS_ORIGINS` holds: the Vercel
+app, the Android app's WebView `https://localhost` (5A, D-125; exactly, no
+port) and local dev servers. The phone's native upload sends no Origin: it is
+not subject to CORS.
+
+### Devices and the SMS ingest (5A, D-122, D-123)
+
+- **Device token**: `POST /api/v1/devices` with the login token makes 256
+  random bits (`secrets.token_urlsafe(32)`) and stores only their SHA-256
+  (`devices.token_hash`). The same `device_id` again replaces the token (the
+  old one stops), so a lost answer is repaired by asking again. The name is
+  tidied (spaces) and cut to 60 characters; an empty one is 422.
+- The device token is **ingest-only**: it is not a login token, so every
+  other route answers 401; `POST /api/v1/ingest/sms` accepts nothing else
+  (a login token there is 401). `Authorization: Bearer <device token>`.
+  401 `invalid device token` for an unknown one, 401 `device_revoked` for a
+  revoked phone (the phone stops and says so).
+- **Ingest** body `{"messages": [{"sender", "body", "received_at_utc",
+  "device_msg_id"}]}`: 1 to 500 messages; `sender` at most 64 characters;
+  `body` 1 to 2,048 bytes (UTF-8); `received_at_utc` an ISO time with a zone
+  (the inbox row's `date`, to the millisecond: it is part of the content
+  hash); `device_msg_id` 1 to 64 characters (the inbox `_id`, echoed back).
+  Anything else is 422 and nothing is stored.
+- Per message, in order: a sender whose core is not a bank of
+  `app/engine/shared/bank_senders.json` (PhonePe is registered but not a
+  bank) is `refused_not_bank`; a promotional sender (TRAI suffix P) or an OTP
+  is `refused_filtered`; else the message goes through `store.ingest()` as
+  import-sms stores it (source `live_sms`): `stored` (a new raw message,
+  parsed, a transaction when it is money) or `duplicate` (the same content
+  hash is there, from the laptop or an earlier upload). Refused messages are
+  never stored. Answer: `{"results": [{"device_msg_id", "status"}],
+  "counts": {"stored", "duplicate", "refused_not_bank",
+  "refused_filtered"}}`. A new message sets the recompute mark (D-106): the
+  next read recomputes. One `import_batches` row (source `live_sms`) per
+  upload; `devices.last_seen_at` is set.
+- Bodies, senders and tokens are never logged; the request log has the route
+  template only.
 
 - `scope: merchant` sets the default on the merchant's party (made from the
   transaction's text if there is none, kind `unsure` since 4E, so a category
@@ -273,3 +314,8 @@ Since 4Z the snapshot also has `profile` (`{"names": [...]}`, D-117); a person
 in `people` has `kind` (self, investment or null); a transaction item has
 `statement` (read from the bank statement, D-120) and `category_guessed`
 (D-119). Role `investment` is in no total (D-118).
+
+Since 5A the snapshot also has `devices` (the owner's phones: `device_id`,
+`name`, `created_utc`, `last_seen_utc`, `revoked_utc`) and `sms`
+(`{"newest_utc"}`: when the newest SMS the server has arrived, from a laptop
+import or the phone; the Bank SMS sheet starts a first scan a day before it).

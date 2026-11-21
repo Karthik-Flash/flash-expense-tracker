@@ -1495,3 +1495,127 @@ equals local `main` (`13138a9`), every tag equals its remote tag, and
 `D:\Projects\FinancesApp-backup-20261121.git` was then deleted, the reflogs
 expired and `git gc --prune=now` run. The owner's database backups in
 `D:\FlashPrivate\backups` were never touched.
+
+## D-122 Device tokens: ingest-only, hashed, revocable (2026-11-22)
+
+A phone uploads bank SMS with its own token, not the owner's login. `POST
+/api/v1/devices` (login token, `{device_id, name}`) makes 256 random bits
+(`secrets.token_urlsafe(32)`), stores only the SHA-256 (`devices.token_hash`,
+migration `0014`, RLS on, no policies) and returns the token once. The same
+`device_id` again (one per install, kept across sign-outs) replaces the token
+and un-revokes the row, so a lost answer is repaired by asking again; that is
+why registration is not an outbox write: a stored replay would have to keep
+the token, and it is useless offline. The token is ingest-only: it is not a
+login token, so every other route answers 401, and the ingest route takes no
+login token (tested over every route). `GET /devices` lists the phones
+(never a hash); `DELETE /devices/{device_id}` revokes at once, through the
+outbox like every owner write, and the row stays. On the phone the token is
+sealed with AES-256-GCM under an Android Keystore key and never handed back to
+the web app. Sign-out revokes the phone (best effort, 5 s) and wipes the token,
+the queue, the cursor and the status; a revoked phone stops uploading and
+says "disconnected". The phone remembers the login that connected it; when
+another login opens the app there, the phone is disconnected first, so its SMS
+never go to the earlier account. A phone of an owner later removed from `AUTH_USERS`
+keeps working until revoked (5C, several users, settles this).
+
+## D-123 Bank-only ingest with one shared sender list (2026-11-22)
+
+Only bank messages leave the phone, and the server checks again. The sender
+registry moved from `senders.py` into `app/engine/shared/bank_senders.json`
+(`senders`: core to bank; `not_banks`: registered senders that are not banks,
+PhonePe). The server reads it (`senders.py`, so import-sms, the parsers and
+bank-survey's family logic are unchanged) and the Android build packs the
+same folder into the APK's assets, so the phone and the server cannot drift.
+`POST /api/v1/ingest/sms` (device token; 1 to 500 messages; a body of at most
+2 KB in UTF-8; a receive time with a zone; the inbox `_id`): a sender whose
+family is not a bank is `refused_not_bank`, a promotional sender or an OTP is
+`refused_filtered` (as import-sms skips them), and nothing refused is stored.
+A bank message goes through the same `store.ingest()` as import-sms (source
+`live_sms`), so the content hash (sender core, body, receive time in ms) is the
+same: a message the laptop imported and the phone uploaded is one raw message,
+either way round. The answer per message is `stored`, `duplicate`,
+`refused_not_bank` or `refused_filtered` (the fourth status is new: an OTP from
+a bank is a bank's message but must never be kept). A new message sets the
+recompute mark (D-106). One `import_batches` row per upload. The phone applies
+the same rules first (`BankSenders.kt`, tested on `sender_ids.json` and
+`otp_cases.json`), and its inbox query asks the provider only for addresses
+holding a bank core, so other SMS never reach the app.
+
+## D-124 Native SMS: one scan from a cursor, a live receiver, a queue, WorkManager (2026-11-22)
+
+Kotlin in `mobile/android`, platform APIs and WorkManager 2.12.0 only. History
+and catch-up are one mechanism: a scan of the inbox (Telephony provider) from
+a cursor, oldest first, 500 rows a page (rows of one millisecond are never
+split), each page written to the queue before the cursor moves, so a killed
+scan resumes; each run starts 10 minutes before the cursor (repeats come back
+`duplicate`). The first run sets the cursor: a day before the newest SMS the
+server has, or 3, 6 or 12 months back. The phone always sends the inbox row's
+`date` as the receive time, which is what SMS Backup & Restore exports, so the
+hashes agree with laptop imports (bodies keep their line breaks; 124 of the 288
+sample messages have one). Live: a manifest receiver for `SMS_RECEIVED`
+(`BROADCAST_SMS`, so only the system can send it) keeps bank messages as
+"awaiting" rows and enqueues the unique upload work (network required,
+exponential backoff from 30 s, 10 s delay so the SMS app writes the inbox row
+first); the run scans the inbox first, so an awaiting row is settled when its
+inbox row exists (same sender and body within 10 minutes) and never uploaded
+itself; one not in the inbox after 24 h is dropped and counted (the message
+left the inbox; a laptop export would not have it either). Queue:
+`SQLiteOpenHelper` (`flash_queue.db`, `ready` unique by inbox `_id`,
+`awaiting`). A 200 clears every row sent (each status is final); 401
+`device_revoked` or an unknown token stops uploads; 5xx, 408, 429, other 4xx
+and no network retry with backoff. A periodic catch-up every 6 hours
+(network required) runs the same upload. Status for the app: permission,
+connected or revoked, queued and awaiting counts, last upload, last attempt,
+last error code, dropped count, battery optimisation; an upload that stored
+something emits `uploaded`, and the open app refreshes its snapshot. No
+backup (`allowBackup=false`, data extraction rules exclude everything).
+
+## D-125 Bundled web assets; the APK updates by adb (2026-11-22)
+
+The Android app is a Capacitor 8.6.2 shell (`frontend/capacitor.config.json`:
+appId `app.flashexpense.android`, appName "Flash", web assets from
+`dist-android`, the project in `mobile/android`). The web app is bundled (no
+`server.url`), so it opens offline from the first launch; its origin is
+`https://localhost`, which the API allows only when `CORS_ORIGINS` lists it
+(exactly, no port). `vite build --mode android` bakes in the public API URL
+and stops when the Supabase settings are missing. No service worker in the
+app (the update bar is not mounted): a new version is a new APK, built by
+`npm run android:apk` (web app, `npx cap sync android`, `gradlew
+assembleDebug`; versionName from package.json, versionCode the commit count)
+and installed over the old one with `adb install -r`. Debug builds are signed
+with this laptop's standard debug key (`%USERPROFILE%\.android\debug.keystore`;
+losing it means uninstall and install again); Play signing is Phase 6. Build:
+Gradle 9.9.2 and Android Gradle Plugin 9.5.1 (the template's Gradle 8.14.3 and
+AGP 8.13.0 cannot run on JDK 25; Gradle runs on Java 25 from 9.1.0; AGP 9
+compiles Kotlin itself), compileSdk and targetSdk 36, minSdk 26 (Capacitor's
+24 raised: adaptive icons only and `java.time`). The cordova plugins module is
+not built (no Cordova plugins). Icons: the C2 mark as a vector adaptive icon;
+the Android 12+ splash shows it on the page colour.
+
+## D-126 An SMS that merges into a statement row keeps that row's id (2026-11-22)
+
+When an SMS (from the phone or the laptop) merges into a transaction first
+read from the bank statement, by the shared reference (the dedupe key) or by
+the same bank, direction and amount within a day (`store.statement_twin`),
+the SMS's words replace the row's fields but the transaction keeps its id, so
+the owner's category, label, role and check on it stay; a later reparse of the
+SMS updates the same transaction in place. This was already how `link_new` and
+`relink` work; it is now proven by a test on both routes and after a reparse
+(the open item from 4Z). No code change was needed.
+
+## D-127 HDFC template H04, hdfc-1.2.0 (2026-11-22)
+
+The owner's approved sample of the HDFC messages no parser read
+(`data/sample/hdfc-unparsed-sample.txt`, 4Z) holds 44 messages of one shape,
+and it is H04, the forex markup notice that comes with an international debit
+card spend: it has no amount (the spend is an H03 alert in INR, counted).
+Until `hdfc-1.1.1` a pattern made it `foreign_currency_deferred`, so each one
+showed in "not counted yet"; since `hdfc-1.2.0` it is template H04,
+`other_info`, channel `debit_card`, hint `forex_notice`, never a transaction
+(D-035 still defers a spend in a foreign currency, N14). On the redacted
+sample 131 of 135 HDFC results are unchanged field for field and the 4 forex
+notices now parse. After the owner's reparse, all 44 parse as `other_info`. It
+follows that the stored HDFC messages hold no unread payment: the statement's
+October rows that no SMS explains (about Rs 15,708) were never stored as SMS
+(not in the export, or from a sender code not in the registry); the template
+cannot recover them. `statement-import` stays the way to add them.

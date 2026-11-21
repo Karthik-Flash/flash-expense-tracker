@@ -129,7 +129,9 @@ Notes:
    `https://flash-expense-tracker.vercel.app`.
 5. In Render, open the service, then **Environment**. Set `CORS_ORIGINS` to the
    Vercel URL. Add `,http://localhost:5173` if you also want local dev to
-   reach the deployed API. Click **Save, rebuild, and deploy**.
+   reach the deployed API, and `,https://localhost` for the Android app
+   (its WebView's origin, 5A, D-125; exactly that, no port). Click **Save,
+   rebuild, and deploy**.
 6. Open the Vercel URL. It shows the login screen; sign in after section 5.
 
 The `VITE_` variables are baked in at build time. After you change one in

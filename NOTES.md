@@ -30,8 +30,12 @@ without AI attribution, person sheet actions, payback-audit any-answer rule
 and `--restore`, polish pass) and 4A (statement check, own-account
 transfers, statement names) and 4Z (statement reader 1.1.0 and import,
 It's me and Investments, categories from names, Phase 4 retro) done 21 Nov.
-**Phase 4 is done** ([docs/retro/phase-4.md](docs/retro/phase-4.md)); next:
-the open items 1 to 5, then Phase 5 and the pilot.
+**Phase 4 is done** ([docs/retro/phase-4.md](docs/retro/phase-4.md)).
+**Phase 5A done 22 Nov** (not pushed): Flash on Android, bank SMS read on the
+phone and uploaded in the background (devices and device tokens, bank-only
+ingest, the Capacitor shell, the Kotlin SMS plugin, HDFC `hdfc-1.2.0`;
+[docs/design/phase-5a-android.md](docs/design/phase-5a-android.md)). Next:
+the owner's install on the phone (cheat sheet, "Android app"), then 5B.
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -300,7 +304,7 @@ Values are never written in git or chat. Keep them in your password manager.
 | `DATABASE_URL` | Render, Alembic  | Render env; `backend/.env` for local; password manager   |
 | `PING_TOKEN`   | `/health/db`     | Render env; password manager (manual checks only)         |
 | Supabase publishable key | cron-job.org `apikey` header | cron-job.org job header; password manager. Never in git |
-| `CORS_ORIGINS` | FastAPI CORS     | Render env: `http://localhost:5173,https://flash-expense-tracker.vercel.app` |
+| `CORS_ORIGINS` | FastAPI CORS     | Render env: `http://localhost:5173,https://flash-expense-tracker.vercel.app,https://localhost` (the last one: the Android app, 5A) |
 | `SUPABASE_URL` | FastAPI login check (JWKS, issuer) | Render env: `https://<ref>.supabase.co` |
 | `AUTH_USERS`   | FastAPI login -> owner | Render env: `"<auth user id>:<owner_id>"`; password manager |
 | `VITE_API_URL` | Frontend build   | Vercel env: `https://flash-expense-tracker.onrender.com`; `frontend/.env` for local |
@@ -473,6 +477,63 @@ then Home says "Totals are being updated".
 4. Make one tap with Airplane mode on, then turn it off: it syncs within a
    few seconds.
 
+### Android app: build, install, update (5A, D-122 to D-127)
+
+In this order. Steps 1 to 3 once; step 4 for every new version.
+
+1. **Push** after the planner's review: `git push`. Render runs migration
+   `0014` (`devices`) on deploy.
+2. **Render env** (dashboard, service, Environment): `CORS_ORIGINS` gets
+   `,https://localhost` at the end (exactly, no port), so the line reads
+   `http://localhost:5173,https://flash-expense-tracker.vercel.app,https://localhost`.
+   Save, rebuild and deploy.
+3. **Reparse** so the 44 HDFC forex notices are read (`hdfc-1.2.0`; from
+   `backend\`, counts only, SAFE TO PASTE):
+   ```powershell
+   .\.venv\Scripts\python.exe -m app.cli reparse --dry-run   # every HDFC message is reparsed; foreign_currency_deferred should drop by 44
+   .\.venv\Scripts\python.exe -m app.cli reparse
+   .\.venv\Scripts\python.exe -m app.cli stats
+   ```
+4. **Build the APK** (from `frontend\`). It needs the Supabase sign-in
+   settings: put `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` (the
+   same values as on Vercel) in `frontend\.env`; the build stops without
+   them. The API address is built in (the Render URL).
+   ```powershell
+   cd frontend; npm ci; npm run android:apk      # prints APK: ...\mobile\android\app\build\outputs\apk\debug\app-debug.apk
+   ```
+5. **Install over USB** (phone: Settings > About phone > tap Build number 7
+   times; Developer options > USB debugging on; plug in, allow this computer):
+   ```powershell
+   adb devices                                   # the phone listed as "device"
+   adb install -r D:\Projects\FinancesApp\mobile\android\app\build\outputs\apk\debug\app-debug.apk
+   ```
+   The same command installs a newer APK over the old one (data kept). The
+   APK is signed with this laptop's debug key
+   (`%USERPROFILE%\.android\debug.keystore`): keep it; another key means
+   uninstall and install again (the phone's queue and token go).
+6. **First run on the phone**: open Flash, sign in. Home says "Read bank SMS
+   on this phone · Set up": tap it, then "Allow SMS access".
+   - If Android says "Restricted setting" (or nothing happens): "Open App
+     info", ⋮ (top right) > Allow restricted settings, then Permissions >
+     SMS > Allow; back in Flash, "Check again".
+   - The phone connects by itself (needs a connection). Pick the period:
+     "From your newest message on the server" (the default), or 3, 6 or 12
+     months; "Start reading".
+   - Battery: when the sheet shows the battery card, "Open App info" >
+     Battery > Unrestricted (Samsung).
+7. **Pass looks like**: in Bank SMS (or the Speed sheet's Bank SMS block)
+   "SMS permission allowed", "This phone connected", "Waiting on phone 0"
+   within a few minutes, "Last upload <time>, N new", "Last error –". Home
+   shows payments after 14 Nov. Then pay something small by UPI with the app
+   open: it shows within a minute. Paste to the planner only the Bank SMS
+   rows (codes, counts, times) and `stats`; never names or amounts.
+
+Revoke a lost phone: Bank SMS sheet (any device, also the laptop browser),
+Phones, Revoke. Signing out on the phone revokes it and wipes its token and
+queue. Kotlin checks (from `mobile\android\`): `.\gradlew.bat
+testDebugUnitTest`; on a connected phone only: `.\gradlew.bat
+connectedDebugAndroidTest`.
+
 ### Cross-origin check (the test routine since 4F-B, D-104)
 
 ```powershell
@@ -482,8 +543,12 @@ cd frontend; node scripts/cross-origin-check.mjs   # needs backend\.venv and Edg
 It builds the app into `frontend\dist-xo\` (git-ignored), serves it on
 `localhost:4174`, starts the API on `127.0.0.1:8765` with a throwaway
 SQLite file and a test key (no Supabase), and taps Friend online and
-offline-then-online in headless Edge. It prints every preflight and write
-with its status and ends with `CROSS-ORIGIN CHECK: PASS` (exit 0) or `FAIL`.
+offline-then-online in headless Edge. Since 5A it then replays, with Origin
+`https://localhost`, what the Android WebView sends: a preflight per method
+with every app header, the snapshot, registering a phone, the phone's native
+upload (no Origin), a revoke; and checks another origin is refused. It
+prints every preflight and write with its status and ends with
+`CROSS-ORIGIN CHECK: PASS` (exit 0) or `FAIL`.
 Run it whenever headers, CORS or the outbox change.
 
 ### Screens for design review (4H, D-113)
@@ -868,11 +933,15 @@ gh repo view --web                                # open the repo in the browser
 
 Before Phase 5 (carried from Phase 4):
 
-1. **HDFC alerts the parser cannot read** (about Rs 15,700 of October
-   spending showed only on the statement): the owner runs `redact-sample
-   --family HDFC --unparsed`, reads the two files (PRIVATE), approves with
-   `--approve HDFC-UNPARSED`; the next task adds the template(s) from that
-   sample and runs a reparse. Templates are never guessed without a sample.
+1. **HDFC alerts the parser cannot read**: done in 5A (`hdfc-1.2.0`, D-127),
+   but the approved sample's 44 messages are all the forex markup notice,
+   with no amount. So the about Rs 15,700 of October spending that showed
+   only on the statement was never stored as SMS (not in the export, or a
+   sender code not in the registry). Proposed for the planner: a counts-only
+   look at the sender codes `import-sms --dry-run` skips as
+   `unregistered_sender` that contain "HDFC" (sender codes are not private,
+   D-100); `statement-import` meanwhile. The owner runs the reparse (cheat
+   sheet, "Android app", step 3).
 2. **statement-import --apply** and **statement-names --apply** wait for the
    planner's OK, after the owner pastes the new dry runs (cheat sheet,
    "Statement check, transfers and statement names").
@@ -886,6 +955,23 @@ Before Phase 5 (carried from Phase 4):
    `--apply`; delete the cron-job.org job "Flash API warm 07-01 IST" if it is
    still there (D-112); `git config core.hooksPath .githooks` in every clone
    (D-109).
+
+From 5A (Android):
+
+5a. The owner's install and first run (cheat sheet, "Android app"): push,
+    Render `CORS_ORIGINS` with `,https://localhost`, reparse, the Supabase
+    settings in `frontend\.env`, `npm run android:apk`, `adb install -r`.
+    The APK built on 22 Nov used placeholder sign-in settings (the local
+    `frontend\.env` has none): it cannot sign in; rebuild it first.
+5b. Not run anywhere yet: the app on a real phone (permission and
+    restricted settings, receiver, WorkManager, Keystore, battery); the
+    on-device tests (`connectedDebugAndroidTest`). Checked: JVM unit tests,
+    the server end to end, the cross-origin replay of the WebView's requests.
+5c. A bank SMS with an emoji outside the basic plane: SMS Backup & Restore
+    writes it as two U+FFFD, the phone sends the emoji, so a laptop import of
+    that message after a phone upload would be a second raw message (none in
+    the sample). The reference still merges the transaction when there is
+    one.
 
 Ongoing:
 
@@ -930,6 +1016,28 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-22: Phase 5A, Flash on Android
+
+- Server: migration `0014` (`devices`, RLS on); `POST/GET/DELETE
+  /api/v1/devices`; `POST /api/v1/ingest/sms` with an ingest-only device
+  token, bank senders only, `store.ingest()` as import-sms (source
+  `live_sms`), statuses stored / duplicate / refused_not_bank /
+  refused_filtered, recompute mark; the sender list moved to
+  `app/engine/shared/bank_senders.json` (shared with the APK); snapshot
+  `devices` and `sms.newest_utc`; CORS allows `https://localhost` when listed
+  (D-122, D-123, D-125).
+- Statement rows keep their id when an SMS merges, by reference or by amount
+  and day, and after a reparse: proven by a test, no code change (D-126).
+- HDFC `hdfc-1.2.0`: H04 forex notice is `other_info` (D-127).
+- Android (`mobile/android`): Capacitor 8.6.2, Gradle 9.9.2, AGP 9.5.1,
+  compileSdk/targetSdk 36, minSdk 26; Kotlin plugin `FlashSms`, receiver,
+  SQLite queue, WorkManager 2.12.0 upload and 6-hourly catch-up, Keystore
+  AES-GCM token (D-124, D-125). Gradle downloaded SDK Platform 36.
+- Frontend: Bank SMS sheet (`?sms`), Speed sheet Bank SMS block, Home prompt,
+  refresh on upload, sign-out revokes the phone, no service worker in the
+  app; `npm run android:apk`.
+- Cross-origin check replays the WebView's requests from `https://localhost`.
 
 ### 2026-11-21: Phase 4Z, closing Phase 4
 
