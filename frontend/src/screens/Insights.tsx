@@ -1,4 +1,4 @@
-// Insights (5F): Export, Profile, and for the admin People who use Flash. Every figure and
+// Insights (5F): Analytics (D-148), Export, Profile, and for the admin People who use Flash. Every figure and
 // every file comes from the server (D-088, D-146); this screen only lays it out.
 
 import { useState } from 'react'
@@ -13,6 +13,7 @@ import { Button, Header, Icon, Loaded, RowButton, Section } from '../ui.tsx'
 import type { Snapshot } from '../api/types.ts'
 import type { SheetName } from '../view.ts'
 import { InvestmentsSetting } from './Account.tsx'
+import { AnalyticsSection } from './Analytics.tsx'
 
 export function Insights() {
   const [load, retry] = useSnapshot()
@@ -22,6 +23,7 @@ export function Insights() {
   return (
     <>
       <Header title="Insights" />
+      <AnalyticsSection />
       <Loaded load={load} retry={retry}>
         {(s) => {
           const names = s.profile?.names ?? []

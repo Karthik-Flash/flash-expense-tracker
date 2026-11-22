@@ -4,7 +4,7 @@
 
 import { ApiError, type Api, type SendAnswer, type SendRequest } from './client.ts'
 import { HEADER } from './headers.ts'
-import type { Snapshot, SnapshotAnswer } from './types.ts'
+import type { Analytics, AnalyticsAnswer, Snapshot, SnapshotAnswer } from './types.ts'
 
 type Lost = (status: 401 | 403) => void
 
@@ -120,6 +120,16 @@ export class HttpApi implements Api {
     const query = new URLSearchParams({ start, end, format }).toString()
     const response = await this.request('GET', `/export?${query}`, { headers: { [HEADER.accept]: '*/*' }, signal: AbortSignal.timeout(90_000) })
     return response.blob()
+  }
+
+  async analytics(start: string, end: string, etag: string | null): Promise<AnalyticsAnswer> {
+    const query = new URLSearchParams({ start, end }).toString()
+    const headers: Record<string, string> = etag ? { [HEADER.ifNoneMatch]: etag } : {}
+    const response = await this.request('GET', `/analytics?${query}`, { headers, signal: AbortSignal.timeout(90_000) })
+    if (response.status === 304) return { status: 304 }
+    const analytics = (await response.json().catch(() => null)) as Analytics | null
+    if (!analytics?.months) throw new ApiError(502, errorText(502, null)) // a waking server's page
+    return { status: 200, etag: response.headers.get('ETag') ?? '', analytics }
   }
 
   async createInvite(): Promise<{ code: string }> {

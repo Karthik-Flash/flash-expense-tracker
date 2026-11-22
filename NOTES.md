@@ -54,7 +54,7 @@ the phone test plan: cheat sheet, "After the 5B-2 deploy". **5F part 1 done 23 N
 Analytics and "Learn from the owner" still to come.
 **Premium run, 23 Nov** (not pushed): part A pre-push safety (admin privacy test, Profile
 facts, duplicate checks, export range tests, a cross-origin check that waits for the page;
-D-147).
+D-147); part B Analytics at the top of Insights (D-148).
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -685,6 +685,8 @@ cd frontend; node scripts/screens.mjs --out <folder>    # demo data, Edge, 360 p
 node scripts/screens-page.mjs --after <folder> --before <folder>   # docs\design\screens-4h.html
 ```
 
+Since the premium run: `--widths 360,1280` adds a desktop width and `--only <prefix>` shoots
+only matching screens (for example `--only insights`).
 `screens.mjs` starts the demo dev server (FAKE data) and writes one JPEG
 per screen and mode plus `report.json` (sideways scroll, elements past the
 edge, text squeezed to less than half). `--root <frontend folder>` shoots

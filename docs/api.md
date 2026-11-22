@@ -389,3 +389,17 @@ import or the phone; the Bank SMS sheet starts a first scan a day before it).
   3 years) as a file built on the server, with `Content-Disposition: attachment`. CSV: the
   Transactions columns; xlsx: a Transactions and a Summary sheet. Never SMS text or a
   reference; formula-like text cells start with `'`.
+## Premium run additions (D-147, D-148)
+
+- Snapshot: `account.since_utc` (when this login joined) and `profile.data`
+  (`{payments, first_utc, last_utc}`), for Profile.
+- `GET /api/v1/analytics?start=YYYY-MM&end=YYYY-MM`: IST months, both included, 1 to 24
+  (422 otherwise). `months[]` per month: `spent_paise`, `invested_paise`,
+  `paid_back_paise`, `net_paise`, `income_paise`, `to_confirm_paise` (the same totals as
+  `/summary`); `categories[]` (`slug`, `name`, `total_paise`, `share_bp`, `months[]`);
+  `moves` (the last month against the one before: `up[]`, `down[]`, up to 3 each, or null);
+  `merchants[]` and `people[]` (up to 8, with `count` and `share_bp`); `stats` (`days`,
+  `per_day_paise`, `payments`, `biggest`, `busiest_weekday`, `ways_bp` {upi, card, other},
+  `regular[]` paid in 3 or more months, `waiting` {count, amount_paise}). Shares are basis
+  points. ETag `"a-<sha256>"` from the snapshot's cheap ETag and the range; If-None-Match
+  gives a 304 without building.

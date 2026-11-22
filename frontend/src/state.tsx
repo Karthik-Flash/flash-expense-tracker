@@ -75,6 +75,11 @@ export function seePayments(key: string): void {
   navigate({ ...parseHash(''), tab: 'transactions', who: key }, 'open')
 }
 
+/** Analytics (D-148): Transactions of a month, filtered to a category or a name; Back returns. */
+export function seeTransactions(patch: Partial<View>): void {
+  navigate({ ...parseHash(''), tab: 'transactions', ...patch }, 'open')
+}
+
 export function useView(): View {
   const hash = useSyncExternalStore(subscribe, () => location.hash)
   return useMemo(() => parseHash(hash), [hash])

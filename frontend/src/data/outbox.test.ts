@@ -68,6 +68,7 @@ function server(snapshot: () => Promise<SnapshotAnswer> = async () => ({ status:
     registerDevice: async () => ({ token: 'test-token' }),
     createInvite: async () => ({ code: 'TEST-CODE-0001' }),
     exportFile: async () => new Blob(),
+    analytics: async () => ({ status: 304 }),
     deleteAccount: async () => ({ status: 200, detail: null, message: '' }),
     snapshot: () => snapshot(),
     async send(req: SendRequest) {
