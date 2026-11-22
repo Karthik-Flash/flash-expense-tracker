@@ -4,6 +4,21 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 5C: several users (22 Nov 2026)
+
+- Testers join with an invite code the owner makes in the app (People who use
+  Flash): one-time, 7 days, shown once; public sign-up stays off (D-128).
+- Logins live in the database (`app_users`): the owner becomes the admin on
+  the first request; `AUTH_USERS` is only a fallback now (D-129).
+- Every route is tested against another user's ids: nothing is read or
+  changed across accounts (D-130).
+- Delete my account deletes everything of that account, then the login, then
+  the phone's copy; the admin cannot delete their own (D-131).
+- A first-run sheet for a new account, Settings, and "What Flash stores"
+  (`docs/privacy.md`) (D-132).
+- `sender-survey --contains HDFC`: sender codes, stored and skipped, counts
+  only.
+
 ## Phase 5A: Flash on Android (22 Nov 2026)
 
 - An Android app (`app.flashexpense.android`, "Flash"): the web app bundled

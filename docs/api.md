@@ -12,8 +12,10 @@ Send the Supabase Auth access token: `Authorization: Bearer <token>`.
   `<SUPABASE_URL>/auth/v1/.well-known/jwks.json`, with a valid `exp`, issuer
   `<SUPABASE_URL>/auth/v1` and audience `authenticated`. Keys are cached and
   fetched again (at most once a minute) when a token names an unknown key id.
-- `AUTH_USERS` maps the token's `sub` to an owner: `"<sub>:<owner_id>"`,
-  comma-separated.
+- Since 5C (D-129) the token's `sub` is looked up in `app_users` (owner_id,
+  role admin or member). `AUTH_USERS` (`"<sub>:<owner_id>"`, comma-separated)
+  is the seed and a fallback: an entry with no row yet becomes an admin row on
+  its first request. It may be empty once the row exists; malformed is 503.
 
 | Status | When |
 | ------ | ---- |
@@ -58,6 +60,12 @@ owner's transaction, label or sender is "404 not found".
 | GET | `/api/v1/devices` | `{"devices": [...]}`: every phone of the owner (never a token or hash) |
 | DELETE | `/api/v1/devices/{device_id}` | Revoke: its token stops at once (an outbox write; revoking twice is the same answer; 404 for another owner's) |
 | POST | `/api/v1/ingest/sms` | The device token only (below): a batch of bank SMS from the phone |
+| POST | `/api/v1/signup` | No login (5C, D-128): `{"email", "password", "code"}`; 201 `{"ok": true}`, then the app signs in as usual |
+| POST | `/api/v1/invites` | The admin: 201 `{"invite", "code"}`; the code is shown only here. Not an outbox write |
+| GET | `/api/v1/invites` | The admin: `{"invites": [...]}` (`id`, `created_utc`, `expires_utc`, `used_utc`, `revoked_utc`; never a code) |
+| DELETE | `/api/v1/invites/{invite_id}` | The admin: revoke an unused invite (outbox write); 409 for a used one |
+| GET | `/api/v1/members` | The admin: everyone who uses Flash (`email`, `role`, `joined_utc`, `last_seen_utc`, `transactions`, `phones`): counts only |
+| POST | `/api/v1/account/delete` | `{"confirm": "DELETE"}` and a fresh sign-in (D-131): every row of the account, then the login. 409 `fresh_login_required` or `admin_cannot_delete` |
 | HEAD | `/health` | 200, no body, no database (D-098): the warm job's fallback |
 
 **Writes** are saved with source `app` and are idempotent. Since 4F-B
@@ -79,6 +87,29 @@ kinds of origin are ever allowed, whatever `CORS_ORIGINS` holds: the Vercel
 app, the Android app's WebView `https://localhost` (5A, D-125; exactly, no
 port) and local dev servers. The phone's native upload sends no Origin: it is
 not subject to CORS.
+
+### Users, invites and the account (5C, D-128 to D-131)
+
+- **Sign-up** checks, in order: rate limits (10 per IP per 15 minutes, 5 per
+  code per hour, 60 overall per hour: 429 "Too many tries. Wait a few minutes
+  and try again."), an email of the usual shape (422), the code (case, spaces
+  and dashes ignored; unknown, used, expired or revoked all answer 400 "This
+  invite code doesn't work. Check it, or ask for a new one."), then the
+  Supabase login (`SUPABASE_SECRET_KEY` on the `apikey` header, `POST
+  /auth/v1/admin/users`, `email_confirm: true`). A refused login (an email
+  that exists, a password Supabase rejects) is 400 "Could not create the
+  account. Check the details, or ask for a new invite." and the code is not
+  spent; Supabase down or the key missing is 503. The new member gets a new
+  owner_id; a failed save deletes the new login again.
+- **Admin routes** (invites, members) answer 403 to a member.
+- **Delete my account**: the token's `amr` must hold a `password` entry from
+  the last 10 minutes (the app asks for the password again); the admin gets
+  409 `admin_cannot_delete`. Answer `{"deleted": <rows>, "login_deleted":
+  bool}`; `false` means the login waits for `python -m app.cli auth-cleanup`.
+- A device token stops (401 `device_revoked`) once its owner has no
+  `app_users` row (nor an `AUTH_USERS` entry).
+- Snapshot: `account` (`role`, `email`); for the admin also `admin`
+  (`invites`, `members` as above).
 
 ### Devices and the SMS ingest (5A, D-122, D-123)
 

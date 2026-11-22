@@ -461,6 +461,38 @@ attempt (IST time and result code), last success, last error. Then the
 targets, the last launch, the launches table and the boot block. Since 5A a
 Bank SMS block sits above it (below).
 
+## Settings, users and the account (5C, D-128 to D-132)
+
+- **Settings** (`?settings`): the ⋯ button (44 px, muted, "Settings") left of
+  Sign out in Home's header. A plain list of accent links: Your name as banks
+  show it; Bank SMS on this phone (in a browser: Bank SMS and your phones);
+  People who use Flash (the admin only); What Flash stores; Speed and sync;
+  Delete my account.
+- **People who use Flash** (`?members`, the admin): one muted sentence ("An
+  invite lets one person make an account. It works once, for 7 days."), "New
+  invite" (primary). The new code shows once in a bordered card, monospace,
+  with Copy ("Copied"). Invites: "Made Sat 22 Nov" and "Open until …",
+  "Used …", "Revoked" or "Expired"; Revoke on an open one goes through the
+  outbox. Members: email (· admin), then muted "Joined …· last sync … · n
+  payments · n phones". "Counts only. Nobody sees another person's payments."
+- **Delete my account** (`?delete`): what goes (messages and payments;
+  answers, names, categories, labels; phones), a field "Type DELETE to
+  confirm", the password, and a plain button in the danger colour, enabled
+  only with DELETE typed. The admin sees only "The admin account cannot be
+  deleted from the app…". After it, the login screen says "Your account and all
+  its data were deleted."
+- **What Flash stores** (`?privacy`): six short bullets (docs/privacy.md); also
+  a link on the sign-in screen.
+- **Sign-in screen**: "Have an invite code?" switches the form to email,
+  password, invite code ("ABCD-EFGH-JKLM" placeholder, monospace) and "Make my
+  account"; "I have an account" switches back. Errors in the danger colour,
+  in the server's generic words.
+- **First run** (`?welcome`): for an account with no payments, once per login
+  on the device: "Welcome to Flash" (Start, Skip), "Your name as banks show
+  it" (Add my name, Later), then "Read my bank SMS" in the Android app or a
+  note that it needs the Android app. "Step n of 3". Brand-new accounts see
+  the same calm empty states as before (Home, To-do, Labels, Transactions).
+
 ## Bank SMS (5A, D-122, D-124)
 
 The **Bank SMS sheet** (`?sms`) opens from Home (in the Android app, one

@@ -1619,3 +1619,88 @@ follows that the stored HDFC messages hold no unread payment: the statement's
 October rows that no SMS explains (about Rs 15,708) were never stored as SMS
 (not in the export, or from a sender code not in the registry); the template
 cannot recover them. `statement-import` stays the way to add them.
+
+## D-128 Invite codes and server-side user creation (2026-11-22)
+
+Public sign-up stays off. The admin makes an invite in the app (People who use
+Flash): 12 characters from an alphabet without 0/O and 1/I, shown as
+`ABCD-EFGH-JKLM`, shown once (only its SHA-256 is stored, table `invites`,
+migration `0015`), valid 7 days, used once; the admin can revoke an unused one
+(through the outbox). `POST /api/v1/signup` (no login) takes email, password
+(8 to 72 characters) and the code: it locks the invite row, creates a
+confirmed Supabase login through the Auth Admin API, makes a new owner_id and
+its `app_users` row (member), marks the code used, and commits; if the save
+fails, the new login is deleted again (all or nothing); if Supabase refuses,
+the code is not spent. Per Supabase's docs (guides/api/api-keys,
+auth-admin-createuser, auth-admin-deleteuser): the secret key
+(`sb_secret_...`, env var `SUPABASE_SECRET_KEY`, server only, never logged or
+sent out) is not a JWT and goes on the `apikey` header; `POST
+/auth/v1/admin/users` with `email`, `password`, `email_confirm: true`; `DELETE
+/auth/v1/admin/users/<id>`. stdlib urllib, as the key fetch already does (no
+new package). Rate limits, in this process: 10 tries per IP per 15 minutes, 5
+per code per hour, 60 overall per hour (429 "Too many tries…"). Errors are
+generic: one wording for every code that does not work (unknown, used,
+expired, revoked) and one for every login Supabase refuses (an email that
+exists among them), so nothing tells whether an email has an account.
+
+## D-129 app_users replaces AUTH_USERS (2026-11-22)
+
+`app_users` (auth_uid, owner_id, role admin or member, email, created_at,
+last_seen_at; RLS on, no policies) maps a login to its data. Every request
+looks the token's `sub` up there. Seed and fallback in one rule: an
+`AUTH_USERS` entry with no row yet is added as admin on its first request (so
+the owner becomes admin on the first request after the deploy, no command
+needed). After that `AUTH_USERS` is only a fallback the owner may remove; an
+empty one is fine, a malformed one is still 503. `last_seen_at` ("last sync"
+for the admin's list) moves in 10-minute steps. A device token works only
+while its owner still has an `app_users` row (or an `AUTH_USERS` entry): a
+removed or deleted user's phone gets 401 `device_revoked` (open item from
+5A). The snapshot gains `account` (role, email) and, for the admin, `admin`
+(their invites and every member: email, role, joined, last sync, counts of
+payments and phones; never anyone's data).
+
+## D-130 Isolation tested over every route (2026-11-22)
+
+`tests/test_isolation.py` reads the app's route table (OpenAPI paths: FastAPI
+0.162 keeps included routers lazily, so `app.routes` is not flat) and fails
+when a route has no case, so a new route cannot be left out. With FAKE data for
+A (the admin) and B (a member), B calls all 39 routes with A's transaction,
+sender, label, device and invite ids in the path and the body: every call that
+names A's items is refused (4xx), no answer holds any of A's markers, A's view
+(snapshot, devices, invites) is byte-identical afterwards, and B's reads hold
+B's rows only. A's Idempotency-Key never replays for B (client_ops is keyed by
+owner). Ingest is per device token (its owner). Owner commands: `python -m
+app.cli --owner <owner_id> <command>`; without it, the admin in `app_users`,
+else `OWNER_ID`.
+
+## D-131 Delete my account deletes all data: the one exception to "nothing is deleted" (2026-11-22)
+
+`POST /api/v1/account/delete` with `{"confirm": "DELETE"}` and a fresh login
+(the token's `amr` holds a password sign-in from the last 10 minutes; the app
+asks for the password again), never through the outbox. In one transaction
+under the owner's lock it deletes every row of the owner in every table,
+children first: tables with `owner_id`, the tables reached only through them
+(parse results, transaction sources, duplicate candidates), the invites they
+used, their `app_users` row (`pipeline/account.py`; a table with no rule stops
+it, and a test checks every table of the models). Then it deletes the
+Supabase login; if that fails, the data deletion stands and `auth_deletions`
+keeps the login id for `python -m app.cli auth-cleanup`. The phone then signs
+out: the phone copy, the outbox, the native queue and the device token go
+(the device rows are already gone on the server). The admin cannot delete
+their own account from the app (409; the sheet says so), so Flash cannot be
+locked out. This is the only deletion of owner or derived data anywhere; every
+other "nothing is deleted" rule stands.
+
+## D-132 First run and the privacy note (2026-11-22)
+
+An account with no data sees a first-run sheet (`?welcome`) once per login on
+that device (localStorage `flash-welcome-done:<login>`, set when it is
+shown): a one-sentence welcome; "Your name as banks show it"; then, in the
+Android app, "Read my bank SMS" (the 5A Bank SMS sheet), on the web a note that
+SMS reading needs the Android app. Every step can be skipped. "What Flash
+stores" is in Settings and on the sign-in screen, and in `docs/privacy.md`:
+only bank SMS (never OTPs or promotions), Supabase in Singapore, visible only to
+you, never shared or sold, no lending, delete everything any time. Settings
+(`?settings`, the ⋯ button in Home's header) lists your name, Bank SMS, People
+who use Flash (the admin), What Flash stores, Speed and sync, Delete my
+account.
