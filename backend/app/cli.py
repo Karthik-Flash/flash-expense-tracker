@@ -96,7 +96,7 @@ from app.models import (
     TxnLabel,
     TxnLink,
 )
-from app.pipeline import account, payback_audit, review, sample_export, statement, survey
+from app.pipeline import account, payback_audit, review, sample_export, statement, survey, version
 from app.pipeline.owner_actions import ActionError, answer_sender, senders
 from app.pipeline.owner_load import (
     OwnerFileError,
@@ -451,7 +451,13 @@ NO_INCOME_PARTY = (
 def run_recompute(
     session: Session, trigger: str, *, dry_run: bool = False, accept: bool = False
 ) -> int:
-    """Recompute the derived tables and print counts only. A failure writes nothing derived."""
+    """Recompute the derived tables and print counts only. A failure writes nothing derived.
+
+    Every command that may have written something ends here, so the owner's data version is
+    raised here too (D-140): the app's next snapshot is built afresh."""
+    if not dry_run and trigger != "manual":  # `recompute` itself writes only derived rows
+        version.bump(session, settings.owner_id)
+        session.commit()
     try:
         outcome = recompute(
             session, settings.owner_id, trigger, dry_run=dry_run, accept_key_changes=accept

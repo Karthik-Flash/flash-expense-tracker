@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from app.api import snapshot as snap
 from app.main import app
 from app.models import TxnDerived
+from app.pipeline import version
 from tests.apiclient import OWNER_A, SUB_B, SUB_X, all_transactions, bearer, get, put, token
 from tests.smsdata import Row, write_backup
 
@@ -192,7 +193,7 @@ def test_merchants_and_todo_groups() -> None:
 def test_etag_is_stable_and_changes_with_the_data(client, data, run, db_engine) -> None:
     first = fetch(client)
     etag = first.headers["etag"]
-    assert etag.startswith('"') and len(etag) == 66
+    assert etag.startswith('"v-') and len(etag) == 68  # from the data version (D-140)
     again = fetch(client)
     assert again.headers["etag"] == etag  # generated_at differs, the ETag does not
     assert again.json()["generated_at"] >= first.json()["generated_at"]
@@ -215,6 +216,12 @@ def test_etag_is_stable_and_changes_with_the_data(client, data, run, db_engine) 
     with sessionmaker(db_engine)() as s:  # stored rows that a recompute will put right
         row = s.scalar(select(TxnDerived).where(TxnDerived.category != "travel"))
         row.category = "travel"
+        s.commit()
+    # An edit by hand, outside every write path: the ETag (the data version, D-140) cannot see
+    # it, so the same 304 holds until something raises the version.
+    assert fetch(client, **{"If-None-Match": etag}).status_code == 304
+    with sessionmaker(db_engine)() as s:
+        version.bump(s, OWNER_A)
         s.commit()
     stale = fetch(client)
     assert stale.headers["etag"] != etag and any(

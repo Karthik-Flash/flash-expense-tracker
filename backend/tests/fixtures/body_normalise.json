@@ -1,0 +1,10 @@
+[
+  {"name": "line breaks", "in": "Sent Rs.1.00\nFrom HDFC Bank A/C *0001\nTo TEST", "out": "Sent Rs.1.00 From HDFC Bank A/C *0001 To TEST"},
+  {"name": "windows line breaks", "in": "Sent Rs.1.00\r\nTo TEST\r\n", "out": "Sent Rs.1.00 To TEST"},
+  {"name": "runs of spaces and tabs", "in": "  Rs.1.00   credited\t\tto  A/c  ", "out": "Rs.1.00 credited to A/c"},
+  {"name": "no-break space", "in": "Rs.1.00 credited", "out": "Rs.1.00 credited"},
+  {"name": "line and paragraph separators", "in": "Rs.1.00 credited to", "out": "Rs.1.00 credited to"},
+  {"name": "decomposed accent becomes one character", "in": "Café TEST", "out": "Café TEST"},
+  {"name": "nothing to change", "in": "Rs.1.00 credited", "out": "Rs.1.00 credited"},
+  {"name": "only whitespace", "in": " \n\t ", "out": ""}
+]

@@ -153,6 +153,9 @@ class RawMessage(Base):
     content_hash: Mapped[str] = mapped_column(String(64))
     first_batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batches.id"))
     created_at: Mapped[datetime] = _created()
+    # 5B-2 (D-139): how a phone upload got this SMS: "inbox" (the inbox row) or "live" (the
+    # SMS_RECEIVED broadcast, sent when no inbox row came); null for every other source.
+    origin: Mapped[str | None] = mapped_column(String(10))
 
 
 class ParseResult(Base):
@@ -372,6 +375,16 @@ class OwnerSetting(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime)
     source: Mapped[str] = mapped_column(String(10))
+
+
+class DataVersion(Base):
+    """A counter per owner, raised by every write, upload and recompute (5B-2, D-140): the
+    snapshot's ETag comes from it, so an unchanged snapshot is a 304 without being built."""
+
+    __tablename__ = "data_versions"
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    version: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
 
 
 class PartyText(Base):

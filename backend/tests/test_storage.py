@@ -607,6 +607,7 @@ def test_recompute_uses_a_fixed_number_of_statements(loaded: str, run, db_engine
     busy = run_counted()
     writes = [s for s in busy if s in ("INSERT", "UPDATE", "DELETE")]
     lock = db_engine.dialect.name == "postgresql"  # the advisory lock is one more statement
-    assert len(busy) == 18 + lock and sorted(writes) == ["DELETE", "DELETE"] + ["INSERT"] * 3, (
+    # 5B-2 (D-140): one more INSERT, the data version's upsert (INSERT ... ON CONFLICT).
+    assert len(busy) == 19 + lock and sorted(writes) == ["DELETE", "DELETE"] + ["INSERT"] * 4, (
         " ".join(busy)
     )

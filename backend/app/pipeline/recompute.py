@@ -47,6 +47,7 @@ from app.models import (
     TxnDerived,
     TxnLink,
 )
+from app.pipeline import version
 
 # The engine versions a run is made with; a run records them (derive_runs.versions).
 VERSIONS = reconcile.VERSIONS | {"categorise": CATEGORISE_VERSION}
@@ -409,6 +410,7 @@ def _recompute(
         )
         session.add(run)
         session.flush()
+        version.bump(session, owner_id)  # the snapshot changes (D-140)
         outcome = Outcome("done", p, run.id, time.monotonic() - clock)
         if before_commit:
             before_commit(outcome)

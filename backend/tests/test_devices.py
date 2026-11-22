@@ -181,7 +181,9 @@ def test_only_bank_messages_are_stored(client, phone, db_engine) -> None:
         assert s.scalars(select(Transaction)).one().amount_paise == 25000
         batch = s.scalars(select(ImportBatch)).one()
         assert (batch.source, batch.status) == ("live_sms", "done")
-        assert s.get(RecomputeMark, settings.owner_id) is not None  # the next read recomputes
+        # 5B-2 (D-141): a new payment is recomputed at once, for the answer's new_transactions.
+        assert s.get(RecomputeMark, settings.owner_id) is None
+        assert raw.origin == "inbox"  # no origin sent: an inbox row, as before 5B-2
         assert s.scalars(select(Device)).one().last_seen_at is not None
 
 

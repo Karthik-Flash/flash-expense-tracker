@@ -21,7 +21,7 @@ from app.engine.categorise import UNCATEGORISED
 from app.engine.credits import PaybackRow, payback_links
 from app.engine.reconcile import IST, counted
 from app.models import Label, OwnerLinkDecision, Transaction, TxnLink
-from app.pipeline import owner_actions, statement
+from app.pipeline import owner_actions, statement, version
 from app.pipeline.recompute import VERSIONS
 
 SCHEMA_VERSION = 1
@@ -275,6 +275,21 @@ def account(session, caller: Caller | None) -> dict:
     return out
 
 
+def cheap_etag(session, owner, caller: Caller | None) -> str:
+    """The snapshot's ETag without building it (5B-2, D-140): the owner's data version (raised
+    by every write, upload, import and recompute), the IST day (last month's comparison is
+    cut at today), the engine and schema versions, and this login's account block (for the
+    admin it holds every member's last sync, which other people's use changes)."""
+    parts = {
+        "version": version.current(session, owner),
+        "day": v1._now().astimezone(IST).strftime("%Y-%m-%d"),
+        "engines": dict(VERSIONS),
+        "schema": SCHEMA_VERSION,
+        "account": account(session, caller),
+    }
+    return '"v-' + hashlib.sha256(canonical(parts)).hexdigest() + '"'
+
+
 def canonical(document: dict) -> bytes:
     return json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
@@ -290,10 +305,12 @@ def snapshot(
     session: v1.Db,
     if_none_match: Annotated[str | None, Header()] = None,
 ) -> Response:
-    document = build(session, owner, caller)
-    etag = etag_of(document)
+    # 5B-2 (D-140): the ETag comes before the document, so an unchanged copy costs a few
+    # small reads (the version, the account block) instead of the whole build.
+    etag = cheap_etag(session, owner, caller)
     headers = {"ETag": etag, "Cache-Control": "no-cache"}
     if if_none_match and etag in (t.strip().removeprefix("W/") for t in if_none_match.split(",")):
         return Response(status_code=304, headers=headers)
+    document = build(session, owner, caller)
     body = canonical({**document, "generated_at": v1._iso(v1._now())})
     return Response(body, media_type="application/json", headers=headers)
