@@ -5,6 +5,8 @@
 import { ApiError, type Api, type SendAnswer, type SendRequest } from './client.ts'
 import {
   SCHEMA_VERSION,
+  type Analytics,
+  type AnalyticsAnswer,
   type Basis,
   type Category,
   type CategoryAmount,
@@ -426,6 +428,60 @@ export class FakeApi implements Api {
     }
   }
 
+  /** The demo's stand-in for GET /analytics (D-148): the same sums as its /summary. */
+  analytics(start: string, end: string, etag: string | null): Promise<AnalyticsAnswer> {
+    void etag
+    return this.respond((): AnalyticsAnswer => {
+      const months: string[] = []
+      for (let m = start; m <= end && months.length < 24; m = shiftMonth(m, 1)) months.push(m)
+      const sums = months.map((m) => this.summary(m))
+      const bp = (part: number, whole: number) => (whole > 0 ? Math.round((part * 10_000) / whole) : 0)
+      const spent = sums.reduce((a, x) => a + x.spent_paise, 0)
+      const slugs = [...new Set(sums.flatMap((x) => x.categories.map((c) => c.slug)))]
+      const categories = slugs
+        .map((slug) => {
+          const per = sums.map((x) => x.categories.find((c) => c.slug === slug)?.amount_paise ?? 0)
+          const total = per.reduce((a, b) => a + b, 0)
+          const name = sums.flatMap((x) => x.categories).find((c) => c.slug === slug)?.name ?? slug
+          return { slug, name, total_paise: total, share_bp: bp(total, spent), months: per }
+        })
+        .sort((a, b) => b.total_paise - a.total_paise || a.slug.localeCompare(b.slug))
+      const change = categories.map((c) => ({ slug: c.slug, name: c.name, from_paise: c.months.at(-2) ?? 0, to_paise: c.months.at(-1) ?? 0, change_paise: (c.months.at(-1) ?? 0) - (c.months.at(-2) ?? 0) }))
+      const txns = this.visible().map((row) => this.txn(row)).filter((t) => months.includes(monthOf(t.time_utc)))
+      const spends = txns.filter((t) => t.direction === 'debit' && t.role === 'spend')
+      const byName = new Map<string, { name: string; total_paise: number; count: number }>()
+      for (const t of spends.filter((x) => x.category !== 'people')) {
+        const r = byName.get(nameOf(t)) ?? { name: nameOf(t), total_paise: 0, count: 0 }
+        r.total_paise += t.amount_paise
+        r.count += 1
+        byName.set(r.name, r)
+      }
+      const ledger = people(txns.sort((a, b) => b.time_utc.localeCompare(a.time_utc))).filter((p) => p.sent_paise > 0)
+      const sent = ledger.reduce((a, p) => a + p.sent_paise, 0)
+      const biggest = spends.reduce<Txn | null>((a, t) => (!a || t.amount_paise > a.amount_paise ? t : a), null)
+      const answer: Analytics = {
+        start: months[0],
+        end: months.at(-1) ?? start,
+        months: sums.map((x) => ({ month: x.month, spent_paise: x.spent_paise, invested_paise: x.invested_paise ?? 0, paid_back_paise: x.paid_back_paise, net_paise: x.net_paise, income_paise: x.income_paise, to_confirm_paise: x.to_confirm.amount_paise })),
+        categories,
+        moves: months.length < 2 ? null : { from: months.at(-2)!, to: months.at(-1)!, up: change.filter((c) => c.change_paise > 0).sort((a, b) => b.change_paise - a.change_paise).slice(0, 3), down: change.filter((c) => c.change_paise < 0).sort((a, b) => a.change_paise - b.change_paise).slice(0, 3) },
+        merchants: [...byName.values()].sort((a, b) => b.total_paise - a.total_paise).slice(0, 8).map((r) => ({ ...r, share_bp: bp(r.total_paise, spent) })),
+        people: ledger.slice(0, 8).map((p) => ({ ...p, count: txns.filter((t) => isPersonTxn(t) && personKey(t) === p.key).length, share_bp: bp(p.sent_paise, sent) })),
+        stats: {
+          days: months.length * 30,
+          per_day_paise: Math.floor(spent / (months.length * 30)),
+          payments: txns.length,
+          biggest: biggest && { id: biggest.id, name: nameOf(biggest), amount_paise: biggest.amount_paise, time_utc: biggest.time_utc },
+          busiest_weekday: spends.length ? { day: 'Sat', count: Math.ceil(spends.length / 7) } : null,
+          ways_bp: { upi: 7000, card: 2500, other: 500 },
+          regular: [],
+          waiting: { count: 0, amount_paise: sums.reduce((a, x) => a + x.to_confirm.amount_paise, 0) },
+        },
+      }
+      return { status: 200, etag: 'demo', analytics: answer }
+    })
+  }
+
   /** The demo's stand-in for GET /sync/snapshot, with the server's rules (app/api/snapshot.py). */
   snapshot(etag: string | null, signal: AbortSignal): Promise<SnapshotAnswer> {
     void signal
@@ -464,11 +520,15 @@ export class FakeApi implements Api {
           transfers: this.transfers(),
           suggestions: this.suggestions(),
         },
-        profile: { names: [...this.ownerNames], settings: { ...this.settings } },
+        profile: {
+          names: [...this.ownerNames],
+          settings: { ...this.settings },
+          data: { payments: transactions.length, first_utc: transactions.at(-1)?.time_utc ?? null, last_utc: transactions[0]?.time_utc ?? null },
+        },
         paybacks: [], // the demo links no payback (5B-1)
         devices: this.devices.map((d) => ({ ...d })),
         sms: { newest_utc: transactions[0]?.time_utc ?? null },
-        account: { role: 'admin', email: 'demo@example.invalid' },
+        account: { role: 'admin', email: 'demo@example.invalid', since_utc: '2026-11-13T04:30:00.000Z' },
         admin: {
           invites: this.invites.map((i) => ({ ...i })),
           members: [

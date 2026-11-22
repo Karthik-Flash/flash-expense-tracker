@@ -288,3 +288,37 @@ export interface Member {
 }
 
 export type SnapshotAnswer = { status: 200; etag: string; snapshot: Snapshot; bytes: number } | { status: 304 }
+
+/** GET /analytics (premium B, D-148): a range of IST months, every number from the server.
+ *  Shares are basis points (1/100 of a per cent). */
+export interface Analytics {
+  start: string
+  end: string
+  months: { month: string; spent_paise: number; invested_paise: number; paid_back_paise: number; net_paise: number; income_paise: number; to_confirm_paise: number }[]
+  /** Biggest first; `months[i]` is Spent in that category in the range's i-th month. */
+  categories: { slug: string; name: string; total_paise: number; share_bp: number; months: number[] }[]
+  /** The last month against the one before; null for a one-month range. */
+  moves: { from: string; to: string; up: Move[]; down: Move[] } | null
+  merchants: { name: string; total_paise: number; count: number; share_bp: number }[]
+  people: { key: string; name: string; sent_paise: number; got_back_paise: number; to_confirm_paise: number; net_paise: number; count: number; share_bp: number }[]
+  stats: {
+    days: number
+    per_day_paise: number
+    payments: number
+    biggest: { id: number; name: string; amount_paise: number; time_utc: string } | null
+    busiest_weekday: { day: string; count: number } | null
+    ways_bp: { upi: number; card: number; other: number }
+    regular: { name: string; months: number; total_paise: number }[]
+    waiting: { count: number; amount_paise: number }
+  }
+}
+
+export interface Move {
+  slug: string
+  name: string
+  from_paise: number
+  to_paise: number
+  change_paise: number
+}
+
+export type AnalyticsAnswer = { status: 200; etag: string; analytics: Analytics } | { status: 304 }

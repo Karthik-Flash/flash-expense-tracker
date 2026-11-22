@@ -2,7 +2,7 @@
 // adapter (fake.ts) in local dev with VITE_DEMO=1. Screens read the snapshot (data/store.ts);
 // every owner action goes through the outbox (data/outbox.ts), which calls send().
 
-import type { SnapshotAnswer } from './types.ts'
+import type { AnalyticsAnswer, SnapshotAnswer } from './types.ts'
 
 /** One owner action as the outbox sends it (D-091). */
 export interface SendRequest {
@@ -40,6 +40,9 @@ export interface Api {
   /** GET /export (5F, D-146): the transactions of IST days `start` to `end` as a file the
    *  server built. Online only; nothing is written. */
   exportFile(start: string, end: string, format: 'csv' | 'xlsx'): Promise<Blob>
+  /** GET /analytics (D-148): IST months `start` to `end`; 304 when `etag` is still current.
+   *  Online only. */
+  analytics(start: string, end: string, etag: string | null): Promise<AnalyticsAnswer>
 }
 
 export class ApiError extends Error {

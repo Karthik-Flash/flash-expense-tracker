@@ -124,6 +124,7 @@ function api(sendFails = false) {
     },
     createInvite: async () => ({ code: 'TEST-CODE-0001' }),
     exportFile: async () => new Blob(),
+    analytics: async () => ({ status: 304 }),
     deleteAccount: async () => ({ status: 200, detail: null, message: '' }),
     async registerDevice(id, name) {
       registered.push([id, name])

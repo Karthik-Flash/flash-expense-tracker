@@ -1931,3 +1931,21 @@ group (an AutoPay plus card rule or the owner); same-amount pairs stay candidate
 stores four look-alike payments and runs recompute, reparse and recompute: still four, none a
 duplicate. The cross-origin check warms the API with one snapshot request, then waits for
 the page's load event and the To-do card (up to 90 s) instead of a fixed 30 s.
+
+## D-148 Analytics in Insights (2026-11-23)
+
+Premium run, part B. `GET /api/v1/analytics?start=&end=` takes IST months (1 to 24) and
+reads the range's rows once; each month's bar uses the same `totals()` and `breakdown()` as
+`/summary`, and a test compares every month of a five-month range field by field. Its ETag
+is the snapshot's cheap ETag (data version, IST day, engine versions) plus the range, so an
+unchanged answer is a 304. The screen (top of Insights) offers This month, 3, 6 or 12 months
+or two chosen months; Spent per month as hand-drawn SVG bars with a table of Spent,
+Invested, Paid back and Net beside it (the table is also the accessible view); the six
+biggest categories with a small bar per month in the category colour; the biggest
+increases and decreases of the last month against the one before; the top 8 places
+(outside People) and the top 8 people the owner paid, with count and share; average a day
+(Spent over the days of the range up to today), payment count, biggest payment, busiest
+weekday, UPI, card and other shares of Spent, payees paid in 3 or more months, and what waits
+for an answer. A bar opens that month's Transactions; a category, a place or a person opens
+their payments. Analytics needs the server: offline it shows the last answer for that range
+if it has one, else says it is offline. No chart package.

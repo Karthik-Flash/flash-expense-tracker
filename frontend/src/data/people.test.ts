@@ -31,6 +31,7 @@ function server() {
     registerDevice: async () => ({ token: 'test-token' }),
     createInvite: async () => ({ code: 'TEST-CODE-0001' }),
     exportFile: async () => new Blob(),
+    analytics: async () => ({ status: 304 }),
     deleteAccount: async () => ({ status: 200, detail: null, message: '' }),
     snapshot: async () => ({ status: 304 }),
     async send(req) {

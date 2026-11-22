@@ -51,8 +51,8 @@ def test_every_data_route_needs_a_login(client) -> None:
     # 5A: devices (register, list, revoke) and the SMS ingest (a device token, D-122).
     # 5C: invites (make, list, revoke), members, delete my account; and sign-up, the one
     # route with no login (an invite code instead, D-128). 5B-1: the owner's settings.
-    # 5F: the export.
-    assert len(data_routes) == 38
+    # 5F: the export. Premium B: analytics.
+    assert len(data_routes) == 39
     for method, path in data_routes:
         if path == "/api/v1/signup":
             continue

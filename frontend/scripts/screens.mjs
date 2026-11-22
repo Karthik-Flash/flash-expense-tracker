@@ -22,7 +22,11 @@ const PORT = Number(arg('port', '5179'))
 const CDP = Number(arg('cdp', '9335'))
 const APP = `http://localhost:${PORT}`
 const EDGE = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/microsoft-edge', '/usr/bin/google-chrome'].find(existsSync)
-const WIDTH = 360
+// Premium E: --widths 360,1280 shoots each width (a 1280 px name gets "-1280"); --only <prefix>
+// shoots only the screens whose name starts with it.
+const WIDTHS = arg('widths', '360').split(',').map(Number)
+let WIDTH = WIDTHS[0]
+const ONLY = arg('only', '')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const children = []
 const run = (cmd, args, opts = {}) => {
@@ -102,17 +106,27 @@ const AUDIT = `(() => {
 
 const report = {}
 async function shot(name, sheet) {
+  if (ONLY && !name.startsWith(ONLY)) return
+  for (const width of WIDTHS) {
+    WIDTH = width
+    await shotAt(width === 360 ? name : `${name}-${width}`, sheet)
+  }
+  WIDTH = WIDTHS[0]
+  await cdp('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: 780, deviceScaleFactor: 1, mobile: WIDTH < 800 })
+}
+
+async function shotAt(name, sheet) {
   for (const mode of ['light', 'dark', 'text200']) {
     await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode === 'dark' ? 'dark' : 'light' }] })
     await js(`document.documentElement.style.fontSize = ${JSON.stringify(mode === 'text200' ? '200%' : '')}`)
     const height = sheet ? 1400 : 780
-    await cdp('Emulation.setDeviceMetricsOverride', { width: WIDTH, height, deviceScaleFactor: 1, mobile: true })
+    await cdp('Emulation.setDeviceMetricsOverride', { width: WIDTH, height, deviceScaleFactor: 1, mobile: WIDTH < 800 })
     await sleep(400)
     report[`${name}-${mode}`] = await js(AUDIT)
     // A whole screen: the viewport as tall as the page, so the tab bar sits at the bottom.
     const full = sheet ? height : Math.min(4000, Math.ceil((await js('document.documentElement.scrollHeight')) ?? height))
     if (full !== height) {
-      await cdp('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: full, deviceScaleFactor: 1, mobile: true })
+      await cdp('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: full, deviceScaleFactor: 1, mobile: WIDTH < 800 })
       await sleep(300)
     }
     let data
@@ -130,7 +144,7 @@ async function shot(name, sheet) {
 }
 
 const M = '?m=2026-11'
-await cdp('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: 780, deviceScaleFactor: 1, mobile: true })
+await cdp('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: 780, deviceScaleFactor: 1, mobile: WIDTH < 800 })
 await cdp('Page.navigate', { url: `${APP}/#/home` })
 await sleep(2500)
 await js(`sessionStorage.removeItem('flash-demo-signed-in'); localStorage.clear()`)
@@ -233,6 +247,10 @@ await shot('labels')
 await go(`/labels/1${M}`)
 await sleep(800)
 await shot('label-detail')
+// Premium B and E: Insights (analytics, export, profile, admin).
+await go('/insights')
+await sleep(2500)
+await shot('insights')
 
 // States: no data, an error, waking, stale totals.
 for (const state of ['empty', 'error', 'waking', 'stale']) {
