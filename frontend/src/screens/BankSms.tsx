@@ -16,7 +16,7 @@ const API_URL: string = import.meta.env.VITE_API_URL ?? ''
 /** The status rows (also at the top of the Speed sheet). Codes and counts: safe to paste. */
 export function SmsRows({ status }: { status: SmsStatus }) {
   return (
-    <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 tabular-nums">
+    <dl className="mt-1 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-0.5 tabular-nums [&_dt]:wrap-break-word">
       {statusRows(status).map(([term, value]) => (
         <div key={term} className="contents">
           <dt className="text-muted">{term}</dt>

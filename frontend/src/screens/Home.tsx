@@ -254,7 +254,7 @@ function Ledger({ rows }: { rows: PersonRow[] }) {
                 <span className="shrink-0 text-xs text-muted">Net</span>
                 <Money paise={p.net_paise} />
               </span>
-              {identifiersText(find(p.key)) && <span className="block truncate text-xs text-muted">{identifiersText(find(p.key))}</span>}
+              {identifiersText(find(p.key)) && <span className="block text-xs wrap-break-word text-muted">{identifiersText(find(p.key))}</span>}
               <span className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted tabular-nums">
                 <span className="whitespace-nowrap">Sent {rupees(p.sent_paise)}</span>
                 <span className="whitespace-nowrap">Got back {rupees(p.got_back_paise)}</span>

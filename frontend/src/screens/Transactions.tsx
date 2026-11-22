@@ -138,8 +138,8 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
             <RowButton key={t.id} onClick={() => open({ txn: t.id })}>
               <CategoryTile slug={shown.category} />
               <span className="min-w-[min(6rem,35vw)] flex-1">
-                <span className="block truncate">{nameOf(t)}</span>
-                <span className="block truncate text-xs text-muted">
+                <span className="block wrap-break-word">{nameOf(t)}</span>
+                <span className="block text-xs wrap-break-word text-muted">
                   {t.identifier && `${t.identifier} · `}
                   {title && `${dayLabel(t.time_utc)} · `}
                   {subtitle(shown)}

@@ -270,7 +270,7 @@ function TodoCount() {
 function DemoBanner() {
   const [current, setCurrent] = useState<DemoState>(demoApi?.state ?? 'normal')
   return (
-    <div className="border-b border-line bg-banner">
+    <div data-demo className="border-b border-line bg-banner">
       <div className="mx-auto flex max-w-[480px] flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-1 text-xs">
         <span className="font-medium">Demo data. Not your real numbers.</span>
         <label className="flex items-center gap-1 text-muted">

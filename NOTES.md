@@ -56,7 +56,8 @@ Analytics and "Learn from the owner" still to come.
 facts, duplicate checks, export range tests, a cross-origin check that waits for the page;
 D-147); part B Analytics at the top of Insights (D-148); part C rules and per-credit
 Paid back answers (migration 0018, D-149); part D robustness (last X-Forwarded-For hop,
-input limits, `doctor`, emoji copies of one SMS, snapshot reads once; D-150).
+input limits, `doctor`, emoji copies of one SMS, snapshot reads once; D-150); part E
+visual audit fixes at 360 and 1280 px (D-151).
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -688,7 +689,8 @@ node scripts/screens-page.mjs --after <folder> --before <folder>   # docs\design
 ```
 
 Since the premium run: `--widths 360,1280` adds a desktop width and `--only <prefix>` shoots
-only matching screens (for example `--only insights`).
+only matching screens (for example `--only insights`); the report also lists touch targets
+under 44 px ("small"). A full run at two widths takes about 15 minutes.
 `screens.mjs` starts the demo dev server (FAKE data) and writes one JPEG
 per screen and mode plus `report.json` (sideways scroll, elements past the
 edge, text squeezed to less than half). `--root <frontend folder>` shoots

@@ -152,7 +152,7 @@ function CheckRow({ t }: { t: Txn }) {
         <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{item}</span>
         <Money paise={t.amount_paise} credit={isCredit(t)} exact />
       </div>
-      <p className="truncate text-xs text-muted">{dayLabel(t.time_utc)} · {t.statement ? 'Read from the bank statement' : 'Read automatically'}</p>
+      <p className="text-xs wrap-break-word text-muted">{dayLabel(t.time_utc)} · {t.statement ? 'Read from the bank statement' : 'Read automatically'}</p>
       <div className="mt-2 flex flex-wrap gap-2">
         <Button className="flex-1" onClick={() => void enqueue(actions.looksRight(t, item))}>Looks right</Button>
         <Button className="flex-1" onClick={() => void enqueue(actions.notAPayment(t, item))}>Not a payment</Button>
@@ -194,8 +194,8 @@ function SenderRow({ s, answered = false, warn }: { s: Sender; answered?: boolea
         <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{person ? shownName(ops, person, s.display_name ?? 'Bank transfer in') : (s.display_name ?? 'Bank transfer in')}</span>
         <Money paise={s.total_paise} credit />
       </div>
-      {under && <p className="truncate text-xs text-muted">{under}</p>}
-      <p className="truncate text-xs text-muted">
+      {under && <p className="text-xs wrap-break-word text-muted">{under}</p>}
+      <p className="text-xs wrap-break-word text-muted">
         {s.count} {s.count === 1 ? 'credit' : 'credits'} · last {dayLabel(s.last_time_utc)}
       </p>
       {mark && (
@@ -266,7 +266,7 @@ function SenderRow({ s, answered = false, warn }: { s: Sender; answered?: boolea
   )
 }
 
-const QUIET = 'min-h-11 text-sm text-accent'
+const QUIET = 'min-h-11 min-w-11 text-sm text-accent'
 
 /** A refused answer stays on its card: "Not saved", with Try again and Discard (4H). */
 const failedOf = (op: Op | undefined) => (op?.state === 'failed' ? op : undefined)
@@ -282,7 +282,7 @@ function MerchantRow({ m, cats, chips, who }: { m: Snapshot['todo']['merchants']
         <span className="min-w-[min(6rem,35vw)] flex-1 truncate">{m.name}</span>
         <Money paise={m.total_paise} />
       </div>
-      <p className="truncate text-xs text-muted">{when}</p>
+      <p className="text-xs wrap-break-word text-muted">{when}</p>
       {failed && (
         <p className="text-sm">
           {failed.choice} <Pending op={failed} />

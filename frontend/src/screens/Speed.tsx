@@ -18,7 +18,7 @@ function SyncBlock() {
   return (
     <>
       <h3 className="text-xs font-medium text-muted">Sync</h3>
-      <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 tabular-nums">
+      <dl className="mt-1 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-0.5 tabular-nums [&_dt]:wrap-break-word">
         <dt className="text-muted">Saved on phone</dt>
         <dd>{waiting(s.ops)}</dd>
         <dt className="text-muted">Failed</dt>
@@ -62,7 +62,7 @@ function BootBlock() {
   return (
     <>
       <h3 className="mt-4 text-xs font-medium text-muted">Boot</h3>
-      <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 tabular-nums">
+      <dl className="mt-1 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-0.5 tabular-nums [&_dt]:wrap-break-word">
         <dt className="text-muted">Path</dt>
         <dd>{log.last?.path ?? '–'}</dd>
         <dt className="text-muted">First screen</dt>
@@ -107,7 +107,7 @@ export function SpeedSheet({ onClose }: { onClose: () => void }) {
         </ul>
         <h3 className="mt-4 text-xs font-medium text-muted">Last launch</h3>
         {last ? (
-          <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 tabular-nums">
+          <dl className="mt-1 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-0.5 tabular-nums [&_dt]:wrap-break-word">
             <dt className="text-muted">Phone copy</dt>
             <dd>{rows[0].local}</dd>
             <dt className="text-muted">Fresh data</dt>
