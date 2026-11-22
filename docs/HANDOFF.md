@@ -5,7 +5,20 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
 [PLAN.md](PLAN.md).
 
-## Current state (Phase 5A done, 22 Nov 2026)
+## Current state (Phase 5C done, 22 Nov 2026)
+
+- **Phase 5C is done, not pushed** (D-128 to D-132): several users. Logins
+  live in `app_users` (migration `0015`; `AUTH_USERS` seeds the admin on the
+  first request, then is only a fallback); testers join with an invite code
+  the admin makes in the app; `POST /api/v1/signup` creates the Supabase login
+  through the Auth Admin API (`SUPABASE_SECRET_KEY`, Render only); Delete my
+  account deletes every row of that owner, then the login
+  (`app/pipeline/account.py`, the one deletion allowed); first-run sheet,
+  Settings, "What Flash stores" (`docs/privacy.md`). Isolation test over every
+  route: `tests/test_isolation.py`. Owner commands take `--owner <owner_id>`
+  (default: the admin). New owner commands: `sender-survey`, `auth-cleanup`.
+  5A is pushed but not yet verified on the phone. Next: 5B on the phone, 5D
+  testers.
 
 - **Phase 5A is done, not pushed**: Flash on Android, the owner's phone
   first ([design/phase-5a-android.md](design/phase-5a-android.md), D-122 to
@@ -43,8 +56,8 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 - Engine versions: parsers `hdfc-1.2.0`, `sbi-1.0.0` and `generic-1.0.0`
   (other banks), `merchant-1.1.1`, `reconcile-1.6.0`, `categorise-1.2.0`;
   statement reader `stmt-hdfc-1.1.0`.
-- Alembic head: `0014` (devices; `0011` was not used).
-- Decisions: D-001 to D-127 ([DECISIONS.md](DECISIONS.md)).
+- Alembic head: `0015` (app_users, invites, auth_deletions; `0011` was not used).
+- Decisions: D-001 to D-132 ([DECISIONS.md](DECISIONS.md)).
 - Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
   lint/typecheck/tests/build, the cross-origin check
   (`node scripts/cross-origin-check.mjs` from `frontend\`, which covers the
@@ -152,6 +165,7 @@ backend/            Render root
   app/api/v1.py       data API /api/v1 (docs/api.md)
   app/api/snapshot.py GET /api/v1/sync/snapshot: the app's one read, ETag and 304 (D-088)
   app/api/ops.py      every owner write: Idempotency-Key (client_ops), deferred recompute (D-091 to D-094)
+  app/api/users.py    5C: signup, invites, members, account/delete (D-128 to D-131); supabase_admin.py: the Auth Admin API
   app/api/devices.py  5A: /api/v1/devices (login) and /api/v1/ingest/sms (device token only, D-122, D-123)
   app/engine/shared/  bank_senders.json: the sender list, read by senders.py and packed into the APK
   app/config.py       settings from env / backend/.env (DATABASE_URL, PING_TOKEN, CORS_ORIGINS, OWNER_ID)

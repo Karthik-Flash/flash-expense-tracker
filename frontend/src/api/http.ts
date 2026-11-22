@@ -22,6 +22,27 @@ export function errorText(status: number, detail: unknown): string {
   return 'The server did not accept this.'
 }
 
+/** POST /signup (5C, D-128): no login, an invite code. '' when the account exists, else
+ *  what to tell the person (the server's words are generic on purpose). */
+export async function signUp(baseUrl: string, email: string, password: string, code: string): Promise<string> {
+  let response: Response
+  try {
+    response = await fetch(baseUrl.replace(/\/+$/, '') + '/api/v1/signup', {
+      method: 'POST',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(90_000),
+      headers: { [HEADER.accept]: 'application/json', [HEADER.contentType]: 'application/json' },
+      body: JSON.stringify({ email, password, code }),
+    })
+  } catch {
+    return errorText(0, null)
+  }
+  if (response.ok) return ''
+  const detail = ((await response.json().catch(() => null)) as { detail?: unknown } | null)?.detail
+  if (response.status === 422 && typeof detail !== 'string') return 'Check the email, and use a password of 8 to 72 characters.'
+  return typeof detail === 'string' ? detail : errorText(response.status, null)
+}
+
 export class HttpApi implements Api {
   readonly demo = false
   private readonly base: string
@@ -89,6 +110,33 @@ export class HttpApi implements Api {
     const answer = (await response.json().catch(() => null)) as { token?: unknown } | null
     if (typeof answer?.token !== 'string') throw new ApiError(502, errorText(502, null))
     return { token: answer.token }
+  }
+
+  async createInvite(): Promise<{ code: string }> {
+    const response = await this.request('POST', '/invites', { signal: AbortSignal.timeout(90_000) })
+    const answer = (await response.json().catch(() => null)) as { code?: unknown } | null
+    if (typeof answer?.code !== 'string') throw new ApiError(502, errorText(502, null))
+    return { code: answer.code }
+  }
+
+  /** Not through request(): a 409 here is an answer to show, not a lost session. */
+  async deleteAccount(): Promise<SendAnswer> {
+    const token = await this.token().catch(() => null)
+    if (!token) return { status: 401, detail: null, message: errorText(401, null) }
+    let response: Response
+    try {
+      response = await fetch(this.base + '/account/delete', {
+        method: 'POST',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(90_000),
+        headers: { [HEADER.authorization]: `Bearer ${token}`, [HEADER.accept]: 'application/json', [HEADER.contentType]: 'application/json' },
+        body: JSON.stringify({ confirm: 'DELETE' }),
+      })
+    } catch {
+      throw new ApiError(0, errorText(0, null))
+    }
+    const detail = ((await response.json().catch(() => null)) as { detail?: unknown } | null)?.detail ?? null
+    return { status: response.status, detail, message: response.ok ? '' : errorText(response.status, detail) }
   }
 
   /** One owner action from the outbox, with its Idempotency-Key. A 401 or 403 is answered,

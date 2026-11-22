@@ -49,8 +49,12 @@ def test_every_data_route_needs_a_login(client) -> None:
     # 4E: people name, clear name, join, separate. 4F-A: check, ignore, count again.
     # 4A: a transfer answer. 4Z: owner names, a person's kind (set, undo), a suggestion's No.
     # 5A: devices (register, list, revoke) and the SMS ingest (a device token, D-122).
-    assert len(data_routes) == 30
+    # 5C: invites (make, list, revoke), members, delete my account; and sign-up, the one
+    # route with no login (an invite code instead, D-128).
+    assert len(data_routes) == 36
     for method, path in data_routes:
+        if path == "/api/v1/signup":
+            continue
         url = re.sub(r"\{[^}]+\}", "1", path)
         response = client.request(method.upper(), url, json={})
         assert response.status_code == 401, (method, path)
@@ -113,9 +117,15 @@ def test_keys_that_cannot_be_fetched_give_503(client, monkeypatch) -> None:
     assert response.status_code == 503 and "TEST" not in response.text
 
 
+def test_no_auth_users_and_no_app_user_is_403(client, monkeypatch) -> None:
+    """5C (D-129): AUTH_USERS may be empty once app_users holds the logins."""
+    monkeypatch.setattr(settings, "auth_users", "")
+    assert client.get("/api/v1/categories", headers=bearer(token())).status_code == 403
+
+
 @pytest.mark.parametrize(
     ("url", "users"),
-    [("", f"{SUB_A}:{OWNER_A}"), (BASE, ""), (BASE, "no-colon"), (BASE, f"{SUB_A}:not-a-uuid")],
+    [("", f"{SUB_A}:{OWNER_A}"), (BASE, "no-colon"), (BASE, f"{SUB_A}:not-a-uuid")],
 )
 def test_missing_settings_give_503_and_health_still_works(client, monkeypatch, url, users) -> None:
     monkeypatch.setattr(settings, "supabase_url", url)

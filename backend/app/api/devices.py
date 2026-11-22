@@ -28,10 +28,11 @@ from sqlalchemy.orm import Session
 from app import __version__
 from app.api import ops
 from app.api.auth import current_owner
+from app.config import settings
 from app.db import get_session
 from app.engine.filters import is_otp, is_promotional
 from app.engine.senders import is_bank, parse_sender
-from app.models import DEVICE_NAME_MAX, Device, ImportBatch, RawMessage
+from app.models import DEVICE_NAME_MAX, AppUser, Device, ImportBatch, RawMessage
 from app.pipeline.dedupe import content_hash
 from app.pipeline.owner_actions import ActionError
 from app.pipeline.recompute import owner_lock
@@ -140,9 +141,16 @@ def current_device(session: Db, authorization: Annotated[str | None, Header()] =
     row = session.scalar(select(Device).where(Device.token_hash == token_hash(token.strip())))
     if row is None:
         raise HTTPException(401, "invalid device token", headers={"WWW-Authenticate": "Bearer"})
-    if row.revoked_at is not None:
+    if row.revoked_at is not None or not is_user(session, row.owner_id):
+        # A revoked phone, or the phone of a removed or deleted user (5C): it stops for good.
         raise HTTPException(401, "device_revoked", headers={"WWW-Authenticate": "Bearer"})
     return row
+
+
+def is_user(session: Session, owner: uuid.UUID) -> bool:
+    """The owner still has a login: an app_users row, or an AUTH_USERS entry (the fallback)."""
+    found = session.scalar(select(AppUser.auth_uid).where(AppUser.owner_id == owner))
+    return found is not None or owner in (settings.auth_user_map or {}).values()
 
 
 class Sms(BaseModel):

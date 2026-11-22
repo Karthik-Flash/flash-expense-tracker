@@ -160,6 +160,22 @@ export async function signIn(email: string, password: string): Promise<string> {
   }
 }
 
+/** A fresh sign-in for Delete my account (D-131): the same login, its password again, so
+ *  the server sees a password entered in the last 10 minutes. '' when it worked. */
+export async function reauthenticate(password: string): Promise<string> {
+  if (offline()) return OFFLINE_SIGN_IN
+  try {
+    const { data } = await within(auth().getSession(), TOKEN_WAIT_MS)
+    const email = data.session?.user.email
+    if (!email) return 'Sign in again first.'
+    const { error } = await within(auth().signInWithPassword({ email, password }), SIGN_IN_WAIT_MS)
+    if (!error) return ''
+    return error.code === 'invalid_credentials' ? 'The password is wrong.' : UNREACHABLE
+  } catch {
+    return UNREACHABLE
+  }
+}
+
 /** To the login screen, keeping the phone copy and the outbox, so no waiting action is
  *  lost; the same login picks them up again, another login wipes them (D-093, D-095). */
 export async function expire(note = ''): Promise<void> {

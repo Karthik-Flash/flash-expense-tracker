@@ -4,9 +4,9 @@ Summary of phases 0 to 6. Draft from Phase 0; the planner owns this file and
 refines each phase before it starts. Each phase ends with CI green and a
 NOTES.md entry.
 
-**Status (22 Nov 2026):** Phases 0 to 4 done; Phase 5A (Flash on Android)
-done, not pushed; next the owner installs the APK on the phone, then 5B. 4G
-and 4D run during the pilot.
+**Status (22 Nov 2026):** Phases 0 to 4 done; 5A (Flash on Android, pushed,
+not yet verified on the phone) and 5C (several users, not pushed) done; next
+5B on the phone, then 5D testers. 4G and 4D run during the pilot.
 
 Phase numbers in this file match the git tags and [CHANGELOG.md](../CHANGELOG.md).
 
@@ -238,14 +238,15 @@ and the September re-check still wait for the planner.
   upload and 6-hourly catch-up, Keystore-sealed token, status, refresh on
   upload); HDFC `hdfc-1.2.0`. Design:
   [design/phase-5a-android.md](design/phase-5a-android.md).
-- [ ] 5B Reliability on the real phone: missed broadcasts (receiver against
-  catch-up counts), Samsung battery (Unrestricted or not), the quality of
-  live classification (new payments as they arrive).
-- [ ] 5C Several users: invite codes, an isolation audit (every row and
-  route per owner, RLS), delete account = delete all their data (then the
-  login), first-run setup (sign in, SMS permission, "Your name as banks show
-  it", the first scan).
-- [ ] 5D 2-3 testers.
+- [x] 5C Several users (22 Nov 2026, D-128 to D-132): invite codes made by
+  the admin in the app, sign-up through the Supabase Admin API, `app_users`
+  instead of `AUTH_USERS`, an isolation test over every route, Delete my
+  account (all data, then the login), first-run sheet, Settings, "What Flash
+  stores" (`docs/privacy.md`), `sender-survey`. Migration `0015`.
+- [ ] 5B Reliability on the real phone (next, once 5A is verified on the
+  phone): missed broadcasts (receiver against catch-up counts), Samsung
+  battery (Unrestricted or not), the quality of live classification.
+- [ ] 5D 2-3 testers, with invites.
 
 Then the pilot; 4G (cash wallet) and 4D (multi-month analysis) run during it.
 

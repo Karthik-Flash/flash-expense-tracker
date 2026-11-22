@@ -52,6 +52,8 @@ function server(snapshots: ('ok' | 'error')[] = []) {
   const api: Api = {
     demo: false,
     registerDevice: async () => ({ token: 'test-token' }),
+    createInvite: async () => ({ code: 'TEST-CODE-0001' }),
+    deleteAccount: async () => ({ status: 200, detail: null, message: '' }),
     async snapshot(): Promise<SnapshotAnswer> {
       if (snapshots.shift() === 'error') throw new ApiError(0, 'Could not reach the server.')
       return { status: 200, etag: '"e"', snapshot: snap, bytes: 1 }

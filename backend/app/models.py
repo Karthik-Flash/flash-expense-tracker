@@ -104,6 +104,7 @@ DECIDERS = ("engine", "owner")
 LINK_STATUSES = ("linked", "candidate")
 LABEL_MAX = 30  # one limit for a label name: API, app and database (D-097)
 DEVICE_NAME_MAX = 60  # a phone's name, "samsung SM-S918B" (D-122)
+USER_ROLES = ("admin", "member")  # app_users.role (D-129)
 
 
 class Heartbeat(Base):
@@ -539,6 +540,52 @@ class Device(Base):
     created_at: Mapped[datetime] = _created()
     last_seen_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class AppUser(Base):
+    """A login that may use Flash and the owner_id its data belongs to (D-129). admin: the
+    owner, who makes invites; member: a tester who joined with one. Deleted with the account."""
+
+    __tablename__ = "app_users"
+    __table_args__ = (
+        CheckConstraint(_in("role", USER_ROLES), name="ck_app_user_role"),
+        UniqueConstraint("owner_id", name="uq_app_user_owner"),
+    )
+
+    auth_uid: Mapped[str] = mapped_column(String(64), primary_key=True)  # Supabase user id
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    role: Mapped[str] = mapped_column(String(10))
+    email: Mapped[str | None] = mapped_column(String(254))  # for the admin's member list
+    created_at: Mapped[datetime] = _created()
+    last_seen_at: Mapped[datetime | None] = mapped_column(UtcDateTime)  # "last sync", 10 min steps
+
+
+class Invite(Base):
+    """A one-time invite code (D-128): only its SHA-256 is stored; 7 days; used once."""
+
+    __tablename__ = "invites"
+    __table_args__ = (UniqueConstraint("code_hash", name="uq_invite_code_hash"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    created_by: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)  # the admin's owner_id
+    created_at: Mapped[datetime] = _created()
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    used_by: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # the new member's owner_id
+    used_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class AuthDeletion(Base):
+    """A deleted account whose Supabase login could not be deleted yet (D-131): the login id
+    only, for `python -m app.cli auth-cleanup`. Removed once the login is gone."""
+
+    __tablename__ = "auth_deletions"
+
+    auth_uid: Mapped[str] = mapped_column(String(64), primary_key=True)
+    requested_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(40))  # an error type, never a message
 
 
 # --- Derived data -------------------------------------------------------------

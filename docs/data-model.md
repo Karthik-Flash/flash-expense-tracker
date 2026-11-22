@@ -401,6 +401,26 @@ so the owner's category, label, role and check on it stay. A later reparse of
 the SMS updates the same transaction in place. Tested on both routes (phone
 and laptop) and after a reparse (`tests/test_devices.py`).
 
+## Users, invites and deleting an account (migration `0015`, D-128 to D-131)
+
+RLS on, no policies, on all three.
+
+| Table | Columns |
+| ----- | ------- |
+| `app_users` | `auth_uid` (primary key: the Supabase user id), `owner_id` (unique), `role` (admin, member), `email`, `created_at`, `last_seen_at` (10-minute steps) |
+| `invites` | `code_hash` (SHA-256, unique; the code is never stored), `created_by` and `used_by` (owner ids), `created_at`, `expires_at` (7 days), `used_at`, `revoked_at` |
+| `auth_deletions` | `auth_uid`, `requested_at`, `attempts`, `last_error` (an error type): logins of deleted accounts still to delete in Supabase |
+
+**Delete my account** is the one place rows of owner and derived data are
+deleted (D-131). `app/pipeline/account.py` takes the tables from the models,
+children first, and deletes in one transaction: every table with `owner_id`;
+`parse_results`, `transaction_sources` and `duplicate_candidates` through the
+owner's raw messages and transactions; the invites the owner used or made;
+the `app_users` row. `heartbeat` and `auth_deletions` hold no one's data. A
+new table with none of these shapes stops the deletion, and
+`tests/test_users.py` checks every table of the models and that no row of the
+owner is left while the other user's rows are untouched.
+
 ## Login and the API (D-078)
 
 No migration. Settings: `SUPABASE_URL`, `AUTH_USERS` (`"<sub>:<owner_id>"`,

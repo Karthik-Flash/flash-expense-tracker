@@ -8,11 +8,14 @@ import { HttpApi } from './http.ts'
 
 export const DEMO = import.meta.env.DEV && import.meta.env.VITE_DEMO === '1'
 
+/** The API's address (the Android build bakes in the live one, D-125). */
+export const API_URL: string = import.meta.env.VITE_API_URL ?? ''
+
 export const demoApi: FakeApi | null = DEMO ? new FakeApi() : null
 
 export const api: Api =
   demoApi ??
-  new HttpApi(import.meta.env.VITE_API_URL ?? '', accessToken, (status) =>
+  new HttpApi(API_URL, accessToken, (status) =>
     // A 401 keeps the data and the outbox on screen and asks for a sign-in (D-095).
     status === 401 ? needSignIn() : noAccess(),
   )

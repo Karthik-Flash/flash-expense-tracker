@@ -156,6 +156,12 @@ await shot('sheet-unsaved', true)
 await go(`/home${M}&sms`) // 5A: in a browser, the phones and Revoke
 await sleep(800)
 await shot('sheet-sms', true)
+// 5C: settings, people who use Flash, delete my account, what Flash stores, the first run.
+for (const sheet of ['settings', 'members', 'delete', 'privacy', 'welcome']) {
+  await go(`/home${M}&${sheet}`)
+  await sleep(800)
+  await shot(`sheet-${sheet}`, true)
+}
 // 5A: the Android app's steps, with a stand-in plugin set on the dev server's own module.
 const android = (status) =>
   js(`import('/src/native/sms.ts').then(async (m) => {

@@ -36,6 +36,9 @@ phone and uploaded in the background (devices and device tokens, bank-only
 ingest, the Capacitor shell, the Kotlin SMS plugin, HDFC `hdfc-1.2.0`;
 [docs/design/phase-5a-android.md](docs/design/phase-5a-android.md)). Next:
 the owner's install on the phone (cheat sheet, "Android app"), then 5B.
+**Phase 5C done 22 Nov** (not pushed): several users (invite codes,
+`app_users`, sign-up, isolation test, Delete my account, first run, "What
+Flash stores"); owner steps in the cheat sheet, "Several users".
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -306,7 +309,8 @@ Values are never written in git or chat. Keep them in your password manager.
 | Supabase publishable key | cron-job.org `apikey` header | cron-job.org job header; password manager. Never in git |
 | `CORS_ORIGINS` | FastAPI CORS     | Render env: `http://localhost:5173,https://flash-expense-tracker.vercel.app,https://localhost` (the last one: the Android app, 5A) |
 | `SUPABASE_URL` | FastAPI login check (JWKS, issuer) | Render env: `https://<ref>.supabase.co` |
-| `AUTH_USERS`   | FastAPI login -> owner | Render env: `"<auth user id>:<owner_id>"`; password manager |
+| `AUTH_USERS`   | FastAPI login -> owner (seed and fallback since 5C, D-129) | Render env: `"<auth user id>:<owner_id>"`; password manager |
+| `SUPABASE_SECRET_KEY` | Invites and Delete my account: the Auth Admin API (5C, D-128) | Render env only (`sb_secret_...`); password manager. Never in the frontend |
 | `VITE_API_URL` | Frontend build   | Vercel env: `https://flash-expense-tracker.onrender.com`; `frontend/.env` for local |
 | `VITE_SUPABASE_URL` | Frontend login | Vercel env: `https://<ref>.supabase.co`; `frontend/.env` for local |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Frontend login | Vercel env (safe in the browser); `frontend/.env` for local |
@@ -533,6 +537,40 @@ Phones, Revoke. Signing out on the phone revokes it and wipes its token and
 queue. Kotlin checks (from `mobile\android\`): `.\gradlew.bat
 testDebugUnitTest`; on a connected phone only: `.\gradlew.bat
 connectedDebugAndroidTest`.
+
+### Several users: invites, testers, deleting an account (5C, D-128 to D-132)
+
+After the planner's review, in this order:
+
+1. **Push**: `git push`. Render runs migration `0015` (`app_users`,
+   `invites`, `auth_deletions`).
+2. **Render env** (dashboard, service, Environment): add
+   `SUPABASE_SECRET_KEY` = the project's secret key (Supabase dashboard,
+   Project Settings > API Keys, "Secret keys", `sb_secret_...`; create one if
+   there is none). Server only: never in Vercel, `frontend\.env`, a chat or a
+   file in git. Save, rebuild and deploy. Keep `AUTH_USERS` as it is for now.
+3. **Become the admin**: open the app once (phone or laptop) and let it
+   refresh. Your login is now the admin row of `app_users`. Check: ⋯
+   (Settings) shows "People who use Flash" with you as admin.
+4. Later, when everything works: you may remove `AUTH_USERS` from Render
+   (it is only a fallback now). Not required.
+5. **Invite a tester**: Settings > People who use Flash > New invite; send the
+   code (shown once) privately. On the sign-in screen the tester taps "Have an
+   invite code?", enters email, password (8 or more) and the code. Revoke an
+   unused code in the same sheet.
+6. **Survey of HDFC sender codes** (from `backend\`, SAFE TO PASTE: codes and
+   counts only):
+   ```powershell
+   .\.venv\Scripts\python.exe -m app.cli sender-survey --contains HDFC --input D:\FlashPrivate\raw
+   ```
+   A row with `registered NO` and debit or credit counts is a missing HDFC
+   sender; paste it to the planner (nothing is added without the planner).
+7. If a deleted account's login could not be removed (the server log says
+   "login deletion pending"):
+   `.\.venv\Scripts\python.exe -m app.cli auth-cleanup` (counts only).
+
+Owner commands now work on one owner's data: `--owner <owner_id>` before the
+command, else the admin, else `OWNER_ID`. For your own data nothing changes.
 
 ### Cross-origin check (the test routine since 4F-B, D-104)
 
@@ -937,10 +975,9 @@ Before Phase 5 (carried from Phase 4):
    but the approved sample's 44 messages are all the forex markup notice,
    with no amount. So the about Rs 15,700 of October spending that showed
    only on the statement was never stored as SMS (not in the export, or a
-   sender code not in the registry). Proposed for the planner: a counts-only
-   look at the sender codes `import-sms --dry-run` skips as
-   `unregistered_sender` that contain "HDFC" (sender codes are not private,
-   D-100); `statement-import` meanwhile. The owner runs the reparse (cheat
+   sender code not in the registry). 5C built the counts-only look:
+   `sender-survey --contains HDFC --input D:\FlashPrivate\raw` (cheat sheet,
+   "Several users", step 6); `statement-import` meanwhile. The owner runs the reparse (cheat
    sheet, "Android app", step 3).
 2. **statement-import --apply** and **statement-names --apply** wait for the
    planner's OK, after the owner pastes the new dry runs (cheat sheet,
@@ -1016,6 +1053,20 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-22: Phase 5C, several users
+
+- Migration `0015`: `app_users`, `invites`, `auth_deletions` (RLS on).
+- Login lookup in `app_users`; `AUTH_USERS` seeds the admin on the first
+  request (D-129). Invites and `POST /api/v1/signup` through the Supabase Auth
+  Admin API (`SUPABASE_SECRET_KEY` on the `apikey` header; urllib), rate
+  limits, generic errors (D-128). Device tokens stop for a removed user.
+- `tests/test_isolation.py`: all 39 routes as another user (D-130).
+- Delete my account (`POST /api/v1/account/delete`, fresh sign-in, every
+  table from the models, then the login; `auth-cleanup`) (D-131).
+- App: Settings (⋯), People who use Flash, Delete my account, What Flash
+  stores, first run, invite sign-up on the login screen (D-132).
+- CLI `--owner`, `sender-survey --contains`, `auth-cleanup`.
 
 ### 2026-11-22: Phase 5A, Flash on Android
 

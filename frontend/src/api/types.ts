@@ -219,6 +219,10 @@ export interface Snapshot {
   devices?: Device[]
   /** When the newest SMS the server has arrived: where a first scan starts (5A). */
   sms?: { newest_utc: string | null }
+  /** This login (5C, D-129). Absent before 5C. */
+  account?: { role: 'admin' | 'member'; email: string | null }
+  /** The admin only (5C, D-128): the invites they made and everyone who uses Flash. */
+  admin?: { invites: InviteItem[]; members: Member[] }
   labels: LabelView[]
   categories: Category[]
   /** Everyone to name or join (4E); absent in a phone copy from before. */
@@ -233,6 +237,25 @@ export interface Device {
   last_seen_utc: string | null
   /** Set: its token no longer works. */
   revoked_utc: string | null
+}
+
+/** An invite (D-128); never its code. */
+export interface InviteItem {
+  id: number
+  created_utc: string | null
+  expires_utc: string | null
+  used_utc: string | null
+  revoked_utc: string | null
+}
+
+/** Someone who uses Flash, for the admin: counts only, never their data. */
+export interface Member {
+  email: string | null
+  role: 'admin' | 'member'
+  joined_utc: string | null
+  last_seen_utc: string | null
+  transactions: number
+  phones: number
 }
 
 export type SnapshotAnswer = { status: 200; etag: string; snapshot: Snapshot; bytes: number } | { status: 304 }
