@@ -1704,3 +1704,104 @@ you, never shared or sold, no lending, delete everything any time. Settings
 (`?settings`, the ⋯ button in Home's header) lists your name, Bank SMS, People
 who use Flash (the admin), What Flash stores, Speed and sync, Delete my
 account.
+
+## D-133 People only when clearly personal (2026-11-22)
+
+`categorise-1.3.0`. Under 1.2.0 a payment went to People whenever the merchant
+engine said person (a consumer UPI handle alone, a mobile-number UPI ID, an
+honorific, two to four plain words) and the name held no word of a short
+business list, or when the engine was unsure and the name alone looked like a
+person's (`NAME_person`), even beside a merchant QR UPI ID. Now a payment is
+People only from an owner party of kind person (`PERSON`, the owner answered),
+or when it is clearly personal and nothing is business-like anywhere:
+`PERSON_name` (two to four words of letters, or an honorific and up to four
+words) or `PERSON_vpa` (a mobile number or a name at a consumer app's or a
+bank's handle, with no name or one word). Business-like: a business word in the
+name or the UPI ID (the 1.2.0 list plus tech, co, and, sons, india, payments,
+merchant, market, …), a gateway, aggregator or merchant QR word in the UPI ID
+or handle, `biz` in the handle, a card or AutoPay payment, a domain, digits in
+the name, a gateway prefix. Anything else is Uncategorised and To-do asks. The
+merchant engine, its word lists and `brands.json` are unchanged
+(`merchant-1.1.1`), so no merchant key moves and no owner match is lost.
+Categories never change a role, a link or a total (tested under both rule sets).
+`categorise(rules="1.2.0")` stays for `category-diff` (D-137) and can go after
+the owner's review. A 46-row FAKE regression table is in
+`tests/test_people_bias.py`.
+
+## D-134 A payback guess needs an earlier payment; which payment a payback pays back (2026-11-22)
+
+`reconcile-1.7.0`. `CR_person_signal` (a payback the engine guesses, basis
+engine) now also needs a payment from the owner to the same person (the same
+party, so joined names and UPI IDs count together; else the same merchant key)
+at most 90 days before the credit; without one the credit is uncertain
+(`CR_no_debit`). A person who never got money from the owner (pocket money, a
+gift, a sale) is not called a payback. Paid back still holds only
+owner-confirmed paybacks (D-076): the engine's paybacks, the owner's 13 among
+them, were and are To confirm only, never in Paid back, Net or Spent.
+`credits.payback_links()` says which payment a payback pays back, for the
+transaction sheet ("₹X paid back by <name>"): a credit of role payback and a
+spending debit to the same person at most 90 days before it; exactly one such
+payment links, several make it a candidate of each (the engine never picks the
+closest in time), and credits that add up to more than their payment are
+candidates. The links are computed in the snapshot (`paybacks`), not stored:
+they change no role and no total. A split (friends paying back a payment to a
+shop) is never linked; its paybacks count once confirmed. On a credit from a
+person the transaction sheet answers "Paid back" (the To-do answer Friend) or
+"Not paid back" (Ignore): the same outbox write, so the question leaves To-do
+too, and the owner can change it later.
+
+## D-135 Refresh at once, every 60 s while visible, and by pulling (2026-11-22)
+
+Supersedes the 5-minute refresh of D-089. The snapshot is refreshed on
+`visibilitychange` to visible and on window focus, when the network comes back,
+after the outbox has confirmed a change (D-091), and every 60 s while the app
+is visible; never while hidden. Those triggers are skipped while a refresh
+runs (`refreshIfIdle`), so two fetches never run at once and none pile up.
+Touch screens pull down from the top of the page (own code, `src/pull.ts`; the
+browser's own pull-to-refresh is off by `overscroll-behavior-y: contain`); a
+pointer screen has a quiet Refresh link. The freshness line says "Updated
+14:05" (IST; with the day when not today). Load, measured on 704 FAKE
+transactions: one snapshot request is 82 statements, about 5,000 rows and
+about 2 MB read from the database, 0.25 s on SQLite; a 304 costs the same
+(the ETag needs the whole document) but sends almost nothing. At 30 minutes
+on screen a day that is about 30 more requests a day, about 60 MB of
+database reads a day for the owner (about 1.8 GB a month against Supabase's
+5 GB free egress) and Render awake while the app is open plus its 15-minute
+idle; within the free plans. If egress grows, the next step is a cheap 304
+from a per-owner data version instead of building the snapshot.
+
+## D-136 Investments visible; "Count investments in Spent", off by default (2026-11-22)
+
+Home and every month show Invested (investment debits the owner confirmed, role
+`investment`) and Invested (to confirm) (payments with an open "Is this an
+investment?" question), worked out on the server. Only an owner-confirmed
+investment leaves Spent; a suggested one stays in Spent. The owner's setting
+"Count investments in Spent" (Settings sheet, through the outbox, `PUT
+/api/v1/profile/settings`, JSON true or false only) puts confirmed investment
+debits back into Spent, Net, the Investments category, the comparison with last
+month, "Paid to" and label totals; off by default. A broker's credit is in no
+total either way. Stored in `owner_settings` (migration `0016`, one row per
+owner, no row: defaults; RLS on; deleted with the account; covered by the
+isolation test). No derived row depends on it, so it needs no recompute.
+Transactions shows an "Investment" (or "Investment, to confirm") tag, and the
+Investments category filter also shows the suggested ones.
+
+## D-137 Owner review commands after the 5B-1 deploy (2026-11-22)
+
+`category-diff --out <file.csv>` runs categorise-1.2.0 and 1.3.0 in memory on
+the same fresh roles and prints counts by category before and after and how
+many changed; `payback-review --out <file.csv>` prints owner-confirmed,
+engine-suggested and unanswered credits, by IST month, and how many paybacks
+are linked to a payment. Both are read only (a rollback, no recompute), take
+`--owner` before the command like the other owner commands, print counts only,
+and write their rows to a PRIVATE CSV at `--out`, refused inside the repository
+or in a folder that does not exist.
+
+## D-138 To-do newest first (2026-11-22)
+
+Every To-do list (Who sent you money?, Answered, Pick a category, Is this you?,
+Is this an investment?, Moved between your accounts?, Check these payments)
+and `GET /senders` are ordered by the newest transaction's time, newest first,
+then the higher transaction id; on the server and again in the app (an older
+phone copy shows the same order). Before, senders and merchants were largest
+total first and suggestions by kind and count.

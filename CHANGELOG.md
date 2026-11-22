@@ -4,6 +4,22 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 5B-1: daily-use correctness (22 Nov 2026)
+
+- To-do lists are newest first (D-138).
+- The app refreshes when it comes back to the screen, after a change syncs and
+  every minute while open; pull down to refresh; "Updated 14:05" (D-135).
+- People only for clearly personal payees; shops with a person's name, QR and
+  gateway UPI IDs and anything unclear are Uncategorised (`categorise-1.3.0`,
+  D-133).
+- A payback guess needs an earlier payment to that person; a payment shows
+  which paybacks are for it; a credit's sheet answers Paid back / Not paid
+  back (`reconcile-1.7.0`, D-134).
+- Invested and Invested (to confirm) per month, an Investment tag and filter,
+  and the setting "Count investments in Spent", off by default (migration
+  `0016`, D-136).
+- Owner review commands `category-diff` and `payback-review` (D-137).
+
 ## Phase 5C: several users (22 Nov 2026)
 
 - Testers join with an invite code the owner makes in the app (People who use
