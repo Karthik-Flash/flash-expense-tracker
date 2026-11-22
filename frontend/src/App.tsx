@@ -21,6 +21,7 @@ import { UnsavedSheet } from './screens/Sync.tsx'
 import { PersonSheet } from './screens/People.tsx'
 import { Logos } from './screens/Logos.tsx'
 import { TodoScreen } from './screens/Todo.tsx'
+import { Insights } from './screens/Insights.tsx'
 import { Transactions } from './screens/Transactions.tsx'
 import { openFromNotification } from './opener.ts'
 import { Button, Icon, PullToRefresh, Sheet } from './ui.tsx'
@@ -33,6 +34,7 @@ beforeSignOut(() => signOutPhone(api))
 const TABS: [Tab, string, string][] = [
   ['home', 'Home', 'house'],
   ['transactions', 'Transactions', 'receipt-text'],
+  ['insights', 'Insights', 'trending-up'],
   ['todo', 'To-do', 'list-checks'],
   ['labels', 'Labels', 'tag'],
 ]
@@ -207,6 +209,7 @@ function Screen({ view }: { view: View }) {
   if (view.tab === 'home' && a === 'category' && b) return <CategoryDetail slug={b} name={c} />
   if (view.tab === 'transactions') return <Transactions />
   if (view.tab === 'todo') return <TodoScreen />
+  if (view.tab === 'insights') return <Insights />
   if (view.tab === 'labels' && a) return <LabelDetail id={Number(a)} />
   if (view.tab === 'labels') return <Labels />
   return <Home />
@@ -215,7 +218,7 @@ function Screen({ view }: { view: View }) {
 function Nav({ view }: { view: View }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]" aria-label="Main">
-      <ul className="mx-auto grid max-w-[480px] grid-cols-4">
+      <ul className="mx-auto grid max-w-[480px] grid-cols-5">
         {TABS.map(([tab, name, icon]) => {
           const target: View = { ...HOME, tab, month: view.month }
           const active = view.tab === tab
@@ -228,14 +231,15 @@ function Nav({ view }: { view: View }) {
                   navigate(target, 'push')
                 }}
                 aria-current={active ? 'page' : undefined}
-                className={`flex min-h-14 flex-col items-center justify-center gap-0.5 px-1 py-1.5 ${active ? 'text-accent' : 'text-muted'}`}
+                className={`flex min-h-14 flex-col items-center justify-center gap-0.5 px-0.5 py-1.5 ${active ? 'text-accent' : 'text-muted'}`}
               >
                 <span className="relative">
                   <Icon name={icon} />
                   {tab === 'todo' && <TodoCount />}
                 </span>
-                {/* Tab names stay on one line at large text sizes: at most 12 px, less on a narrow screen (4H). */}
-                <span className={`max-w-full truncate text-[min(0.75rem,3.3vw)] ${active ? 'font-semibold' : ''}`}>{name}</span>
+                {/* Tab names stay on one line at large text sizes: at most 12 px, less on a narrow
+                    screen (4H); five tabs since 5F, so "Transactions" fits a 360 px screen. */}
+                <span className={`max-w-full truncate text-[min(0.75rem,2.8vw)] tracking-tight${active ? 'font-semibold' : ''}`}>{name}</span>
               </a>
             </li>
           )
