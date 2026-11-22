@@ -54,7 +54,8 @@ the phone test plan: cheat sheet, "After the 5B-2 deploy". **5F part 1 done 23 N
 Analytics and "Learn from the owner" still to come.
 **Premium run, 23 Nov** (not pushed): part A pre-push safety (admin privacy test, Profile
 facts, duplicate checks, export range tests, a cross-origin check that waits for the page;
-D-147); part B Analytics at the top of Insights (D-148).
+D-147); part B Analytics at the top of Insights (D-148); part C rules and per-credit
+Paid back answers (migration 0018, D-149).
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).

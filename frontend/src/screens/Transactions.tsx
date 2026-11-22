@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import type { Sender, Txn } from '../api/types.ts'
-import { actions, discard, enqueue, isStuck, markFor, markText, personMark, retry, senderMark, shownName, STUCK_MS, timing, undo, useOutbox, waitingLabels, type Op } from '../data/outbox.ts'
+import type { CreditAnswer, Sender, Txn } from '../api/types.ts'
+import { actions, creditMark, discard, enqueue, isStuck, markFor, markText, personMark, retry, senderMark, shownName, STUCK_MS, timing, undo, useOutbox, waitingLabels, type Op } from '../data/outbox.ts'
 import { OpSheet } from './Sync.tsx'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { currentMonth, dayKey, dayLabel, fullLabel } from '../lib/dates.ts'
@@ -229,7 +229,7 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
               />
             )}
           </dl>
-          {sender && asksPaidBack(txn, sender) && <PaidBack s={sender} />}
+          {sender && asksPaidBack(txn, sender) && <PaidBack s={sender} txn={txn} server={load.status === 'ready' ? load.data.profile?.credit_answers?.[String(txn.id)] : undefined} />}
           {paybacks.length > 0 && (
             <ul className="mt-3 space-y-1 text-sm" aria-label="Paid back">
               {paybacks.map((line) => <li key={line} className="wrap-break-word">{line}</li>)}
@@ -298,14 +298,14 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
           <div className="space-y-2 px-4 py-4">
             <p className="text-sm text-muted">{picked.name}</p>
             <div className="grid gap-2">
-              <Button onClick={() => save(actions.setCategory(txn, picked, 'transaction', item))}>Just this one</Button>
+              <Button onClick={() => save(actions.setCategory(txn, picked, 'transaction', item))}>Just this payment</Button>
               {txn.display_name && (
                 <Button kind="primary" onClick={() => save(actions.setCategory(txn, picked, 'merchant', item))}>
-                  All from {txn.display_name}
+                  All payments to {txn.display_name}
                 </Button>
               )}
             </div>
-            <p className="text-xs text-muted">"All from" also covers future payments to them.</p>
+            <p className="text-xs text-muted">"All payments" covers past and future payments to them. Undo it in Insights, Your rules.</p>
           </div>
         )
       })()}
@@ -404,41 +404,58 @@ export function Pending({ op }: { op: Op }) {
   )
 }
 
-/** Paid back / Not paid back on a credit: the To-do sender answer (Friend / Ignore), the same
- *  outbox action, so answering here clears To-do and the other way round (D-134). */
-function PaidBack({ s }: { s: Sender }) {
+/** Paid back / Not paid back on a credit (D-134, D-149): "Just this one" answers this credit
+ *  only and beats the person-level answer; "Always for <name>" is the To-do sender answer
+ *  (Friend / Ignore), the same outbox action, so it clears To-do and the other way round. */
+function PaidBack({ s, txn, server }: { s: Sender; txn: Txn; server: CreditAnswer | undefined }) {
   const { ops } = useOutbox()
   const mark = senderMark(ops, [s.id])
+  const one = creditMark(ops, txn.id)
   const waiting = mark && mark.state !== 'failed' ? (mark.body as { answer?: string } | null)?.answer : undefined
-  const now = waiting ?? (s.status === 'to_confirm' ? null : s.role === 'payback' ? 'friend' : s.role === 'ignored' ? 'ignore' : s.role)
-  // 5B-1.5 (D-144): an answer covers every credit of this sender; changing one asks first.
+  const person = waiting ?? (s.status === 'to_confirm' ? null : s.role === 'payback' ? 'friend' : s.role === 'ignored' ? 'ignore' : s.role)
+  const pending = one && one.state !== 'failed' ? ((one.body as { answer?: CreditAnswer } | null)?.answer ?? null) : undefined
+  const mine = pending === undefined ? (server ?? null) : pending
+  const now = mine === 'paid_back' ? 'friend' : mine === 'not_paid_back' ? 'ignore' : person
   const [asking, setAsking] = useState<'friend' | 'ignore' | null>(null)
-  const send = (a: 'friend' | 'ignore') => {
+  const who = s.display_name ?? 'this sender'
+  const item = nameOf(txn)
+  const justThis = (a: 'friend' | 'ignore') => {
+    setAsking(null)
+    void enqueue(actions.answerCredit(txn, a === 'friend' ? 'paid_back' : 'not_paid_back', item))
+  }
+  const always = (a: 'friend' | 'ignore') => {
     setAsking(null)
     void enqueue(actions.answerSender(s, { answer: a }))
   }
-  const answer = (a: 'friend' | 'ignore') => (now !== null && now !== a ? setAsking(a) : send(a))
   const pressed = 'aria-pressed:border-accent aria-pressed:font-medium'
-  const who = s.display_name ?? 'this sender'
-  const all = s.count === 1 ? `the 1 credit from ${who}` : `all ${s.count} credits from ${who}`
+  const others = s.count === 1 ? `the 1 credit from ${who}` : `all ${s.count} credits from ${who}`
   return (
     <div className="mt-4 text-sm">
       <p className="text-muted">Is this money paid back to you?</p>
       <div className="mt-2 grid grid-cols-2 gap-2" role="group" aria-label="Paid back?">
-        <button type="button" aria-pressed={now === 'friend'} className={`min-h-11 rounded-lg border border-line bg-surface px-3 ${pressed}`} onClick={() => answer('friend')}>Paid back</button>
-        <button type="button" aria-pressed={now === 'ignore'} className={`min-h-11 rounded-lg border border-line bg-surface px-3 ${pressed}`} onClick={() => answer('ignore')}>Not paid back</button>
+        <button type="button" aria-pressed={now === 'friend'} className={`min-h-11 rounded-lg border border-line bg-surface px-3 ${pressed}`} onClick={() => setAsking('friend')}>Paid back</button>
+        <button type="button" aria-pressed={now === 'ignore'} className={`min-h-11 rounded-lg border border-line bg-surface px-3 ${pressed}`} onClick={() => setAsking('ignore')}>Not paid back</button>
       </div>
-      <p className="mt-1 text-xs text-muted">The answer is for {all}, as in To-do, not only this one.</p>
-      {now === 'income' && <p className="mt-1 text-xs text-muted">Answered as income ({s.income_label ?? 'no label'}).</p>}
+      {mine ? (
+        <p className="mt-1 text-xs text-muted">
+          Answered for this credit only.{' '}
+          <button type="button" className="min-h-11 text-accent underline underline-offset-2" onClick={() => void enqueue(actions.answerCredit(txn, null, item))}>Use the answer for {who}</button>
+        </p>
+      ) : (
+        now === 'income' && <p className="mt-1 text-xs text-muted">Answered as income ({s.income_label ?? 'no label'}).</p>
+      )}
       {asking && (
         <div className="mt-2 rounded-lg border border-line px-3 py-2" role="alert">
-          <p>Change the answer for {all} to {asking === 'friend' ? 'Paid back' : 'Not paid back'}?</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button kind="primary" onClick={() => send(asking)}>Change</Button>
-            <Button onClick={() => setAsking(null)}>Keep it</Button>
+          <p>{asking === 'friend' ? 'Paid back' : 'Not paid back'}: for which credits?</p>
+          <div className="mt-2 grid gap-2">
+            <Button onClick={() => justThis(asking)}>Just this one</Button>
+            <Button kind="primary" onClick={() => always(asking)}>Always for {who}</Button>
+            <Button onClick={() => setAsking(null)}>Cancel</Button>
           </div>
+          <p className="mt-1 text-xs text-muted">"Always" covers {others} and new ones; a "Just this one" answer stays as it is.</p>
         </div>
       )}
+      {one && <Pending op={one} />}
       {mark && <Pending op={mark} />}
     </div>
   )

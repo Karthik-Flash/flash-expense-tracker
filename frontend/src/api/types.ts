@@ -239,6 +239,10 @@ export interface Snapshot {
   profile?: {
     names: string[]
     settings?: Settings
+    /** "Your rules" (D-149): parties with a default category. Absent before. */
+    rules?: Rule[]
+    /** Per-credit Paid back answers (D-149), by transaction id. Absent before. */
+    credit_answers?: Record<string, CreditAnswer>
     /** Premium A.2: the payments and the days they span. Absent before. */
     data?: { payments: number; first_utc: string | null; last_utc: string | null }
   }
@@ -257,6 +261,17 @@ export interface Snapshot {
   /** Everyone to name or join (4E); absent in a phone copy from before. */
   people?: Person[]
 }
+
+/** "All payments to <name>" (D-149): a party's default category. */
+export interface Rule {
+  party_id: number
+  name: string
+  category: string
+  category_name: string
+  payments: number
+}
+
+export type CreditAnswer = 'paid_back' | 'not_paid_back'
 
 /** A phone that uploads bank SMS (D-122). Never its token. */
 export interface Device {

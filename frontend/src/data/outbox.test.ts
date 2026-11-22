@@ -293,3 +293,14 @@ test('sign-out warning counts what is not on the server; To-do leaves out waitin
   assert.deepEqual(v.merchants.map((m) => m.name), ['Other Shop'])
   assert.equal(v.waiting.length, 2)
 })
+
+test('D-149: a per-credit answer and undoing a rule are outbox writes with their own paths', () => {
+  const credit = actions.answerCredit({ id: 42 }, 'not_paid_back', 'Rohit V')
+  assert.deepEqual([credit.method, credit.path, credit.body], ['PUT', '/transactions/42/payback', { answer: 'not_paid_back' }])
+  const forget = actions.answerCredit({ id: 42 }, null, 'Rohit V')
+  assert.deepEqual([forget.method, forget.path, forget.body], ['DELETE', '/transactions/42/payback', null])
+  const undoRule = actions.undoRule({ party_id: 7, name: 'Swiggy', category_name: 'Food & Drinks' })
+  assert.deepEqual([undoRule.method, undoRule.path, undoRule.targets], ['DELETE', '/rules/7', { rules: [7] }])
+  const rule = actions.setCategory({ id: 9, display_name: 'Swiggy' }, { slug: 'groceries', name: 'Groceries' } as never, 'merchant', 'Swiggy')
+  assert.ok(rule.kind.startsWith('All payments to Swiggy'))
+})

@@ -3,9 +3,9 @@ import { useState } from 'react'
 import type { Category, PartyKind, Sender, Snapshot, Suggestion, Transfer, Txn } from '../api/types.ts'
 import { actions, checksView, enqueue, personMark, senderMark, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
 import { usePeople, useSnapshot } from '../data/store.ts'
-import { dayLabel, istTime, timeLabel } from '../lib/dates.ts'
+import { dayLabel, istTime, monthOf, timeLabel } from '../lib/dates.ts'
 import { Button, CategoryChips, Empty, Freshness, Header, Loaded, Money, Section } from '../ui.tsx'
-import { seePayments, useNav } from '../state.tsx'
+import { seePayments, seeTransactions, useNav } from '../state.tsx'
 import { isCredit, nameOf } from './common.ts'
 import { identifiersText, labelName, paymentsText, topCategories } from './derive.ts'
 import { AnswerButtons, type AnswerKey } from './Answers.tsx'
@@ -223,6 +223,11 @@ function SenderRow({ s, answered = false, warn }: { s: Sender; answered?: boolea
               </>
             )}
             {s.person_id && <button type="button" className={QUIET} onClick={() => seePayments(s.person_id!)}>See payments</button>}
+            {/* D-149: the buttons above answer for every credit from them; this opens the
+                newest credit, where Paid back can be "Just this one". */}
+            {s.txn_id && s.count > 1 && (
+              <button type="button" className={QUIET} onClick={() => seeTransactions({ month: monthOf(s.last_time_utc), txn: s.txn_id })}>Answer one credit</button>
+            )}
           </div>
           {answered && (
             <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3">

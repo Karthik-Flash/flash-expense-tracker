@@ -403,3 +403,11 @@ import or the phone; the Bank SMS sheet starts a first scan a day before it).
   `regular[]` paid in 3 or more months, `waiting` {count, amount_paise}). Shares are basis
   points. ETag `"a-<sha256>"` from the snapshot's cheap ETag and the range; If-None-Match
   gives a 304 without building.
+- Premium C (D-149), outbox writes with Idempotency-Key:
+  - `PUT /api/v1/transactions/{id}/payback` `{"answer": "paid_back" | "not_paid_back"}`: this
+    one credit (422 for a debit). Beats the person-level answer (`/senders/{id}`), which never
+    overwrites or deletes it. `DELETE` the same path forgets it.
+  - `DELETE /api/v1/rules/{party_id}`: undo "All payments to <name>" (the party's default
+    category); 404 for a party that is not the owner's. Repeating it is the same answer.
+  - Snapshot `profile.rules[]` (`party_id`, `name`, `category`, `category_name`, `payments`)
+    and `profile.credit_answers` (`{"<txn id>": "paid_back" | "not_paid_back"}`).

@@ -232,7 +232,10 @@ def _decisions(data: dict, name: str, keys: tuple[str, ...], errors: list[str]) 
         if not isinstance(item, dict):
             errors.append(f"{path}: must be an object")
             continue
-        _unknown_keys(item, path, keys, errors)
+        optional = ("scope",) if name == "roles" else ()  # D-149: a per-credit answer
+        if optional and "scope" in item and item["scope"] != "one":
+            errors.append(f"{path}.scope: must be one")
+        _unknown_keys(item, path, (*keys, *optional), errors)
         for key in keys:
             value = item.get(key)
             if key in ("transaction", "a", "b"):
@@ -532,6 +535,7 @@ def export_owner(session: Session, owner_id: uuid.UUID) -> tuple[dict, Counter]:
             "role": r.role,
             "decided_at": r.decided_at.isoformat(),
             "source": r.source,
+            **({"scope": r.scope} if r.scope else {}),  # D-149: only per-credit answers
         }
         for r in session.scalars(
             select(OwnerRole)
@@ -670,6 +674,7 @@ def restore(session: Session, owner_id: uuid.UUID, owner_file: OwnerFile) -> Cou
                 role=d["role"],
                 decided_at=datetime.fromisoformat(d["decided_at"]),
                 source=d["source"],
+                scope=d.get("scope"),
             )
         )
     for d in owner_file.links:

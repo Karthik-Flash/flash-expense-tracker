@@ -10,7 +10,8 @@ import { groupIndian } from '../lib/money.ts'
 import { isNativeApp, shareFile } from '../native/sms.ts'
 import { useApp, useNav } from '../state.tsx'
 import { Button, Header, Icon, Loaded, RowButton, Section } from '../ui.tsx'
-import type { Snapshot } from '../api/types.ts'
+import type { Rule, Snapshot } from '../api/types.ts'
+import { actions, enqueue, useOutbox } from '../data/outbox.ts'
 import type { SheetName } from '../view.ts'
 import { InvestmentsSetting } from './Account.tsx'
 import { AnalyticsSection } from './Analytics.tsx'
@@ -34,6 +35,7 @@ export function Insights() {
               <ExportSection />
               <Section title="Profile">
                 <Facts s={s} />
+                <Rules rules={s.profile?.rules ?? []} />
                 <Link onClick={go('profile')} title="Your name as banks show it" detail={names.length ? names.join(', ') : 'Not set: "Is this you?" needs it'} />
                 <Link onClick={go('sms')} title="Bank SMS" detail={isNativeApp() ? 'This phone: status, Sync now' : 'Your phones; SMS are read by the Android app'} />
                 <div>
@@ -158,6 +160,35 @@ function Facts({ s }: { s: Snapshot }) {
         </div>
       ))}
     </dl>
+  )
+}
+
+/** Your rules (D-149): "All payments to <name>" answers, each with Undo through the outbox. */
+function Rules({ rules }: { rules: Rule[] }) {
+  const { ops } = useOutbox()
+  const undone = new Set(ops.filter((o) => o.state !== 'failed').flatMap((o) => o.targets.rules ?? []))
+  const failed = ops.filter((o) => o.state === 'failed' && o.targets.rules?.length).at(-1)
+  const shown = rules.filter((r) => !undone.has(r.party_id))
+  return (
+    <div className="px-4 py-3 text-sm">
+      <p>Your rules</p>
+      {shown.length === 0 ? (
+        <p className="mt-1 text-xs text-muted">None yet. Change a payment's category and choose "All payments to" to add one.</p>
+      ) : (
+        <ul className="mt-1 divide-y divide-line">
+          {shown.map((r) => (
+            <li key={r.party_id} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 py-1">
+              <span className="min-w-[min(8rem,45vw)] flex-1">
+                <span className="block wrap-break-word">{r.name}</span>
+                <span className="block text-xs text-muted">{r.category_name} · {r.payments} {r.payments === 1 ? 'payment' : 'payments'}</span>
+              </span>
+              <Button onClick={() => void enqueue(actions.undoRule(r))}>Undo</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {failed && <p className="mt-1 text-xs text-danger" role="alert">Could not undo {failed.item}: {failed.message ?? 'try again from Speed and sync'}.</p>}
+    </div>
   )
 }
 
