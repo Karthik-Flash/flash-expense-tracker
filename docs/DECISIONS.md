@@ -1969,3 +1969,29 @@ Owner export and owner-load carry the scope. In To-do the sender buttons stay pe
 (the cross-origin check taps them); "Answer one credit" opens the newest credit's sheet.
 Only owner answers move Net (a payback the engine guessed stays To confirm); a category
 never moves Spent. Older queued actions named "All from X" still count as rules.
+
+## D-150 Robustness: client address, input limits, doctor, emoji copies, fewer reads (2026-11-23)
+
+Premium run, part D. The sign-up's per-IP limit used the first X-Forwarded-For hop, which
+the client writes; it now uses the last hop, the one the proxy in front of the app adds.
+Render's public docs do not say whether its proxy appends or replaces the header (checked
+23 Nov: web-services and the docs index; the community forum is closed); the last hop is
+right either way with one proxy, and a Cloudflare-proxied custom domain would need a look.
+The per-code and overall limits stay. Every id in a path or body is 1 to 2^63-1 (a larger
+one was a database error, now a 422), category slugs at most 40 characters, owner names 200
+each, the delete confirmation 20; a request body over 8 MB is a 413 before it is read;
+FastAPI runs with debug off and an unexpected error is a plain 500 with no trace (tested).
+`python -m app.cli doctor` is read-only (the session is rolled back) and prints counts: active
+transactions without a source message, parser version or derived row; links, duplicate
+pointers, labels and owner answers on inactive rows; stale derived tables; for every month
+with transactions, whether the snapshot, /summary, the export's Summary sheet and analytics
+agree; and a missing data version. Exit 1 on any problem. Open item 5c (an emoji that SMS
+Backup & Restore writes as two U+FFFD) was not fixed by the live/inbox join (both copies
+count as inbox and the texts differ); now a backup or phone copy of the same sender at the
+same millisecond whose text matches once each character outside the basic plane is folded
+to two U+FFFD is the same SMS (server only; the phone's normalBody and its shared fixture are
+unchanged). Insights and Labels show the same freshness and "waiting to sync" line as the
+other tabs. The snapshot read each month's rows, the month before's rows, its credits and
+its not-counted messages one query each (4 statements per month, 53 + 4 per month); they
+are now read once (`v1.preload`) and the account block once per request: 47 statements
+whatever the number of months, the same document (all snapshot tests unchanged).

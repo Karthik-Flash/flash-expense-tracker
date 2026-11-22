@@ -61,6 +61,18 @@ def note(item: dict) -> str:
     return "; ".join(parts)
 
 
+def range_totals(session, owner, since: datetime, until: datetime):
+    """The Summary sheet's figures: totals, Spent by category and the owner's setting. Also
+    what `doctor` compares with /summary and analytics."""
+    stored = v1._stored(
+        session, owner, Transaction.txn_time_utc >= since, Transaction.txn_time_utc < until
+    )
+    txns, roles, cats = v1._engine_view(stored)
+    in_spent = owner_actions.owner_settings(session, owner)["count_investments_in_spent"]
+    t = totals(txns, roles, since, until, in_spent)
+    return t, breakdown(txns, roles, cats, since, until, in_spent), in_spent
+
+
 @router.get("/export", dependencies=v1.Fresh)
 def export(
     owner: v1.Owner,
@@ -98,12 +110,7 @@ def export(
         return Response(
             to_csv(header, rows), media_type="text/csv; charset=utf-8", headers=disposition
         )
-    stored = v1._stored(
-        session, owner, Transaction.txn_time_utc >= since, Transaction.txn_time_utc < until
-    )
-    txns, roles, cats = v1._engine_view(stored)
-    in_spent = owner_actions.owner_settings(session, owner)["count_investments_in_spent"]
-    t = totals(txns, roles, since, until, in_spent)
+    t, parts, in_spent = range_totals(session, owner, since, until)
     summary = [
         ["From", start.isoformat()], ["To", end.isoformat()],
         ["Spent", t.spent_paise / 100], ["Invested", t.invested_paise / 100],
@@ -112,7 +119,7 @@ def export(
         ["Investments counted in Spent", "yes" if in_spent else "no"], ["", ""],
         ["Spent by category", ""],
     ]  # fmt: skip
-    for slug, paise in breakdown(txns, roles, cats, since, until, in_spent).items():
+    for slug, paise in parts.items():
         summary.append([CATEGORIES[slug], paise / 100])
     sheets = [
         Sheet("Transactions", header, tuple(w for _, w in COLUMNS), rows, frozenset({AMOUNT})),

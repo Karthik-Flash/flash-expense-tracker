@@ -112,13 +112,25 @@ await cdp('Page.navigate', { url: `${APP}/#/todo` })
 const before = loaded
 await cdp('Page.reload', { ignoreCache: true })
 // The page's real ready state: its load event, then the document complete, then the To-do
-// card on screen (the snapshot drawn). Up to 90 s in all, checked every 250 ms.
+// card on screen (the snapshot drawn), checked every 250 ms.
 const ready = async () => (await js(`document.readyState === 'complete' && [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Friend')`)) === true
-const deadline = Date.now() + 90_000
-while (loaded === before && Date.now() < deadline) await sleep(100)
-while (!(await ready()) && Date.now() < deadline) await sleep(250)
-const waited = Date.now() - (deadline - 90_000)
-console.log(`page ready after ${(waited / 1000).toFixed(1)} s`)
+const began = Date.now()
+const waitReady = async (ms) => {
+  const until = Date.now() + ms
+  while (loaded === before && Date.now() < until) await sleep(100)
+  while (!(await ready()) && Date.now() < until) await sleep(250)
+  return ready()
+}
+// A cold headless Edge sometimes never draws the first load (seen on the first run after a
+// build). After 45 s: say so, show the page, reload once and wait 45 s more. Logged, so a
+// real failure still shows.
+if (!(await waitReady(45_000))) {
+  console.log('page not ready after 45 s; page text:', String(await js('document.body.innerText')).slice(0, 300).replace(/\s+/g, ' '))
+  console.log('reloading once')
+  await cdp('Page.reload', { ignoreCache: true })
+  await waitReady(45_000)
+}
+console.log(`page ready after ${((Date.now() - began) / 1000).toFixed(1)} s`)
 if (!(await ready())) console.log('page text:', String(await js('document.body.innerText')).slice(0, 400))
 
 const results = []

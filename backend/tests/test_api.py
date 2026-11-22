@@ -588,3 +588,51 @@ def test_credit_review_cli(run, data, monkeypatch, db_engine) -> None:
     assert {
         d.role_basis for d in stored(db_engine).values() if d.role in ("payback", "income")
     } >= {"owner"}
+
+
+def test_ids_and_sizes_past_the_limits_are_422_never_500(client, data) -> None:
+    """D-150: an id past a BIGINT, an oversized text or list: a clear 422, no database error."""
+    huge = "99999999999999999999"
+    body = {"category": "groceries", "scope": "transaction"}
+    assert put(client, f"/api/v1/transactions/{huge}/category", body).status_code == 422
+    assert get(client, f"/api/v1/transactions/{huge}").status_code == 422
+    assert get(client, "/api/v1/transactions/0").status_code == 422
+    assert get(client, "/api/v1/transactions", label=huge).status_code == 422
+    assert client.delete(f"/api/v1/rules/{huge}", headers=bearer(token())).status_code == 422
+    first = all_transactions(client)[0]["id"]
+    long = {"category": "x" * 41, "scope": "transaction"}
+    assert put(client, f"/api/v1/transactions/{first}/category", long).status_code == 422
+    assert (
+        put(client, f"/api/v1/transactions/{first}/label", {"label_id": int(huge)}).status_code
+        == 422
+    )
+    assert put(client, "/api/v1/profile/names", {"names": ["x" * 201]}).status_code == 422
+    assert put(client, f"/api/v1/people/{first}/join", {"into": int(huge)}).status_code == 422
+    gone = client.post(
+        "/api/v1/account/delete", headers=bearer(token()), json={"confirm": "D" * 21}
+    )
+    assert gone.status_code == 422
+
+
+def test_a_huge_body_is_413_and_a_crash_shows_no_trace(client, data, monkeypatch) -> None:
+    """D-150: a body over 8 MB is refused before it is read; an unexpected error answers a
+    plain 500 with no stack trace or value from the data."""
+    from fastapi.testclient import TestClient
+
+    from app.main import MAX_REQUEST_BYTES, app
+
+    headers = bearer(token()) | {"Content-Type": "application/json"}
+    big = client.put(
+        "/api/v1/profile/names", headers=headers, content=b" " * (MAX_REQUEST_BYTES + 1)
+    )
+    assert big.status_code == 413 and big.json()["detail"] == "request_too_large"
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("TEST SECRET VALUE")
+
+    monkeypatch.setattr(v1, "_items", boom)
+    crash = TestClient(app, raise_server_exceptions=False).get(
+        "/api/v1/transactions", headers=bearer(token())
+    )
+    assert crash.status_code == 500
+    assert "Traceback" not in crash.text and "TEST SECRET" not in crash.text

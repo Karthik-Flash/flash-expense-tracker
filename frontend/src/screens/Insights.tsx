@@ -9,7 +9,7 @@ import { dayLabel, fullLabel, today } from '../lib/dates.ts'
 import { groupIndian } from '../lib/money.ts'
 import { isNativeApp, shareFile } from '../native/sms.ts'
 import { useApp, useNav } from '../state.tsx'
-import { Button, Header, Icon, Loaded, RowButton, Section } from '../ui.tsx'
+import { Button, Freshness, Header, Icon, Loaded, RowButton, Section } from '../ui.tsx'
 import type { Rule, Snapshot } from '../api/types.ts'
 import { actions, enqueue, useOutbox } from '../data/outbox.ts'
 import type { SheetName } from '../view.ts'
@@ -24,6 +24,7 @@ export function Insights() {
   return (
     <>
       <Header title="Insights" />
+      <Freshness />
       <AnalyticsSection />
       <Loaded load={load} retry={retry}>
         {(s) => {

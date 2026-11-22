@@ -4,7 +4,7 @@ import { actions, enqueue, useOutbox } from '../data/outbox.ts'
 import { useSnapshot } from '../data/store.ts'
 import { percentOf, rupees } from '../lib/money.ts'
 import { useNav } from '../state.tsx'
-import { Bar, Button, CategoryTile, Empty, Figure, Header, Icon, Loaded, Money, RowButton, Section } from '../ui.tsx'
+import { Bar, Button, CategoryTile, Empty, Figure, Freshness, Header, Icon, Loaded, Money, RowButton, Section } from '../ui.tsx'
 import { labelName } from './derive.ts'
 import { Pending, TxnList } from './Transactions.tsx'
 
@@ -23,6 +23,7 @@ export function Labels() {
   return (
     <>
       <Header title="Labels" />
+      <Freshness />
       <p className="px-4 text-sm text-muted">A label groups payments across months, like a trip. It never changes a category.</p>
       <Loaded load={load} retry={retry}>
         {({ labels: views }) =>

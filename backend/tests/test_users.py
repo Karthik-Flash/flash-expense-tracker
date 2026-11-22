@@ -470,3 +470,28 @@ def test_admin_answers_hold_no_member_money_names_or_text(client, admin_api) -> 
     assert client.post("/api/v1/invites", headers=headers).status_code == 403
     revoke = client.delete("/api/v1/invites/1", headers=headers | {"Idempotency-Key": "k-1"})
     assert revoke.status_code == 403
+
+
+def test_the_per_ip_limit_trusts_only_the_proxys_hop(client, admin_api) -> None:
+    """D-150: a new made-up first X-Forwarded-For hop on each try does not reset the limit;
+    the last hop (what Render's proxy adds) is the address. Another real address has its own
+    count, and the per-code limit still holds."""
+
+    def attempt(n: int, forwarded: str):
+        body = {"email": "x@example.invalid", "password": "test-pass-1", "code": f"WXYZ-{n:04d}"}
+        return client.post("/api/v1/signup", json=body, headers={"X-Forwarded-For": forwarded})
+
+    for n in range(10):
+        assert attempt(n, f"10.0.0.{n}, 203.0.113.7").status_code == 400
+    assert attempt(10, "10.0.0.99, 203.0.113.7").status_code == 429
+    assert attempt(11, "203.0.113.8").status_code == 400  # another address: its own count
+    assert attempt(12, " , 203.0.113.9 ").status_code == 400  # blanks ignored
+
+
+def test_client_ip_falls_back_to_the_socket() -> None:
+    from starlette.requests import Request
+
+    scope = {"type": "http", "headers": [], "client": ("198.51.100.4", 1234)}
+    assert users.client_ip(Request(scope)) == "198.51.100.4"
+    scope["headers"] = [(b"x-forwarded-for", b"1.2.3.4, 198.51.100.5")]
+    assert users.client_ip(Request(scope)) == "198.51.100.5"

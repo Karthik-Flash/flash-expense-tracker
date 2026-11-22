@@ -217,8 +217,9 @@ def transfers(session, owner) -> list[dict]:
     return sorted(out, key=lambda x: (when[x["debit"]], x["debit"]), reverse=True)
 
 
-def build(session, owner, caller: Caller | None = None) -> dict:
-    """The snapshot document, without `generated_at`. `caller`: whose login asks (5C)."""
+def build(session, owner, caller: Caller | None = None, acct: dict | None = None) -> dict:
+    """The snapshot document, without `generated_at`. `caller`: whose login asks (5C);
+    `acct`: its account block when the caller already has it (D-150)."""
     stale, last = v1.freshness(session, owner)
     names = statement.owner_names(session, owner)
     found = v1._suggestions(session, owner, names)
@@ -229,8 +230,9 @@ def build(session, owner, caller: Caller | None = None) -> dict:
     for item in items:
         by_month[_ist_month(item["time_utc"])].append(item)
     months = []
+    pre = v1.preload(session, owner)  # D-150: every month's rows in three reads
     for month in sorted(by_month):
-        s = v1.month_summary(session, owner, month, stale, last, inv)
+        s = v1.month_summary(session, owner, month, stale, last, inv, pre)
         mine = by_month[month]
         months.append({
             "month": month,
@@ -279,7 +281,7 @@ def build(session, owner, caller: Caller | None = None) -> dict:
         "labels": [v1.label_detail(owner, session, i) for i in label_ids],
         "people": v1.people_directory(session, owner),
         "categories": v1.categories(owner),
-    } | account(session, caller)
+    } | (account(session, caller) if acct is None else acct)
 
 
 def account(session, caller: Caller | None) -> dict:
@@ -302,7 +304,7 @@ def account(session, caller: Caller | None) -> dict:
     return out
 
 
-def cheap_etag(session, owner, caller: Caller | None) -> str:
+def cheap_etag(session, owner, caller: Caller | None, acct: dict | None = None) -> str:
     """The snapshot's ETag without building it (5B-2, D-140): the owner's data version (raised
     by every write, upload, import and recompute), the IST day (last month's comparison is
     cut at today), the engine and schema versions, and this login's account block (for the
@@ -312,7 +314,7 @@ def cheap_etag(session, owner, caller: Caller | None) -> str:
         "day": v1._now().astimezone(IST).strftime("%Y-%m-%d"),
         "engines": dict(VERSIONS),
         "schema": SCHEMA_VERSION,
-        "account": account(session, caller),
+        "account": account(session, caller) if acct is None else acct,
     }
     return '"v-' + hashlib.sha256(canonical(parts)).hexdigest() + '"'
 
@@ -334,10 +336,11 @@ def snapshot(
 ) -> Response:
     # 5B-2 (D-140): the ETag comes before the document, so an unchanged copy costs a few
     # small reads (the version, the account block) instead of the whole build.
-    etag = cheap_etag(session, owner, caller)
+    acct = account(session, caller)  # once for the ETag and the document (D-150)
+    etag = cheap_etag(session, owner, caller, acct)
     headers = {"ETag": etag, "Cache-Control": "no-cache"}
     if if_none_match and etag in (t.strip().removeprefix("W/") for t in if_none_match.split(",")):
         return Response(status_code=304, headers=headers)
-    document = build(session, owner, caller)
+    document = build(session, owner, caller, acct)
     body = canonical({**document, "generated_at": v1._iso(v1._now())})
     return Response(body, media_type="application/json", headers=headers)
