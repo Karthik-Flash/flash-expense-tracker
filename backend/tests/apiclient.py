@@ -6,6 +6,7 @@ The fixtures (jwks, client, data) are registered in conftest.py.
 import json
 import time
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import jwt
@@ -74,10 +75,22 @@ def client(db_engine, jwks):
     app.dependency_overrides.clear()
 
 
+# A payment to the person who later sends test.user@okaxis's credit (fixture H02, 7 Jan):
+# since reconcile-1.7.0 that credit is a payback guess only because of it (D-134).
+FRIEND_PAID = (
+    "HDFCBK",
+    "Sent Rs.777.00\nFrom HDFC Bank A/C *0001\nTo test.user@okaxis\nOn 03/01/26\n"
+    "Ref 000000000077\nNot You?\nCall 18000000001/SMS BLOCK UPI to 9000000001\n",
+    datetime(2026, 1, 3, 6, 30, tzinfo=UTC),
+)
+
+
 @pytest.fixture
 def data(run, tmp_path: Path, monkeypatch) -> None:
-    """Owner A: the fixture messages and an AutoPay pair. Owner B: one message of its own."""
-    run("import-sms", "--input", str(write_backup(tmp_path / "a.xml", full_rows() + PAIR)))
+    """Owner A: the fixture messages, an AutoPay pair and a payment to a friend. Owner B: one
+    message of its own."""
+    rows = full_rows() + PAIR + [FRIEND_PAID]
+    run("import-sms", "--input", str(write_backup(tmp_path / "a.xml", rows)))
     monkeypatch.setattr(settings, "owner_id", OWNER_B)
     run("import-sms", "--input", str(write_backup(tmp_path / "b.xml", [LATER])))
     monkeypatch.setattr(settings, "owner_id", OWNER_A)

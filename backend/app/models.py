@@ -356,6 +356,24 @@ class OwnerName(Base):
     created_at: Mapped[datetime] = _created()
 
 
+class OwnerSetting(Base):
+    """The owner's choices about how totals are shown (D-136), one row per owner, written
+    only when a setting changes: no row means every default. Owner data; private."""
+
+    __tablename__ = "owner_settings"
+    __table_args__ = (
+        CheckConstraint(_in("source", OWNER_SOURCES), name="ck_owner_setting_source"),
+    )
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    # Confirmed investments (role investment) count in Spent too. Default: they do not.
+    count_investments_in_spent: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    source: Mapped[str] = mapped_column(String(10))
+
+
 class PartyText(Base):
     """A counterparty text (name or UPI ID) that belongs to a party.
 

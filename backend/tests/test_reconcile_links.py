@@ -345,14 +345,14 @@ def into_sbi(
 def test_second_leg_of_a_self_transfer_takes_the_role() -> None:
     txns = [out_of_hdfc(), into_sbi()]
     alone = derive([into_sbi()], OWNER).roles[2]
-    assert (alone.role, alone.rule) == ("payback", "CR_person_signal")
+    assert (alone.role, alone.rule) == ("uncertain", "CR_no_debit")  # never paid them (D-134)
     result = derive(txns, OWNER)
     assert brief(result) == [
         ("self_transfer", 1, 2, "linked", "ST_pair", "names_partner_account", "engine")
     ]
     second = result.roles[2]
     assert (second.role, second.rule, second.basis) == ("self_transfer", "ST_pair", "owner")
-    assert second.reasons == ("ST_pair", "CR_person_signal")
+    assert second.reasons == ("ST_pair", "CR_no_debit")
     assert result.roles[1].rule == "ST_own_text"
     t = totals(txns, result.roles, *EVER)
     assert (t.spent_paise, t.paid_back_paise) == (0, 0)
@@ -375,7 +375,7 @@ def test_one_leg_case_is_unchanged() -> None:
     assert [(x.kind, x.status, x.reason) for x in no_accounts.links] == [
         ("self_transfer", "candidate", "no_own_text")
     ]
-    assert roles(no_accounts) == {1: "spend", 2: "payback"}
+    assert roles(no_accounts) == {1: "spend", 2: "uncertain"}
 
 
 @pytest.mark.parametrize(
@@ -418,11 +418,11 @@ def test_two_possible_second_legs_are_candidates() -> None:
         (1, 2, "candidate", "several_partners"),
         (1, 3, "candidate", "several_partners"),
     ]
-    assert roles(result) == {1: "self_transfer", 2: "payback", 3: "payback"}  # own text stands
+    assert roles(result) == {1: "self_transfer", 2: "uncertain", 3: "uncertain"}  # own text stands
     solved = derive(
         txns, OwnerData(OWNER.accounts, OWNER.parties, links={("self_transfer", 1, 3): "different"})
     )
-    assert roles(solved) == {1: "self_transfer", 2: "self_transfer", 3: "payback"}
+    assert roles(solved) == {1: "self_transfer", 2: "self_transfer", 3: "uncertain"}
 
 
 def test_owner_decides_a_self_transfer_pair() -> None:
@@ -692,7 +692,7 @@ def test_fd_second_credit_is_a_candidate_only() -> None:
         assert derive([closure(), other]).links == ()
     looks_like_payback = replace(second, counterparty_raw="test.other@okaxis", channel="upi")
     result = derive([closure(), looks_like_payback])
-    assert result.links[0].status == "candidate" and result.roles[2].role == "payback"
+    assert result.links[0].status == "candidate" and result.roles[2].role == "uncertain"
     confirmed = derive([closure(), second], links({("fd", 1, 2): "same"}))
     assert brief(confirmed) == [("fd", 1, 2, "linked", "FD_pair", "owner_same", "owner")]
     assert (confirmed.roles[2].role, confirmed.roles[2].rule) == ("fd_move", "OWNER_link")
@@ -787,15 +787,20 @@ def test_i17_a_candidate_changes_no_role_and_no_total() -> None:
         linked = {i for x in result.links if x.status == "linked" for i in (x.txn_a, x.txn_b)}
         seen_linked += len(linked)
         seen_candidates += len({i for x in result.links for i in (x.txn_a, x.txn_b)} - linked)
+        # A payback guess depends on an earlier payment to the person (D-134), which spreading
+        # the times apart removes; that is the one role allowed to differ here.
+        guess = {"CR_person_signal", "CR_no_debit"}
         for t in txns:
             if t.id not in linked:
-                assert result.roles[t.id] == baseline.roles[t.id]
+                a, b = result.roles[t.id], baseline.roles[t.id]
+                assert a == b or {a.rule, b.rule} <= guess
         # A link changes a role only to duplicate or self_transfer.
         for i in linked:
             before, after = baseline.roles[i].role, result.roles[i].role
             assert after == before or after in ("duplicate", "self_transfer")
         everything = totals(txns, result.roles, *EVER)
         unlinked = totals(apart, baseline.roles, T0, T0 + 10**6 * DAY)
-        if not linked:
-            assert everything == unlinked
+        if not linked:  # a payback guess never lowers Net: Spent and Paid back agree
+            assert everything.spent_paise == unlinked.spent_paise
+            assert everything.paid_back_paise == unlinked.paid_back_paise
     assert seen_linked and seen_candidates

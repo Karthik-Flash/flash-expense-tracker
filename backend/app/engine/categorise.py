@@ -15,15 +15,23 @@ unlinked refund). The first match decides; each result has a rule code and a bas
   KEYWORD         every category keyword in the name, or in the words of its UPI ID,
                   agrees (D-119: a curated list per category)     that category engine
   KW_conflict     keywords of two categories                      Uncategorised engine
-  PERSON          debit to a person (a party of kind person, or of kind unsure or no
-                  party and the merchant engine says person)    People        engine
-  NAME_person     debit whose name looks like a person's: 2 to 4 words of letters
-                  (initials and Mr/Ms/Mrs/Dr/Shri/Smt allowed), no business word; or a
-                  bare personal UPI ID (letters, digits and dots at an ok* or bank
-                  handle) (D-119)                                 People        engine
-  NONE            nothing matched (a business-looking name: To-do asks)  Uncategorised
-BRAND, KEYWORD, PERSON and NAME_person are guesses from the name: the app says so
+  PERSON          debit to an owner party of kind person (the owner answered Friend)
+                                                                  People        engine
+  Since categorise-1.3.0 (D-133) a debit is People on its own only when it is clearly a
+  person's, and never with anything business-like (business_like(): a business word in the
+  name or the UPI ID, a gateway prefix, a domain, digits in the name, a merchant UPI ID or
+  handle, a card or AutoPay payment). A party of kind business is never People.
+  PERSON_name     2 to 4 words of letters, one of 3+ letters (initials allowed), or an
+                  honorific (Mr/Ms/Mrs/Dr/Shri/Smt) and up to 4 words  People    engine
+  PERSON_vpa      a personal UPI ID (a mobile number, or letters, digits and dots, at a
+                  consumer app's or a bank's handle) with no name, or with one word
+                                                                  People        engine
+  NONE            anything else: a business-looking or an ambiguous name (one word, five
+                  words, a masked UPI ID): To-do asks             Uncategorised engine
+BRAND, KEYWORD, PERSON_name and PERSON_vpa are guesses from the name: the app says so
 (GUESS_RULES). Totals never depend on a category.
+categorise(rules="1.2.0") still gives the 1.2.0 answer (PERSON from the merchant engine's
+kind, NAME_person), for `category-diff` only.
 A linked refund takes the category (and basis) of its purchase: RF_linked. An unlinked
 refund is categorised by its own merchant (owner party, brand, keyword), else NONE.
 
@@ -41,9 +49,18 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from app.engine.merchant import BUSINESS_WORDS, HONORIFICS, brands, parts
-from app.engine.reconcile import COUNTED, Derived, OwnerData, Result, Totals, Txn, totals
+from app.engine.reconcile import (
+    COUNTED,
+    Derived,
+    OwnerData,
+    Result,
+    Totals,
+    Txn,
+    counted,
+    totals,
+)
 
-CATEGORISE_VERSION = "categorise-1.2.0"
+CATEGORISE_VERSION = "categorise-1.3.0"
 
 # slug -> name. The slug is stored and never changes; a new category needs no migration.
 CATEGORIES = {
@@ -95,7 +112,9 @@ RULES = (
     "KEYWORD",
     "KW_conflict",
     "PERSON",
-    "NAME_person",
+    "PERSON_name",
+    "PERSON_vpa",
+    "NAME_person",  # categorise-1.2.0 only (category-diff)
     "NONE",
     *(f"NS_{role}" for role in NOT_SPENDING),
 )
@@ -239,13 +258,19 @@ class Categorised:
     basis: str  # engine or owner
 
 
-def categorise(txns: Iterable[Txn], owner: OwnerData, result: Result) -> dict[int, Categorised]:
-    """One Categorised per transaction, keyed and ordered by transaction id."""
+def categorise(
+    txns: Iterable[Txn], owner: OwnerData, result: Result, rules: str = "1.3.0"
+) -> dict[int, Categorised]:
+    """One Categorised per transaction, keyed and ordered by transaction id.
+
+    `rules="1.2.0"`: the person rules of categorise-1.2.0, for category-diff only."""
+    if rules not in ("1.2.0", "1.3.0"):
+        raise ValueError("rules must be 1.2.0 or 1.3.0")
     stated = [p.category for p in owner.parties if p.category] + list(owner.categories.values())
     if any(slug not in CATEGORIES for slug in stated):
         raise ValueError("owner category: not a category of the list")
     rows = sorted(txns, key=lambda t: t.id)
-    out = {t.id: _one(t, result.roles[t.id], owner, result) for t in rows}
+    out = {t.id: _one(t, result.roles[t.id], owner, result, rules) for t in rows}
     by_id = {t.id: t for t in rows}
     for link in result.links:  # ordered by ids: a refund takes its first linked purchase
         if link.kind != "refund" or link.status != "linked":
@@ -259,7 +284,7 @@ def categorise(txns: Iterable[Txn], owner: OwnerData, result: Result) -> dict[in
     return out
 
 
-def _one(t: Txn, d: Derived, owner: OwnerData, result: Result) -> Categorised:
+def _one(t: Txn, d: Derived, owner: OwnerData, result: Result, rules: str) -> Categorised:
     if (slug := owner.categories.get(t.id)) is not None:
         return Categorised(slug, "OWNER_txn", "owner")
     if d.role not in SPENDING_ROLES:
@@ -287,19 +312,28 @@ def _one(t: Txn, d: Derived, owner: OwnerData, result: Result) -> Categorised:
     if found:
         return Categorised(UNCATEGORISED, "KW_conflict", "engine")
     named = party.kind if party and party.kind in ("person", "business") else None
-    kind = named or merchant.kind
-    # The merchant engine's guess gives way to a business word ("Balaji Hall", "Lucky House");
-    # a party the owner answered as a person does not.
-    business_word = not named and bool(p and set(p.tokens) & NOT_PERSON)
+    if rules == "1.2.0":
+        return _person_120(t, named or merchant.kind, named, p)
+    if t.direction == "debit" and named == "person":  # the owner answered: a party wins
+        return Categorised("people", "PERSON", "engine")
+    if t.direction == "debit" and named is None and p and (rule := person_rule(p, merchant)):
+        return Categorised("people", rule, "engine")
+    return Categorised(UNCATEGORISED, "NONE", "engine")
+
+
+def _person_120(t: Txn, kind: str, named: str | None, p) -> Categorised:
+    """categorise-1.2.0, kept for category-diff: the merchant engine's kind decides, a
+    business word of the 1.2.0 list stops it, NAME_person for an unsure name."""
+    business_word = not named and bool(p and set(p.tokens) & _NOT_PERSON_120)
     if t.direction == "debit" and kind == "person" and not business_word:
         return Categorised("people", "PERSON", "engine")
-    if t.direction == "debit" and kind == "unsure" and p and looks_like_person(p):
+    if t.direction == "debit" and kind == "unsure" and p and _looks_like_person_120(p):
         return Categorised("people", "NAME_person", "engine")
     return Categorised(UNCATEGORISED, "NONE", "engine")
 
 
 # Words that make a name a business's, on top of the merchant engine's list (D-119).
-NOT_PERSON = (
+_NOT_PERSON_120 = (
     BUSINESS_WORDS
     | frozenset(KEYWORD_CATEGORIES)
     | frozenset(
@@ -307,9 +341,80 @@ NOT_PERSON = (
         "stores traders enterprises pvt ltd llp works point house block".split()
     )
 )
-PERSONAL_HANDLE = re.compile(r"ok\w+|axisbank|hdfcbank|icici|sbi|kotak|pnb|barodampay|upi")
+# categorise-1.3.0 (D-133): more words no Indian given name or surname is, so a name with one
+# is never People. Whole words of the name or of the UPI ID's local part.
+NOT_PERSON = _NOT_PERSON_120 | frozenset(
+    """
+    tech techno co and sons bros brothers india international global systems online digital
+    payments pay media network networks infra exim plaza mall market complex palace bhavan
+    court club station fuel auto autos cars estate farm farms garden gardens kart zone hub
+    express care life world factory studios merchant merchants
+    """.split()
+)
+# Payment gateways, aggregators and merchant QR schemes, in a UPI ID's local part or handle
+# (whole words): a merchant collecting money, never a person (D-133).
+MERCHANT_VPA_WORDS = frozenset(
+    """
+    rzp razorpay cashfree payu billdesk ccavenue juspay instamojo pinelabs mswipe ezetap
+    easebuzz paytmqr bharatpe phonepe gpay mab biz qr pos upiqr payout collect billpay
+    fbpe yespay
+    """.split()
+)
+# Handles of consumer UPI apps and banks, where a person's UPI ID lives (D-133); never one
+# that starts okbiz (a business account on Google Pay).
+PERSONAL_HANDLE = re.compile(
+    r"ok(?!biz)\w+|ybl|ibl|axl|apl|yapl|rapl|paytm|pt(?:yes|axis|hdfc|sbi)|upi|axisbank"
+    r"|hdfcbank|icici|sbi|kotak|pnb|barodampay|aubank|idfcbank|indus|federal|rbl|yesbank"
+)
 _PERSONAL_LOCAL = re.compile(r"(?=.*[a-z])[a-z0-9.]{3,}")
-GUESS_RULES = frozenset({"BRAND", "KEYWORD", "PERSON", "NAME_person"})
+_MOBILE_LOCAL = re.compile(r"(?:91)?[6-9]\d{9}")
+# What the merchant engine reads as business-like: a card or AutoPay payment, a business
+# word, a domain, a merchant UPI ID or handle, digits in the name, a gateway prefix, two
+# brands at once.
+BUSINESS_REASONS = frozenset(
+    "R4_card R4_autopay R5_keyword R5_domain R5_merchant_vpa R5_business_handle R5_digits "
+    "R2_gateway R3_tie".split()
+)
+GUESS_RULES = frozenset({"BRAND", "KEYWORD", "PERSON_name", "PERSON_vpa", "NAME_person"})
+
+
+def business_like(p, merchant) -> bool:
+    """Anything that says business: the 1.3.0 rules never call such a payee a person."""
+    if BUSINESS_REASONS & set(merchant.reasons):
+        return True
+    local, _, handle = (p.vpa or "").partition("@")
+    words = {*p.tokens, *vpa_words(p.vpa)}
+    handle_words = {w for w in re.split(r"[^a-z]+", handle) if w}
+    return bool(
+        words & NOT_PERSON or (words | handle_words) & MERCHANT_VPA_WORDS or "biz" in handle
+    )
+
+
+def personal_vpa(vpa: str | None) -> bool:
+    """A mobile number, or letters, digits and dots, at a consumer app's or a bank's handle.
+    A masked UPI ID ("*k77@okhdfcbank") says too little."""
+    local, _, handle = (vpa or "").partition("@")
+    if not handle or not PERSONAL_HANDLE.fullmatch(handle):
+        return False
+    return bool(_MOBILE_LOCAL.fullmatch(local) or _PERSONAL_LOCAL.fullmatch(local))
+
+
+def person_rule(p, merchant) -> str | None:
+    """PERSON_name, PERSON_vpa, or None (Uncategorised) for a debit no owner party names."""
+    if business_like(p, merchant):
+        return None
+    named = [w for w in p.tokens if w not in HONORIFICS]
+    letters = bool(named) and all(w.isalpha() for w in named)
+    if named:
+        honorific = p.tokens[0] in HONORIFICS and len(named) <= 4  # "Mrs Kavitha"
+        shaped = 2 <= len(named) <= 4 and any(len(w) >= 3 for w in named)
+        if letters and (honorific or shaped):
+            return "PERSON_name"
+        # One word is a shop as often as a person: only with a personal UPI ID beside it.
+        if letters and len(named) == 1 and personal_vpa(p.vpa):
+            return "PERSON_vpa"
+        return None
+    return "PERSON_vpa" if personal_vpa(p.vpa) else None
 
 
 def vpa_words(vpa: str | None) -> tuple[str, ...]:
@@ -318,19 +423,24 @@ def vpa_words(vpa: str | None) -> tuple[str, ...]:
     return tuple(w for w in re.split(r"[^a-z]+", local.casefold()) if len(w) > 1)
 
 
-def looks_like_person(p) -> bool:
-    """2 to 4 words of letters (initials allowed), honorifics ignored, no business word;
-    or no name at all and a personal-looking UPI ID ("ravi.k92@okaxis")."""
+_PERSONAL_HANDLE_120 = re.compile(r"ok\w+|axisbank|hdfcbank|icici|sbi|kotak|pnb|barodampay|upi")
+
+
+def _looks_like_person_120(p) -> bool:
+    """categorise-1.2.0's NAME_person: 2 to 4 words of letters (initials allowed),
+    honorifics ignored, no business word; or no name and a personal-looking UPI ID."""
     named = [w for w in p.tokens if w not in HONORIFICS]
     if named:
         return (
             2 <= len(named) <= 4
             and all(w.isalpha() for w in named)
             and any(len(w) >= 3 for w in named)
-            and not any(w in NOT_PERSON for w in named)
+            and not any(w in _NOT_PERSON_120 for w in named)
         )
     local, _, handle = (p.vpa or "").partition("@")
-    return bool(handle and PERSONAL_HANDLE.fullmatch(handle) and _PERSONAL_LOCAL.fullmatch(local))
+    return bool(
+        handle and _PERSONAL_HANDLE_120.fullmatch(handle) and _PERSONAL_LOCAL.fullmatch(local)
+    )
 
 
 def breakdown(
@@ -339,14 +449,16 @@ def breakdown(
     categories: Mapping[int, Categorised],
     start: datetime,
     end: datetime,
+    invest: bool = False,
 ) -> dict[str, int]:
-    """Signed paise per category for start <= txn_time_utc < end. The values sum to Spent.
+    """Signed paise per category for start <= txn_time_utc < end. The values sum to Spent
+    (with the same `invest`, see reconcile.counted).
 
     A refund lowers its category in the range it arrives in, so a category can be negative.
     """
     out: Counter[str] = Counter()
     for t in txns:
-        total, sign = COUNTED.get(roles[t.id].role, (None, 0))
+        total, sign = counted(roles[t.id].role, t.direction, invest) or (None, 0)
         if total == "spent" and start <= t.txn_time_utc < end:
             out[categories[t.id].category] += sign * t.amount_paise
     return {slug: out[slug] for slug in CATEGORIES if slug in out}
@@ -357,6 +469,7 @@ def label_view(
     roles: Mapping[int, Derived],
     categories: Mapping[int, Categorised],
     labelled: Iterable[int],
+    invest: bool = False,
 ) -> tuple[Totals, dict[str, int]]:
     """Spent, Paid back, Net and the category breakdown of one label, across all dates.
 
@@ -364,7 +477,7 @@ def label_view(
     """
     ids = set(labelled)
     mine = [t for t in txns if t.id in ids]
-    return totals(mine, roles, *_EVER), breakdown(mine, roles, categories, *_EVER)
+    return totals(mine, roles, *_EVER, invest), breakdown(mine, roles, categories, *_EVER, invest)
 
 
 def check_brand_categories() -> None:

@@ -1,5 +1,5 @@
 {
- "_about": "FAKE payee names and UPI IDs with the category categorise-1.2.0 should guess for a debit (D-119). Made up; traps included.",
+ "_about": "FAKE payee names and UPI IDs with the category categorise-1.3.0 should guess for a debit (D-119, D-133). Made up; traps included.",
  "names": [
   ["Hunger Point Foodfill", "food_drinks"],
   ["Sri Krishna Cafe", "food_drinks"],
@@ -131,7 +131,7 @@
   ["priya.sharma@okhdfcbank", "people"],
   ["anil123@oksbi", "people"],
   ["s.kumar@okicici", "people"],
-  ["Mohan Lal paytmqr123@paytm", "people"],
+  ["Mohan Lal paytmqr123@paytm", "uncategorised"],
   ["Sneha Patil", "people"],
   ["Arun Prakash N", "people"],
   ["Mrs Kavitha", "people"],

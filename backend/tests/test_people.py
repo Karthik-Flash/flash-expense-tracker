@@ -157,7 +157,12 @@ def test_ledger_and_to_confirm_group_by_person(client, data) -> None:
     )
     after = get(client, "/api/v1/summary", month=month).json()
     same_month = other["time_utc"][:7] == month
-    assert after["to_confirm"]["amount_paise"] == before["to_confirm"]["amount_paise"]
+    # Joined, the masked UPI ID is the person the owner paid (as test.user@okaxis): its credit
+    # becomes a payback guess too (D-134). To confirm grows by it; Net does not move.
+    assert (masked["role"], other["role"]) == ("uncertain", "payback")
+    grown = before["to_confirm"]["amount_paise"] + masked["amount_paise"]
+    assert after["to_confirm"]["amount_paise"] == grown
+    assert after["net_paise"] == before["net_paise"]
     assert after["to_confirm"]["senders"] == before["to_confirm"]["senders"] - same_month
     snap = snapshot(client)
     key = get(client, f"/api/v1/transactions/{masked['id']}").json()["person_id"]

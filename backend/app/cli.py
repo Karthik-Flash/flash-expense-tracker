@@ -24,6 +24,8 @@
   statement-import --file <path> [--file <path> ...] [--apply]
   sender-survey --contains <text> [--input <file|folder>]
   auth-cleanup
+  category-diff --out <file.csv>     (5B-1: outside the repository; the CSV is PRIVATE)
+  payback-review --out <file.csv>
 
 Every command works on one owner's data: --owner <owner_id> (before the command), else the
 admin in app_users (5C, D-130), else OWNER_ID.
@@ -38,6 +40,7 @@ import-sms, reparse and owner-load end with a recompute of the derived tables.
 """
 
 import argparse
+import csv
 import json
 import random
 import sys
@@ -93,7 +96,7 @@ from app.models import (
     TxnLabel,
     TxnLink,
 )
-from app.pipeline import account, payback_audit, sample_export, statement, survey
+from app.pipeline import account, payback_audit, review, sample_export, statement, survey
 from app.pipeline.owner_actions import ActionError, answer_sender, senders
 from app.pipeline.owner_load import (
     OwnerFileError,
@@ -1438,6 +1441,81 @@ def cmd_redact_sample(session: Session, args: argparse.Namespace) -> int:
     return 0
 
 
+def _out_refused(target: Path, name: str) -> bool:
+    """A PRIVATE CSV goes outside the repository, into a folder that exists (D-137)."""
+    target = target.resolve()
+    if target.is_relative_to(REPO):
+        print(f"{name}: refused: --out must be outside the repository", file=sys.stderr)
+        return True
+    if not target.parent.is_dir():
+        print(f"{name}: refused: the folder of --out does not exist", file=sys.stderr)
+        return True
+    return False
+
+
+def _write_csv(target: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
+    with target.resolve().open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def cmd_category_diff(session: Session, args: argparse.Namespace) -> int:
+    """D-137. categorise-1.2.0 against 1.3.0 on the owner's data, in memory: counts by
+    category before and after, the number changed; the changed rows to a PRIVATE CSV."""
+    if _out_refused(args.out, "category-diff"):
+        return 2
+    try:
+        diff = review.category_diff(session, settings.owner_id)
+    except OwnerDataError as exc:
+        print(f"category-diff: owner data: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        session.rollback()  # read only: nothing to keep
+    print("category-diff (categorise-1.2.0 -> 1.3.0, read-only, counts only)")
+    line("transactions (active)", sum(diff.before.values()))
+    line("category changed", len(diff.rows))
+    print("by category (1.2.0 -> 1.3.0)")
+    for slug in CATEGORIES:
+        if diff.before[slug] or diff.after[slug]:
+            print(f"  {slug:<26}{diff.before[slug]:>6} -> {diff.after[slug]:<6}")
+    moves = Counter((r["category_1_2_0"], r["category_1_3_0"]) for r in diff.rows)
+    if moves:
+        print("moves")
+        for (a, b), n in sorted(moves.items(), key=lambda m: (-m[1], m[0])):
+            line(f"{a} -> {b}", n, 2)
+    _write_csv(args.out, review.DIFF_COLUMNS, diff.rows)
+    print(f"PRIVATE: the {len(diff.rows)} changed rows are in the --out file; never paste it")
+    return 0
+
+
+def cmd_payback_review(session: Session, args: argparse.Namespace) -> int:
+    """D-137. Paybacks: engine-suggested, owner-confirmed and unanswered credits, by IST
+    month, and how many paybacks are linked to a payment. Counts here; rows to a PRIVATE CSV."""
+    if _out_refused(args.out, "payback-review"):
+        return 2
+    try:
+        found = review.payback_review(session, settings.owner_id)
+    except OwnerDataError as exc:
+        print(f"payback-review: owner data: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        session.rollback()
+    names = ("owner_confirmed", "engine_suggested", "unanswered")
+    print(f"payback-review ({RECONCILE_VERSION}, read-only, counts only)")
+    for name in names:
+        line(name.replace("_", " "), found.counts[name])
+    print("paybacks linked to a payment")
+    for status in ("linked", "candidate", "none"):
+        line(status, found.links[status], 2)
+    print("by IST month (confirmed / suggested / unanswered)")
+    for month, c in found.by_month.items():
+        print(f"  {month:<26}{' / '.join(str(c[n]) for n in names)}")
+    _write_csv(args.out, review.PAYBACK_COLUMNS, found.rows)
+    print(f"PRIVATE: the {len(found.rows)} rows are in the --out file; never paste it")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description=__doc__.split("\n")[0])
     parser.add_argument(
@@ -1545,6 +1623,16 @@ def build_parser() -> argparse.ArgumentParser:
                     help="an HDFC NetBanking Delimited statement; repeat for more")  # fmt: skip
     sn.add_argument("--show", action="store_true", help="PRIVATE: list the proposed names")
     sn.add_argument("--apply", action="store_true", help="name them (owner data, source statement)")
+    cd = sub.add_parser(
+        "category-diff",
+        help="categorise-1.2.0 vs 1.3.0 (counts; changed rows to a PRIVATE CSV, read-only)",
+    )
+    cd.add_argument("--out", type=Path, required=True, help="the CSV, outside the repository")
+    pr = sub.add_parser(
+        "payback-review",
+        help="paybacks confirmed, suggested and unanswered (counts; rows to a PRIVATE CSV)",
+    )
+    pr.add_argument("--out", type=Path, required=True, help="the CSV, outside the repository")
     return parser
 
 
@@ -1572,6 +1660,8 @@ COMMANDS = {
     "statement-names": cmd_statement_names,
     "sender-survey": cmd_sender_survey,
     "auth-cleanup": cmd_auth_cleanup,
+    "category-diff": cmd_category_diff,
+    "payback-review": cmd_payback_review,
 }
 
 

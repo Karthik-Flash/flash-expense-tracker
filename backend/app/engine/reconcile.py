@@ -26,7 +26,11 @@ Only when none of these matched:
   CR_income_party     credit from an owner party marked as income           income
   CR_person_party     credit from an owner party of kind person             payback
                       (a party of kind unsure gives no opinion: the rules below apply)
-  CR_person_signal    credit, engine says person on a strong signal         payback
+  CR_person_signal    credit, engine says person on a strong signal, and the owner paid
+                      that person (same party, else same merchant key) at most 90 days
+                      before (reconcile-1.7.0)                              payback
+  CR_no_debit         the same, with no such payment: a person who never got money from
+                      the owner is no payback guess (pocket money, a gift, a sale)  uncertain
   CR_name_only, CR_business, CR_unsure, CR_no_text, CR_own_account          uncertain
   DB_no_counterparty  debit with no payee text (not an ATM)                 spend
   DB_spend            any other debit                                       spend
@@ -66,7 +70,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from app.engine.merchant import MERCHANT_VERSION, Merchant, channel_for, normalise_merchant, parts
 
-RECONCILE_VERSION = "reconcile-1.6.0"
+RECONCILE_VERSION = "reconcile-1.7.0"
 VERSIONS = {"merchant": MERCHANT_VERSION, "reconcile": RECONCILE_VERSION}
 
 ROLES = (
@@ -114,6 +118,7 @@ RULES = (
     "CR_income_party",
     "CR_person_party",
     "CR_person_signal",
+    "CR_no_debit",
     "CR_name_only",
     "CR_business",
     "CR_unsure",
@@ -156,6 +161,9 @@ PARTY_KINDS = ("person", "business", "unsure", "self", "investment")
 CARD_CHANNELS = ("debit_card", "credit_card")
 # Engine reason codes that are enough to call a credit a payback (D-061).
 PAYBACK_SIGNALS = frozenset({"R5_honorific", "R5_mobile_vpa", "R5_consumer_vpa"})
+# ... and only for a person the owner paid in the 90 days before (reconcile-1.7.0, D-134).
+# The same window links a payback to the payment it pays back (credits.payback_links).
+PAYBACK_WINDOW = timedelta(days=90)
 # A card's purchases are tracked when one is in the data this long before the bill payment.
 TRACKED_WINDOW = timedelta(days=60)
 # Windows compare txn_time_utc; both ends count ("at most this far apart").
@@ -285,6 +293,9 @@ class Totals:
     paid_back_paise: int = 0  # owner-confirmed paybacks only (D-076)
     income_paise: int = 0
     to_confirm_paise: int = 0  # paybacks the engine guessed: shown, never subtracted
+    # Money the owner confirmed as invested (role investment, debits; D-136). Outside Spent
+    # unless the owner's setting counts investments in Spent.
+    invested_paise: int = 0
 
     @property
     def net_paise(self) -> int:
@@ -342,14 +353,31 @@ def derive(
     for t in rows:
         merchant = normalise_merchant(t.counterparty_raw, channel_for(t.channel, t.hints))
         position = index.get(merchant.merchant_key or "")
-        own = None if position is None else entries[position]
         if position is not None:
             matched[t.id] = position
-        if isinstance(own, OwnAccount):
+        if position is not None and isinstance(entries[position], OwnAccount):
             points_at[t.id] = position
         run.merchants[t.id] = merchant
+    # Who each transaction is with: one party (a joined person, D-096), else one merchant key.
+    who = {
+        t.id: ("party", matched[t.id])
+        if t.id in matched and isinstance(entries[matched[t.id]], Party)
+        else ("key", run.merchants[t.id].merchant_key) if run.merchants[t.id].merchant_key
+        else None
+        for t in rows
+    }  # fmt: skip
+    paid: dict[tuple, list[datetime]] = defaultdict(list)  # a person -> times the owner paid
+    for t in rows:
+        if t.direction == "debit" and who[t.id] is not None:
+            paid[who[t.id]].append(t.txn_time_utc)
+    for t in rows:
+        position = matched.get(t.id)
+        own = None if position is None else entries[position]
+        paid_before = any(
+            when <= t.txn_time_utc <= when + PAYBACK_WINDOW for when in paid.get(who[t.id], ())
+        )
         run.matches[t.id] = list(_own_evidence(t, own, own_upi, card_spends)) or [
-            _default(t, merchant, own)
+            _default(t, run.merchants[t.id], own, paid_before)
         ]
         if t.id in run.fixed:
             _check_decision(t, owner.roles[t.id])
@@ -394,23 +422,42 @@ def ist_month(month: str) -> tuple[datetime, datetime]:
     return start.astimezone(UTC), end.astimezone(UTC)
 
 
+def counted(role: str, direction: str, invest: bool = False) -> tuple[str, int] | None:
+    """(total, sign) a role adds to, else None. `invest`: the owner's setting "Count
+    investments in Spent" (D-136): an investment debit then counts in Spent too. A role is
+    investment only by the owner's answer (PT_investment, OWNER_role), never a guess."""
+    if invest and role == "investment" and direction == "debit":
+        return "spent", 1
+    return COUNTED.get(role)
+
+
 def totals(
-    txns: Iterable[Txn], roles: Mapping[int, Derived], start: datetime, end: datetime
+    txns: Iterable[Txn],
+    roles: Mapping[int, Derived],
+    start: datetime,
+    end: datetime,
+    invest: bool = False,
 ) -> Totals:
     """Spent, Paid back, Net and Income as sums over roles, for start <= txn_time_utc < end.
 
     Only an owner-confirmed payback lowers Net; one the engine guessed is To confirm.
+    Invested holds the investment debits whatever `invest` says (see counted()).
     """
-    sums = {"spent": 0, "paid_back": 0, "income": 0, "to_confirm": 0}
+    sums = {"spent": 0, "paid_back": 0, "income": 0, "to_confirm": 0, "invested": 0}
     for t in txns:
         d = roles[t.id]
-        counted = COUNTED.get(d.role)
-        if counted and start <= t.txn_time_utc < end:
-            total, sign = counted
+        if not start <= t.txn_time_utc < end:
+            continue
+        if d.role == "investment" and t.direction == "debit":
+            sums["invested"] += t.amount_paise
+        if found := counted(d.role, t.direction, invest):
+            total, sign = found
             if total == "paid_back" and d.basis != "owner":
                 total = "to_confirm"
             sums[total] += sign * t.amount_paise
-    return Totals(sums["spent"], sums["paid_back"], sums["income"], sums["to_confirm"])
+    return Totals(
+        sums["spent"], sums["paid_back"], sums["income"], sums["to_confirm"], sums["invested"]
+    )
 
 
 # --- owner data ---------------------------------------------------------------
@@ -540,8 +587,12 @@ def _own_evidence(
         yield "investment", "PT_investment", "owner"
 
 
-def _default(t: Txn, merchant: Merchant, own: OwnAccount | Party | None) -> Match:
-    """Design B7 step 3, rows 6 and 7: the credit rules (B6), else spend."""
+def _default(
+    t: Txn, merchant: Merchant, own: OwnAccount | Party | None, paid_before: bool = False
+) -> Match:
+    """Design B7 step 3, rows 6 and 7: the credit rules (B6), else spend.
+
+    `paid_before`: the owner paid the same person in the PAYBACK_WINDOW before this credit."""
     if "statement" in t.hints:  # read from the bank statement (D-120)
         if t.direction == "credit":
             return "uncertain", "SM_credit", "engine"
@@ -562,7 +613,9 @@ def _default(t: Txn, merchant: Merchant, own: OwnAccount | Party | None) -> Matc
         return "uncertain", "CR_own_account", "owner"
     if merchant.kind == "person":
         if PAYBACK_SIGNALS & set(merchant.reasons):
-            return "payback", "CR_person_signal", "engine"
+            if paid_before:
+                return "payback", "CR_person_signal", "engine"
+            return "uncertain", "CR_no_debit", "engine"
         return "uncertain", "CR_name_only", "engine"
     rule = {"business": "CR_business", "unsure": "CR_unsure"}.get(merchant.kind, "CR_no_text")
     return "uncertain", rule, "engine"

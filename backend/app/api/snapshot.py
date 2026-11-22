@@ -18,9 +18,10 @@ from sqlalchemy import select
 from app.api import devices, users, v1
 from app.api.auth import Caller, current_owner, current_user
 from app.engine.categorise import UNCATEGORISED
-from app.engine.reconcile import COUNTED, IST
+from app.engine.credits import PaybackRow, payback_links
+from app.engine.reconcile import IST, counted
 from app.models import Label, OwnerLinkDecision, Transaction, TxnLink
-from app.pipeline import statement
+from app.pipeline import owner_actions, statement
 from app.pipeline.recompute import VERSIONS
 
 SCHEMA_VERSION = 1
@@ -29,9 +30,10 @@ RING_SLICES = 6  # the ring shows the 6 biggest categories, the rest as one "Oth
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(current_owner)])
 
 
-def spent_effect(item: dict) -> int:
-    """Signed effect on Spent: a refund lowers it; other roles are in no Spent."""
-    total, sign = COUNTED.get(item["role"], ("", 0))
+def spent_effect(item: dict, invest: bool = False) -> int:
+    """Signed effect on Spent: a refund lowers it; other roles are in no Spent (an investment
+    debit is, when the owner's setting counts investments, D-136)."""
+    total, sign = counted(item["role"], item["direction"], invest) or ("", 0)
     return item["amount_paise"] * sign if total == "spent" else 0
 
 
@@ -49,13 +51,13 @@ def _ist_month(time_utc: str) -> str:
     return datetime.fromisoformat(time_utc).astimezone(IST).strftime("%Y-%m")
 
 
-def merchants(items: list[dict]) -> dict[str, list[dict]]:
+def merchants(items: list[dict], invest: bool = False) -> dict[str, list[dict]]:
     """Category detail, "Paid to": per category, each name's Spent and number of rows."""
     groups: dict[str, dict[str, dict]] = defaultdict(dict)
     for item in items:
         name = name_of(item)
         g = groups[item["category"]].setdefault(name, {"name": name, "total_paise": 0, "count": 0})
-        g["total_paise"] += spent_effect(item)
+        g["total_paise"] += spent_effect(item, invest)
         g["count"] += 1
     return {
         slug: sorted(names.values(), key=lambda g: (-g["total_paise"], g["name"]))
@@ -144,7 +146,22 @@ def todo_merchants(items: list[dict]) -> tuple[list[dict], int]:
         )
         g["total_paise"] += item["amount_paise"]
         g["count"] += 1
-    return sorted(groups.values(), key=lambda g: -g["total_paise"]), unnamed
+    # Newest payment first, then the higher id (5B-1): `items` are in that order, so each
+    # group was made at its newest payment and the groups are already in order.
+    return list(groups.values()), unnamed
+
+
+def paybacks(items: list[dict]) -> list[dict]:
+    """Which payment each payback pays back (D-134), for the transaction sheet. Display only:
+    Paid back is the sum of confirmed paybacks, linked or not."""
+    rows = [
+        PaybackRow(
+            i["id"], i["direction"], i["amount_paise"], datetime.fromisoformat(i["time_utc"]),
+            i["person_id"], i["role"],
+        )
+        for i in items
+    ]  # fmt: skip
+    return [{"debit": x.debit, "credit": x.credit, "status": x.status} for x in payback_links(rows)]
 
 
 def transfers(session, owner) -> list[dict]:
@@ -184,31 +201,34 @@ def transfers(session, owner) -> list[dict]:
             "debit_time_utc": v1._iso(debit.txn_time_utc),
             "credit_time_utc": v1._iso(credit.txn_time_utc),
         })  # fmt: skip
-    return sorted(out, key=lambda x: (x["debit_time_utc"], x["debit"]), reverse=True)
+    when = {x["debit"]: legs[x["debit"]].txn_time_utc for x in out}  # times, not their text
+    return sorted(out, key=lambda x: (when[x["debit"]], x["debit"]), reverse=True)
 
 
 def build(session, owner, caller: Caller | None = None) -> dict:
     """The snapshot document, without `generated_at`. `caller`: whose login asks (5C)."""
     stale, last = v1.freshness(session, owner)
+    names = statement.owner_names(session, owner)
+    found = v1._suggestions(session, owner, names)
+    inv = v1.investments(session, owner, found)
     query = v1._items(owner).order_by(Transaction.txn_time_utc.desc(), Transaction.id.desc())
-    items = [v1._item(owner, *row) for row in session.execute(query)]
+    items = [v1._item(owner, *row, inv) for row in session.execute(query)]
     by_month: dict[str, list[dict]] = defaultdict(list)
     for item in items:
         by_month[_ist_month(item["time_utc"])].append(item)
     months = []
     for month in sorted(by_month):
-        s = v1.month_summary(session, owner, month, stale, last)
+        s = v1.month_summary(session, owner, month, stale, last, inv)
         mine = by_month[month]
         months.append({
             "month": month,
             "summary": s,
             "changes": changes(s),
             "chart": chart(s["categories"]),
-            "merchants": merchants(mine),
+            "merchants": merchants(mine, inv.in_spent),
             "people": people(mine),
         })  # fmt: skip
     senders = v1.senders(owner, session, "all")
-    names = statement.owner_names(session, owner)
     todo, unnamed = todo_merchants(items)
     label_ids = session.scalars(
         select(Label.id).where(Label.owner_id == owner).order_by(Label.name)
@@ -225,9 +245,14 @@ def build(session, owner, caller: Caller | None = None) -> dict:
             "merchants": todo,
             "unnamed": unnamed,
             "transfers": transfers(session, owner),
-            "suggestions": v1.suggestions(session, owner, names),
+            "suggestions": v1.suggestions(session, owner, names, found),
         },
-        "profile": {"names": list(names)},
+        # 5B-1 (D-134): payback -> the payment it pays back, linked or a candidate.
+        "paybacks": paybacks(items),
+        "profile": {
+            "names": list(names),
+            "settings": owner_actions.owner_settings(session, owner),  # D-136
+        },
         # 5A (D-122, D-124): the phones that upload bank SMS, and where a first scan starts.
         "devices": devices.devices_of(session, owner),
         "sms": {"newest_utc": devices.newest_sms(session, owner)},
