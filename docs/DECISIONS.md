@@ -1879,3 +1879,21 @@ session, and then a banner says so and offers Sign in again, instead of showing 
 quietly. On a credit's sheet, Paid back / Not paid back says the answer is for every credit
 from that person (it is the To-do sender answer, D-134) and asks before changing an earlier
 answer. Answers per credit stay an open item.
+
+## D-145 A masked UPI sender meets its payee (2026-11-23)
+
+`reconcile-1.7.1`. The owner's counts after 5B-1: 126 confirmed paybacks, none linked to a
+payment, and the 13 engine suggestions all uncertain (`CR_no_debit`). Cause: a payment names
+the payee's full UPI ID ("rahad@oksbi") while HDFC writes the sender of a UPI credit masked
+("*ahad@oksbi"); the merchant keys differ (`merchant.py`, `vpa:<id>` keeps the mask), so
+the credit's person (its party, else its key) never met the payee's
+(`reconcile.py` `who` and `paid`, `credits.payback_links`), and the owner's Friend answer
+sits on a party that holds only the masked text. Now a masked UPI ID fits a full one when
+the handle is the same and the full local part ends with the visible end (a mask with
+nothing visible fits nothing); a credit with such a sender, and no payment to its own person
+in the 90 days before, is treated as paid back by the one person the owner paid in that
+window whose UPI ID fits; two or more such people, or none: no match. It feeds the payback
+guess (`CR_person_signal`, still To confirm only) and the display links; joined identities
+match as before; nothing matches on amount alone. Owner answers, Paid back, Net and Spent are
+untouched. Merchant keys and owner data do not change, so the recompute's key-change stop
+cannot fire.

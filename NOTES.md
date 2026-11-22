@@ -583,6 +583,18 @@ After the planner's review, in this order:
 Owner commands now work on one owner's data: `--owner <owner_id>` before the
 command, else the admin, else `OWNER_ID`. For your own data nothing changes.
 
+### After the 5B-2 deploy: paybacks again (reconcile-1.7.1, D-145)
+
+From `backend\`, after the push (no parser changed, so no reparse: a recompute is enough;
+counts only, SAFE TO PASTE; the CSV is PRIVATE):
+```powershell
+.\.venv\Scripts\python.exe -m app.cli recompute
+.\.venv\Scripts\python.exe -m app.cli payback-review --out D:\FlashPrivate\review\payback-review.csv
+```
+Expect "paybacks linked to a payment: linked" above 0 when your masked senders match one
+payee each, and some of the 14 unanswered credits to become engine suggestions (To confirm).
+Paid back and Net do not move.
+
 ### After the 5B-2 deploy: the phone test plan (D-139 to D-144)
 
 1. **Backup**, then **push** (Render runs migration `0017`: `raw_messages.origin`,
@@ -1124,6 +1136,11 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-23: 5B-2 paybacks, masked senders (reconcile-1.7.1)
+
+- Cause of 126 confirmed paybacks with 0 links: masked credit senders ("*ahad@oksbi") never
+  met the payee's full UPI ID ("rahad@oksbi"). Fix: one fitting payee in the 90 days (D-145).
 
 ### 2026-11-23: Phase 5B-2, the phone just works
 

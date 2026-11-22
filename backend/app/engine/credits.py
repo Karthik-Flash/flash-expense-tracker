@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
-from app.engine.reconcile import PAYBACK_WINDOW
+from app.engine.reconcile import PAYBACK_WINDOW, masked_fits
 
 SENDER_ROLES = ("payback", "uncertain", "income", "ignored")
 STATUSES = ("to_confirm", "confirmed", "ignored")
@@ -73,6 +73,7 @@ class PaybackRow:
     txn_time_utc: datetime
     person: str | None
     role: str
+    vpa: str | None = None  # its UPI ID, masked or not (reconcile-1.7.1: a masked credit, D-145)
 
 
 @dataclass(frozen=True)
@@ -103,13 +104,23 @@ def payback_links(rows: Iterable[PaybackRow]) -> list[PaybackLink]:
     for r in rows:
         if r.direction == "debit" and r.role in PAID_ROLES and r.person:
             payments.setdefault(r.person, []).append(r)
+
+    def before(d: PaybackRow, c: PaybackRow) -> bool:
+        return d.txn_time_utc <= c.txn_time_utc <= d.txn_time_utc + PAYBACK_WINDOW
+
     found: dict[int, list[PaybackRow]] = {}  # credit -> its possible payments
     for c in rows:
         if c.direction == "credit" and c.role == "payback" and c.person:
-            mine = [
-                d for d in payments.get(c.person, ())
-                if d.txn_time_utc <= c.txn_time_utc <= d.txn_time_utc + PAYBACK_WINDOW
-            ]  # fmt: skip
+            mine = [d for d in payments.get(c.person, ()) if before(d, c)]
+            if not mine and c.vpa and "*" in c.vpa:
+                # A masked sender (HDFC writes "*ahad@oksbi"): the payments to the one person
+                # whose full UPI ID fits it, in the window; two such people: no link (D-145).
+                fits = [
+                    d for ds in payments.values() for d in ds
+                    if d.vpa and before(d, c) and masked_fits(c.vpa, d.vpa)
+                ]  # fmt: skip
+                if len({d.person for d in fits}) == 1:
+                    mine = fits
             if mine:
                 found[c.id] = mine
     amount = {r.id: r.amount_paise for r in rows}

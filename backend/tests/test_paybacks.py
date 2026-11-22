@@ -32,7 +32,11 @@ def links_of(txns, owner: OwnerData | None = None) -> list[tuple[int, int, str]]
     for t in txns:
         d, m = result.roles[t.id], result.merchants[t.id]
         person = f"p_{d.party}" if d.party is not None else m.merchant_key
-        rows.append(PaybackRow(t.id, t.direction, t.amount_paise, t.txn_time_utc, person, d.role))
+        key = m.merchant_key or ""
+        vpa = key[4:] if key.startswith("vpa:") else None
+        rows.append(
+            PaybackRow(t.id, t.direction, t.amount_paise, t.txn_time_utc, person, d.role, vpa)
+        )
     return [(x.debit, x.credit, x.status) for x in payback_links(rows)]
 
 
@@ -193,3 +197,74 @@ def test_the_snapshot_links_the_friend_payback_and_answers_move_it(client, data)
     last = client.get("/api/v1/sync/snapshot", headers=bearer(token())).json()
     assert {t["id"]: t["role"] for t in last["transactions"]}[back["id"]] == "ignored"
     assert last["paybacks"] == []
+
+
+# --- reconcile-1.7.1: a masked sender meets its payee (D-145) -----------------------------
+# HDFC writes the sender of a UPI credit masked ("*ahad@oksbi"); a payment names the payee in
+# full ("rahad@oksbi"). Shapes like the real SMS, values FAKE.
+
+
+def test_a_masked_credit_finds_its_payee() -> None:
+    pay = txn(1, party="testrahad@oksbi", amount_paise=50_000)
+    back = credit("*ahad@oksbi", id=2, amount_paise=50_000, txn_time_utc=T0 + 3 * DAY)
+    d = derive([pay, back]).roles[2]
+    assert (d.role, d.rule, d.basis) == ("payback", "CR_person_signal", "engine")  # a guess
+    assert money([pay, back]) == (50_000, 0, 50_000, 50_000)  # To confirm only, never Net
+    assert links_of([pay, back]) == [(1, 2, "linked")]
+    # The owner answered Friend for the masked sender only: a confirmed payback, linked.
+    answered = OwnerData(parties=(Party("person", texts=("*ahad@oksbi",)),))
+    assert links_of([pay, back], answered) == [(1, 2, "linked")]
+    assert money([pay, back], answered) == (50_000, 50_000, 0, 0)
+
+
+def test_two_payees_with_the_same_visible_end_match_nobody() -> None:
+    one = txn(1, party="testrahad@oksbi", amount_paise=10_000)
+    two = txn(2, party="testfahad@oksbi", amount_paise=20_000, txn_time_utc=T0 + DAY)
+    back = credit("*ahad@oksbi", id=3, amount_paise=10_000, txn_time_utc=T0 + 2 * DAY)
+    assert derive([one, two, back]).roles[3].rule == "CR_no_debit"  # ambiguous: no guess
+    assert links_of([one, two, back]) == []
+    answered = OwnerData(parties=(Party("person", texts=("*ahad@oksbi",)),))
+    assert links_of([one, two, back], answered) == []  # confirmed, but not linked
+
+
+@pytest.mark.parametrize(
+    "payee",
+    [
+        "testrahad@okaxis",  # another handle
+        "testrahid@oksbi",  # another end
+        "test.ahad.x@oksbi",  # the visible end is not the end
+    ],
+)
+def test_a_masked_credit_never_matches_another_handle_or_end(payee) -> None:
+    pay = txn(1, party=payee, amount_paise=10_000)
+    back = credit("*ahad@oksbi", id=2, amount_paise=10_000, txn_time_utc=T0 + DAY)
+    assert derive([pay, back]).roles[2].rule == "CR_no_debit"
+    assert links_of([pay, back], friend("*ahad@oksbi")) == []
+
+
+def test_a_mask_with_nothing_visible_or_too_old_matches_nobody() -> None:
+    pay = txn(1, party="testrahad@oksbi", amount_paise=10_000)
+    blank = credit("*@oksbi", id=2, amount_paise=10_000, txn_time_utc=T0 + DAY)
+    assert derive([pay, blank]).roles[2].rule == "CR_no_debit"
+    late = credit("*ahad@oksbi", id=3, amount_paise=10_000, txn_time_utc=T0 + 91 * DAY)
+    assert derive([pay, late]).roles[3].rule == "CR_no_debit"
+
+
+def test_a_masked_credit_through_a_joined_identity() -> None:
+    """The owner joined the payee's name, its UPI ID and the masked sender into one person:
+    the party matches directly, as before 1.7.1."""
+    joined = OwnerData(
+        parties=(Party("unsure", texts=("TEST RAHAD", "testrahad@oksbi", "*ahad@oksbi")),)
+    )
+    pay = txn(1, party="TEST RAHAD", channel="imps", amount_paise=10_000)
+    back = credit("*ahad@oksbi", id=2, amount_paise=10_000, txn_time_utc=T0 + DAY)
+    assert derive([pay, back], joined).roles[2].rule == "CR_person_signal"
+    assert links_of([pay, back], joined) == [(1, 2, "linked")]
+
+
+def test_never_on_amount_alone() -> None:
+    """Same amount, a day apart, but a payee whose UPI ID does not fit: no guess, no link."""
+    pay = txn(1, party="TEST SHOP@okbizaxis", amount_paise=77_700)
+    back = credit("*uc44@okaxis", id=2, amount_paise=77_700, txn_time_utc=T0 + DAY)
+    assert derive([pay, back]).roles[2].role == "uncertain"
+    assert links_of([pay, back], friend("*uc44@okaxis")) == []

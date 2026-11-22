@@ -729,3 +729,12 @@ with no such payment become uncertain. `payback-review` counts them.
 - A payee the app only suggests ("Is this an investment?", `suggest.is_investment`)
   stays a spend in Spent and is shown as Invested (to confirm) until the
   owner answers.
+### Masked senders (reconcile-1.7.1, D-145)
+
+HDFC writes the sender of a UPI credit masked ("*ahad@oksbi"); the payment names the payee in
+full ("rahad@oksbi"). `reconcile.masked_fits(masked, full)`: the same handle, the full local
+part ends with the visible end, something is visible. A credit with no payment to its own
+person in the 90 days before takes the one person whose payment fits (`_masked_payee`, and
+the same in `credits.payback_links`); two or more: no match. Tests: `tests/test_paybacks.py`
+(masked to payee, two payees with one visible end, another handle or end, a blank mask, too
+old, a joined identity, never on amount alone).
