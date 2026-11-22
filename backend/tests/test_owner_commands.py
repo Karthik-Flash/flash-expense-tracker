@@ -197,7 +197,7 @@ def snapshot(engine: Engine) -> dict:
                 (party_of[t.party_id], t.text, t.source) for t in s.scalars(select(PartyText))
             ),
             "roles": sorted(
-                (key[r.transaction_id], r.role, r.decided_at, r.source)
+                (key[r.transaction_id], r.role, r.decided_at, r.source, r.scope)
                 for r in s.scalars(select(OwnerRole))
             ),
             "links": sorted(
@@ -229,6 +229,9 @@ def decided(loaded, run, db_engine: Engine, tmp_path: Path) -> dict:
     decide(
         db_engine, role_decision(biller, "ignored"), link_decision("duplicate", a, b, "different")
     )
+    with sessionmaker(db_engine)() as s:  # D-149: a per-credit scope travels with the export
+        s.get(OwnerRole, biller).scope = "one"
+        s.commit()
     run("recompute")
     return snapshot(db_engine)
 

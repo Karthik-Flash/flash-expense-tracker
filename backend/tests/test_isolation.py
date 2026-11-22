@@ -70,6 +70,9 @@ CASES: dict[tuple[str, str], tuple[object, bool]] = {
     ("POST", "/api/v1/account/delete"): ({"confirm": "DELETE"}, False),  # not a fresh sign-in
     ("GET", "/api/v1/export"): (None, True),  # 5F: B's own rows only (markers checked)
     ("GET", "/api/v1/analytics"): (None, True),  # premium B: B's own months only
+    ("PUT", "/api/v1/transactions/{txn_id}/payback"): ({"answer": "paid_back"}, False),  # C
+    ("DELETE", "/api/v1/transactions/{txn_id}/payback"): (None, False),
+    ("DELETE", "/api/v1/rules/{party_id}"): (None, False),
 }
 
 
@@ -109,6 +112,11 @@ def two_users(client, data, db_engine, monkeypatch) -> dict:
     device = str(uuid.uuid4())
     client.post("/api/v1/devices", headers=a, json={"device_id": device, "name": "ALPHA PHONE"})
     invite = client.post("/api/v1/invites", headers=a).json()["invite"]["id"]
+    first = client.get("/api/v1/sync/snapshot", headers=a).json()["transactions"]
+    named = next(t for t in first if t["direction"] == "debit" and t["display_name"])
+    rule = {"category": "groceries", "scope": "merchant"}  # D-149: A has a rule
+    path = f"/api/v1/transactions/{named['id']}/category"
+    assert client.put(path, headers=a | key(), json=rule).status_code == 200
     snap = client.get("/api/v1/sync/snapshot", headers=a).json()
     sender = snap["todo"]["senders"][0]["id"]
     answer_key = key()
@@ -119,7 +127,8 @@ def two_users(client, data, db_engine, monkeypatch) -> dict:
     return {
         "txn_id": txns[0], "txn_a": txns[0], "txn_b": txns[1], "A_TXN_2": txns[1],
         "sender_id": sender, "label_id": label, "A_LABEL_ID": label, "device_id": device,
-        "invite_id": invite, "answer_key": answer_key, "answer_path": f"/api/v1/senders/{sender}",
+        "invite_id": invite, "party_id": snap["profile"]["rules"][0]["party_id"],
+        "answer_key": answer_key, "answer_path": f"/api/v1/senders/{sender}",
         "markers": [A_LABEL, device, "ALPHA PHONE", *senders],
     }  # fmt: skip
 
@@ -138,7 +147,7 @@ def test_b_reaches_nothing_of_a_on_any_route(client, db_engine, two_users) -> No
     ids = two_users
     found = routes()
     assert found == set(CASES), f"routes without a case: {sorted(found - set(CASES))}"
-    assert len(found) == 42
+    assert len(found) == 45
     before = a_view(client)
     b = bearer(token(SUB_B))
     for (method, template), (body, own) in sorted(CASES.items()):

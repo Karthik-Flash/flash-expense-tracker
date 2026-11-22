@@ -102,7 +102,14 @@ def test_upgrade_check_downgrade_upgrade(url: str) -> None:
     assert NEW_TABLES | {"heartbeat"} <= tables(url)
     command.check(cfg)  # models and migrations agree
 
-    command.downgrade(cfg, "0016")  # one step at a time: each downgrade works alone
+    def columns(table: str) -> set[str]:
+        return {c["name"] for c in inspect(create_engine(url)).get_columns(table)}
+
+    command.downgrade(cfg, "0017")  # one step at a time: each downgrade works alone
+    assert "scope" not in columns("owner_roles") and "origin" in columns("raw_messages")
+    command.upgrade(cfg, "head")
+    assert "scope" in columns("owner_roles")
+    command.downgrade(cfg, "0016")
     assert not VERSION_TABLES & tables(url) and tables(url) >= SETTING_TABLES
     assert "origin" not in {
         c["name"] for c in inspect(create_engine(url)).get_columns("raw_messages")

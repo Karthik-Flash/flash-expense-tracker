@@ -1949,3 +1949,23 @@ weekday, UPI, card and other shares of Spent, payees paid in 3 or more months, a
 for an answer. A bar opens that month's Transactions; a category, a place or a person opens
 their payments. Analytics needs the server: offline it shows the last answer for that range
 if it has one, else says it is offline. No chart package.
+
+## D-149 Learn from the owner: rules and per-credit answers (2026-11-23)
+
+Premium run, part C. Changing a category offers "Just this payment" (an `owner_categories`
+row) or "All payments to <name>" (the party's default category: every past and future
+payment whose text the party holds, joined identities included). Precedence was already
+owner one-off over party default over the engine (`categorise.py` OWNER_txn, OWNER_party);
+a party holds only texts the owner joined or answered, never a masked-suffix guess (D-145
+feeds only payback links). Rules are owner data, so reparse and recompute keep them.
+Profile lists them as "Your rules" with Undo (`DELETE /rules/{party_id}`, the outbox; the
+party stays, only its category goes; one-off answers stay). Paid back / Not paid back on a
+credit now asks "Just this one" or "Always for <name>". Always is the existing sender answer
+(Friend / Ignore). Just this one is an `owner_roles` row with the new `scope` "one"
+(migration 0018, nullable): role payback (Paid back) or ignored (Not paid back, as the
+person-level Ignore). A person-level answer, a join or Ask me again never overwrites or
+deletes a "one" row, so the per-credit answer wins; "Use the answer for <name>" forgets it.
+Owner export and owner-load carry the scope. In To-do the sender buttons stay person-level
+(the cross-origin check taps them); "Answer one credit" opens the newest credit's sheet.
+Only owner answers move Net (a payback the engine guessed stays To confirm); a category
+never moves Spent. Older queued actions named "All from X" still count as rules.

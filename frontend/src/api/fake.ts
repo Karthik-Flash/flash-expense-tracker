@@ -9,6 +9,7 @@ import {
   type AnalyticsAnswer,
   type Basis,
   type Category,
+  type CreditAnswer,
   type CategoryAmount,
   type ChartSlice,
   type Device,
@@ -196,6 +197,9 @@ export class FakeApi implements Api {
   ])
   private merchantDefault = new Map<string, string>()
   private oneOff = new Map<number, string>()
+  /** D-149 in the demo: per-credit answers (shown, not counted) and rule ids by name. */
+  private creditAnswers = new Map<number, CreditAnswer>()
+  private ruleIds = new Map<string, number>()
   private roleAnswer = new Map<number, Role>()
   private incomeLabel = new Map<string, string>()
   private wokeAt = 0
@@ -523,6 +527,12 @@ export class FakeApi implements Api {
         profile: {
           names: [...this.ownerNames],
           settings: { ...this.settings },
+          rules: [...this.merchantDefault].map(([name, slug]) => {
+            if (!this.ruleIds.has(name)) this.ruleIds.set(name, this.ruleIds.size + 1)
+            const category = CATEGORIES.find((c) => c.slug === slug)
+            return { party_id: this.ruleIds.get(name)!, name, category: slug, category_name: category?.name ?? slug, payments: transactions.filter((t) => t.display_name === name).length }
+          }),
+          credit_answers: Object.fromEntries([...this.creditAnswers].map(([id, a]) => [String(id), a])),
           data: { payments: transactions.length, first_utc: transactions.at(-1)?.time_utc ?? null, last_utc: transactions[0]?.time_utc ?? null },
         },
         paybacks: [], // the demo links no payback (5B-1)
@@ -672,6 +682,15 @@ export class FakeApi implements Api {
       return this.setLabel(Number(txn[1]), id)
     }
     if (txn?.[2] === 'label' && method === 'DELETE') return this.clearLabel(Number(txn[1]))
+    const credit = /^\/transactions\/(\d+)\/payback$/.exec(path)
+    if (credit && method === 'PUT') return void this.creditAnswers.set(Number(credit[1]), b.answer as CreditAnswer)
+    if (credit && method === 'DELETE') return void this.creditAnswers.delete(Number(credit[1]))
+    const undoRule = /^\/rules\/(\d+)$/.exec(path)
+    if (undoRule && method === 'DELETE') {
+      const name = [...this.ruleIds].find(([, id]) => id === Number(undoRule[1]))?.[0]
+      if (name === undefined) throw new ApiError(404, 'No such rule.')
+      return void this.merchantDefault.delete(name)
+    }
     const device = /^\/devices\/([^/]+)$/.exec(path)
     const invite = /^\/invites\/(\d+)$/.exec(path)
     if (invite && method === 'DELETE') {

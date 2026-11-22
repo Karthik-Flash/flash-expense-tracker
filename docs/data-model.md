@@ -172,7 +172,7 @@ policies, as on every table.
 | `parties` | `label`, `kind` (person, business; unsure since `0008`; self and investment since `0013`), `dismissed` (`0013`: suggestions answered No, and the kind before It's me or Investments), `income_label` (null: not an income source), `display_name` (`0008`), `source`, `answered_at` (`0010`), `name_source` (`0012`: who gave `display_name`: app, terminal, file or statement; null before 4A) | UNIQUE (`owner_id`, `label`) |
 | `party_texts` | `party_id`, `text`, `source`; `created_at`, `ended_at` since `0008` | one active row per (`owner_id`, `text`) since `0008` |
 | `owner_link_decisions` | `kind` (duplicate, self_transfer, card_bill, refund, fd), `txn_a`, `txn_b`, `verdict` (same, different), `decided_at`, `source` | UNIQUE (`owner_id`, `kind`, `txn_a`, `txn_b`); CHECK `txn_a < txn_b` |
-| `owner_roles` | `transaction_id` (primary key), `role` (every role except duplicate), `decided_at`, `source` | |
+| `owner_roles` | `transaction_id` (primary key), `role` (every role except duplicate), `decided_at`, `source`, `scope` (0018: `one` for a per-credit Paid back answer, D-149; else null) | |
 
 `source` says who wrote a row: `file`, `terminal` or `app` (D-070). The
 checked values repeat the engine's vocabulary; a test keeps the two in step,

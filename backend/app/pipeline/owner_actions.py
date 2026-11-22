@@ -42,6 +42,8 @@ ANSWERS = ("friend", "income", "ignore")
 SCOPES = ("merchant", "transaction")
 MAX_NAME = LABEL_MAX  # a label, income label or name, trimmed, spaces joined (D-097)
 ANSWER_ROLES = ("ignored", "payback", "income")  # the role decisions a sender answer writes
+ONE = "one"  # owner_roles.scope of a per-credit Paid back / Not paid back answer (D-149)
+CREDIT_ANSWERS = {"paid_back": "payback", "not_paid_back": "ignored"}
 PERSON_ROLES = ("friend", "income", "ignore", "none")  # a person's answer; none: to confirm
 FROM_FILE = "this identifier is set in the owner file: change it there"
 
@@ -139,10 +141,27 @@ def party_for(session: Session, owner_id: uuid.UUID, txn_id: int, source: str) -
     return party
 
 
-def _role(session: Session, owner_id: uuid.UUID, txn_id: int, role: str, source: str) -> None:
-    row = session.get(OwnerRole, txn_id) or OwnerRole(transaction_id=txn_id, owner_id=owner_id)
-    row.role, row.decided_at, row.source = role, datetime.now(UTC), source
+def _role(
+    session: Session,
+    owner_id: uuid.UUID,
+    txn_id: int,
+    role: str,
+    source: str,
+    scope: str | None = None,
+) -> None:
+    """The owner's role for one transaction. A person-level answer (scope None) leaves a
+    per-credit answer (scope "one", D-149) as it is: the per-credit answer wins."""
+    row = session.get(OwnerRole, txn_id)
+    if row is not None and row.scope == ONE and scope != ONE:
+        return
+    row = row or OwnerRole(transaction_id=txn_id, owner_id=owner_id)
+    row.role, row.decided_at, row.source, row.scope = role, datetime.now(UTC), source, scope
     session.add(row)
+
+
+def _person_level(row: OwnerRole | None) -> bool:
+    """A role answer a person-level answer may replace: not a per-credit one (D-149)."""
+    return row is not None and row.role in ANSWER_ROLES and row.scope != ONE
 
 
 def answer_sender(
@@ -178,7 +197,7 @@ def answer_sender(
         party.answered_at = datetime.now(UTC)  # an explicit answer (D-099 as corrected)
         for txn_id in sender.txn_ids:  # an earlier "ignore" or role answer gives way
             row = session.get(OwnerRole, txn_id)
-            if row is not None and row.role in ANSWER_ROLES:
+            if _person_level(row):
                 session.delete(row)
     session.flush()
     return sender
@@ -194,7 +213,7 @@ def reset_sender(session: Session, owner_id: uuid.UUID, sender_id: str) -> Sende
     sender = _sender(session, owner_id, sender_id)
     for txn_id in sender.txn_ids:
         row = session.get(OwnerRole, txn_id)
-        if row is not None and row.role in ANSWER_ROLES:
+        if _person_level(row):
             session.delete(row)
     party = session.get(Party, sender.party_id) if sender.party_id is not None else None
     if party is not None and _plain(session, party):
@@ -239,6 +258,73 @@ def set_category(
         row = one_off or OwnerCategory(transaction_id=txn_id, owner_id=owner_id)
         row.category, row.decided_at, row.source = slug, datetime.now(UTC), source
         session.add(row)
+    session.flush()
+
+
+def answer_credit(
+    session: Session, owner_id: uuid.UUID, txn_id: int, answer: str | None, source: str
+) -> None:
+    """Paid back or Not paid back for this one credit (D-149); None: forget it, so the
+    person-level answer (or the engine) decides again. Beats the person-level answer."""
+    t = _transaction(session, owner_id, txn_id)
+    if t.direction != "credit":
+        raise ActionError("invalid", "only money in can be paid back")
+    row = session.get(OwnerRole, txn_id)
+    if answer is None:
+        if row is not None and row.scope == ONE:
+            session.delete(row)
+    elif answer not in CREDIT_ANSWERS:
+        raise ActionError("invalid", "answer must be paid_back or not_paid_back")
+    else:
+        _role(session, owner_id, txn_id, CREDIT_ANSWERS[answer], source, ONE)
+    session.flush()
+
+
+def credit_answers(session: Session, owner_id: uuid.UUID) -> dict[str, str]:
+    """Per-credit answers: transaction id (as text, a JSON key) -> paid_back/not_paid_back."""
+    back = {v: k for k, v in CREDIT_ANSWERS.items()}
+    rows = session.scalars(
+        select(OwnerRole).where(OwnerRole.owner_id == owner_id, OwnerRole.scope == ONE)
+    )
+    return {str(r.transaction_id): back.get(r.role, r.role) for r in rows}
+
+
+def category_rules(session: Session, owner_id: uuid.UUID) -> list[dict]:
+    """ "Your rules" (D-149): each party with a default category, its name and how many
+    active payments it covers now. The party holds every text joined to it, never a
+    masked-suffix guess (those only feed payback links, D-145)."""
+    count = dict(
+        session.execute(
+            select(TxnDerived.party_id, func.count())
+            .join(Transaction, Transaction.id == TxnDerived.transaction_id)
+            .where(Transaction.owner_id == owner_id, Transaction.status == "active")
+            .group_by(TxnDerived.party_id)
+        ).all()
+    )
+    parties = session.scalars(
+        select(Party)
+        .where(Party.owner_id == owner_id, Party.category.is_not(None))
+        .order_by(Party.id)
+    )
+    return [
+        {
+            "party_id": p.id,
+            "name": p.display_name or p.label,
+            "category": p.category,
+            "category_name": CATEGORIES.get(p.category, p.category),
+            "payments": count.get(p.id, 0),
+        }
+        for p in parties
+    ]
+
+
+def undo_rule(session: Session, owner_id: uuid.UUID, party_id: int) -> None:
+    """Forget a party's default category: its payments go back to the engine's category
+    (one-off answers on single payments stay)."""
+    party = session.get(Party, party_id)
+    if party is None or party.owner_id != owner_id:
+        raise ActionError("not_found", "no such rule")
+    party.category = None
     session.flush()
 
 
@@ -594,7 +680,7 @@ def join_person(
         row = session.get(OwnerRole, txn)
         if chosen == "ignore":
             _role(session, owner_id, txn, "ignored", source)
-        elif row is not None and row.role in ANSWER_ROLES:
+        elif _person_level(row):
             session.delete(row)
     session.flush()
     return target

@@ -104,6 +104,10 @@ def put(client, path: str, body: dict, sub: str = SUB_A):
     return client.put(path, headers=bearer(token(sub)), json=body)
 
 
+def delete(client, path: str, sub: str = SUB_A):
+    return client.delete(path, headers=bearer(token(sub)))
+
+
 def all_transactions(client, sub: str = SUB_A, **params) -> list[dict]:
     items, cursor = [], None
     while True:

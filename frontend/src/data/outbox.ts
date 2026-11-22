@@ -10,7 +10,7 @@
 import { useSyncExternalStore } from 'react'
 
 import { ApiError, type Api, type SendRequest } from '../api/client.ts'
-import type { Category, PartyKind, Person, PersonRole, Sender, SenderAnswer, Settings, Snapshot, Transfer, Txn } from '../api/types.ts'
+import type { Category, CreditAnswer, PartyKind, Person, PersonRole, Rule, Sender, SenderAnswer, Settings, Snapshot, Transfer, Txn } from '../api/types.ts'
 import { deleteOp, putOp, readOutbox } from './local.ts'
 import { asksSoFar, dataState, onApplied, onReset, refresh } from './store.ts'
 
@@ -39,7 +39,7 @@ export const timing = { syncedMs: 2_000, tickMs: 30_000 }
 export interface Targets {
   txns?: number[]
   senders?: string[]
-  /** Merchant names: "All from X" covers every payment to X. */
+  /** Merchant names: "All payments to X" covers every payment to X (older ops: "All from"). */
   merchants?: string[]
   /** Names of labels being made. */
   labels?: string[]
@@ -47,6 +47,8 @@ export interface Targets {
   people?: string[]
   /** The owner's settings (D-136). */
   settings?: boolean
+  /** Category rules being undone, by party id (D-149). */
+  rules?: number[]
 }
 
 export interface Op {
@@ -538,6 +540,10 @@ export function markFor(ops: Op[], t: Txn): { category?: Op; label?: Op; counted
 export const personCategoryMark = (ops: Op[], key: string): Op | undefined =>
   ops.filter((o) => o.path.endsWith('/category') && (o.body as { scope?: string } | null)?.scope === 'merchant' && o.targets.people?.includes(key)).at(-1)
 
+/** The newest per-credit answer for this credit (D-149), failed ones too. */
+export const creditMark = (ops: Op[], id: number): Op | undefined =>
+  ops.filter((o) => o.path === `/transactions/${id}/payback`).at(-1)
+
 /** The newest answer for any of these senders (D-110), failed ones too. */
 export const senderMark = (ops: Op[], ids: string[]): Op | undefined =>
   ops.filter((o) => o.targets.senders?.some((id) => ids.includes(id))).at(-1)
@@ -607,7 +613,7 @@ export function todoView(todo: Snapshot['todo'], ops: Op[]) {
       ...live.filter(
         (o) =>
           o.targets.senders?.length ||
-          (o.targets.merchants?.length && o.kind.startsWith('All from')) ||
+          (o.targets.merchants?.length && (o.kind.startsWith('All payments to') || o.kind.startsWith('All from'))) ||
           (isCheck(o) && o.method === 'PUT') ||
           isTransfer(o) ||
           isKind(o),
@@ -668,7 +674,7 @@ export const actions = {
     if (scope === 'merchant' && t.display_name) targets.merchants = [t.display_name]
     if (scope === 'merchant' && person) targets.people = [person.key]
     return {
-      kind: merchant ? `All from ${merchant}: ${c.name}` : `Category: ${c.name}`,
+      kind: merchant ? `All payments to ${merchant}: ${c.name}` : `Category: ${c.name}`,
       item,
       choice: c.name,
       slug: c.slug,
@@ -759,6 +765,17 @@ export const actions = {
   },
   countAgain(t: Pick<Txn, 'id'>, item: string): NewOp {
     return { kind: 'Count it again', item, choice: 'Counted again', method: 'DELETE', path: `/transactions/${t.id}/ignore`, body: null, targets: { txns: [t.id] } }
+  },
+  /** Paid back / Not paid back for this one credit (D-149); null forgets it. */
+  answerCredit(t: Pick<Txn, 'id'>, answer: CreditAnswer | null, item: string): NewOp {
+    const choice = answer === null ? 'Same as the person' : answer === 'paid_back' ? 'Paid back' : 'Not paid back'
+    return answer === null
+      ? { kind: 'Just this one: forget', item, choice, method: 'DELETE', path: `/transactions/${t.id}/payback`, body: null, targets: { txns: [t.id] } }
+      : { kind: `Just this one: ${choice}`, item, choice, method: 'PUT', path: `/transactions/${t.id}/payback`, body: { answer }, targets: { txns: [t.id] } }
+  },
+  /** Undo "All payments to <name>" (D-149): the engine's category again. */
+  undoRule(rule: Pick<Rule, 'party_id' | 'name' | 'category_name'>): NewOp {
+    return { kind: `Rule undone: ${rule.category_name}`, item: rule.name, choice: 'Rule undone', method: 'DELETE', path: `/rules/${rule.party_id}`, body: null, targets: { rules: [rule.party_id] } }
   },
   separate(p: Pick<Person, 'key' | 'name'>, identifier: { name: string | null; txn_id: number }): NewOp {
     const name = identifier.name ?? 'Identifier'

@@ -72,6 +72,12 @@ class CategoryAnswer(Body):
     scope: Literal["merchant", "transaction"]
 
 
+class CreditAnswer(Body):
+    """Paid back or Not paid back for this one credit (D-149)."""
+
+    answer: Literal["paid_back", "not_paid_back"]
+
+
 class NewLabel(Body):
     name: str = Field(max_length=200)  # the rules: owner_actions.clean_name
 
@@ -518,6 +524,39 @@ def set_category(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: Ca
         return {"id": txn_id, "category": body.category, "scope": body.scope}
 
     return ops.write(session, owner, op, action, body.model_dump())
+
+
+@router.put("/transactions/{txn_id}/payback")
+def answer_credit(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: CreditAnswer):
+    """Just this one (D-149): beats the person-level answer; Net moves only on this answer."""
+
+    def action() -> dict:
+        owner_actions.answer_credit(session, owner, txn_id, body.answer, "app")
+        return {"id": txn_id, "answer": body.answer}
+
+    return ops.write(session, owner, op, action, body.model_dump())
+
+
+@router.delete("/transactions/{txn_id}/payback")
+def forget_credit_answer(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+    """Undo a per-credit answer: the person-level answer or the engine decides again."""
+
+    def action() -> dict:
+        owner_actions.answer_credit(session, owner, txn_id, None, "app")
+        return {"id": txn_id, "answer": None}
+
+    return ops.write(session, owner, op, action)
+
+
+@router.delete("/rules/{party_id}")
+def undo_rule(owner: Owner, session: Db, op: ops.OpDep, party_id: int):
+    """Undo "All payments to <name>" (D-149): the engine's category again."""
+
+    def action() -> dict:
+        owner_actions.undo_rule(session, owner, party_id)
+        return {"party_id": party_id}
+
+    return ops.write(session, owner, op, action)
 
 
 @router.put("/transactions/{txn_id}/check")

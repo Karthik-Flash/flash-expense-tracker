@@ -453,6 +453,8 @@ class OwnerRole(Base):
     role: Mapped[str] = mapped_column(String(20))
     decided_at: Mapped[datetime] = mapped_column(UtcDateTime)
     source: Mapped[str] = mapped_column(String(10))
+    # "one": the owner's answer for this one credit (D-149); a person-level answer leaves it.
+    scope: Mapped[str | None] = mapped_column(String(10))
 
 
 class OwnerCategory(Base):

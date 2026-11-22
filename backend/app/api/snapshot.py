@@ -264,6 +264,8 @@ def build(session, owner, caller: Caller | None = None) -> dict:
         "profile": {
             "names": list(names),
             "settings": owner_actions.owner_settings(session, owner),  # D-136
+            "rules": owner_actions.category_rules(session, owner),  # D-149: Your rules
+            "credit_answers": owner_actions.credit_answers(session, owner),  # D-149
             # Premium A.2: how many payments and which days they span (newest first).
             "data": {
                 "payments": len(items),
