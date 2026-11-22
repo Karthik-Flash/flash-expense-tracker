@@ -115,9 +115,11 @@ def test_reconcile_stats_prints_counts_only_and_writes_nothing(run, backup, db_e
     assert active > 0 and sum(map(int, by_direction.values())) == active
     assert sum(map(int, by_rule.values())) == active
     assert {key.split()[1] for key in by_direction} <= set(ROLES) and set(by_rule) <= set(RULES)
-    assert {"debit spend", "credit refund", "credit payback", "credit fd_move"} <= set(by_direction)
+    # No payback: the fixtures' person credits come from people the owner never paid (D-134).
+    seen = {"debit spend", "credit refund", "credit uncertain", "credit fd_move"}
+    assert seen <= set(by_direction)
     paybacks = dict(re.findall(r"  (\w+)\s+(\d+)", sections["paybacks by basis"]))
-    assert paybacks == {"engine": by_direction["credit payback"], "owner": "0"}
+    assert paybacks == {"engine": by_direction.get("credit payback", "0"), "owner": "0"}
     uncertain = sum(int(n) for key, n in by_direction.items() if key.endswith(" uncertain"))
     assert re.search(rf"uncertain credits\s+{uncertain}\n", out)
     assert re.search(r"not counted yet\n  foreign currency\s+\d+\n  no parser\s+1\n", out)

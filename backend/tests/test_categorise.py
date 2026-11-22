@@ -123,12 +123,19 @@ LEVELS = [
     (txn(party="TEST HOSTEL"), None, "rent_hostel", "KEYWORD", "engine"),
     (txn(party="TEST MUTUAL FUND", channel="nach"), None, "investments", "KEYWORD", "engine"),
     (txn(party="TEST MEDICAL COLLEGE"), None, "uncategorised", "KW_conflict", "engine"),
-    (txn(party="MR TEST PERSON"), None, "people", "PERSON", "engine"),
-    (txn(party="TEST PERSON"), None, "people", "PERSON", "engine"),  # low confidence counts too
+    (txn(party="MR TEST PERSON"), None, "people", "PERSON_name", "engine"),
+    (txn(party="TEST PERSON"), None, "people", "PERSON_name", "engine"),  # two plain words
+    (txn(party="test.friend9@okaxis"), None, "people", "PERSON_vpa", "engine"),  # 1.3.0, D-133
     (txn(party="TEST SHOP 7"), party("TEST SHOP 7", kind="person"), "people", "PERSON", "engine"),
     (txn(party="TEST SHOP", channel="debit_card"), None, "uncategorised", "NONE", "engine"),
     (txn(party=None, channel="netbanking"), None, "uncategorised", "NONE", "engine"),
-    (credit("test.other@okaxis"), None, "people", "NS_payback", "engine"),
+    (
+        credit("test.other@okaxis"),
+        party("test.other@okaxis", kind="person"),
+        "people",
+        "NS_payback",
+        "engine",
+    ),  # noqa: E501
     (credit("TEST PARENT"), OWNER, "other", "NS_income", "engine"),
     (txn(party="TEST OWNER"), OWNER, "other", "NS_self_transfer", "engine"),
     (
@@ -139,8 +146,8 @@ LEVELS = [
         "engine",
     ),
     (credit(None, channel="fd"), None, "investments", "NS_fd_move", "engine"),
-    # 4Z: a person's name on a merchant (QR) UPI ID: the name decides
-    (txn(party="TEST MOHAN LAL paytmqr123@paytm"), None, "people", "NAME_person", "engine"),
+    # 1.3.0 (D-133): a person's name on a merchant (QR) UPI ID is a shop, not a person
+    (txn(party="TEST MOHAN LAL paytmqr123@paytm"), None, "uncategorised", "NONE", "engine"),
     (
         txn(party="TEST BROKER"),
         party("TEST BROKER", kind="investment"),
@@ -167,7 +174,8 @@ def test_each_level(t, owner, category, rule, basis) -> None:
 
 def test_every_rule_and_every_category_is_reachable() -> None:
     reached_rules = {rule for *_, rule, _ in LEVELS} | {"RF_linked", "NS_duplicate"}
-    assert reached_rules == set(RULES)  # the two others: the refund and duplicate tests below
+    # The others: the refund and duplicate tests below; NAME_person only under rules 1.2.0.
+    assert reached_rules | {"NAME_person"} == set(RULES)
     by_engine = {c for *_, c, _, basis in LEVELS if basis == "engine"}
     by_engine |= set(BRAND_CATEGORIES.values()) | set(KEYWORD_CATEGORIES.values())
     assert by_engine == set(CATEGORIES) - {"gifts_donations"}  # only the owner can give that one
@@ -189,7 +197,7 @@ def test_neighbouring_levels() -> None:
     assert one(emi_brand)[1] == "CH_emi"  # 3 over 4
     assert one(txn(party="SWIGGY PHARMACY")) == ("food_drinks", "BRAND", "engine")  # 4 over 5
     assert one(txn(party="MR TEST PHARMACY"))[1] == "KEYWORD"  # 5 over 6
-    assert one(txn(party="MR TEST PERSON"))[1] == "PERSON"  # 6 over 7
+    assert one(txn(party="MR TEST PERSON"))[1] == "PERSON_name"  # 6 over 7
     person = party("TEST PERSON", "rent_hostel", kind="person")  # the landlord
     assert one(txn(party="TEST PERSON"), person) == ("rent_hostel", "OWNER_party", "owner")
     assert one(txn(party="TEST PERSON"), party("TEST PERSON", kind="person"))[1] == "PERSON"
@@ -306,6 +314,8 @@ def test_label_view_across_all_dates() -> None:
         credit("test.other@okaxis", id=3, amount_paise=50_000, txn_time_utc=T0 + 45 * DAY),
         txn(4, party="SWIGGY", amount_paise=99_000),  # not labelled
         refund(5, amount_paise=10_000, account_last4="0001", channel="upi"),
+        # Paid to that person first (not labelled), so the credit is a payback guess (D-134).
+        txn(6, party="test.other@okaxis", amount_paise=60_000, txn_time_utc=T0 + 44 * DAY),
     ]
     result = derive(txns)
     categories = categorise(txns, OwnerData(), result)

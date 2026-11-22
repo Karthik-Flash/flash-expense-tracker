@@ -46,8 +46,11 @@ def test_shape(client, data) -> None:
     assert set(s) == {
         "schema_version", "generated_at", "owner_id", "engine_versions", "months",
         "transactions", "todo", "labels", "categories", "people", "profile", "devices", "sms",
-        "account", "admin",
+        "account", "admin", "paybacks",
     }  # fmt: skip
+    assert s["profile"]["settings"] == {"count_investments_in_spent": False}  # D-136 default
+    # The FAKE friend credit (H02, test.user@okaxis) pays back the one payment to them.
+    assert [x["status"] for x in s["paybacks"]] == ["linked"]
     assert s["account"]["role"] == "admin"  # AUTH_USERS' login, the seed (D-129)
     assert set(s["admin"]) == {"invites", "members"}
     assert s["devices"] == [] and s["sms"]["newest_utc"].endswith("Z")

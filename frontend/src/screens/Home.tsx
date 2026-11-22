@@ -10,7 +10,7 @@ import { HOME } from '../view.ts'
 import { navigate, useApp, useNav } from '../state.tsx'
 import { Bar, CategoryTile, Empty, Figure, Freshness, Header, Icon, Loaded, Money, MonthSwitcher, Notice, RowButton, Section } from '../ui.tsx'
 import { nameOf } from './common.ts'
-import { identifiersText, isPersonTxn, monthData, monthTxns, personKey } from './derive.ts'
+import { identifiersText, investedLine, isPersonTxn, monthData, monthTxns, personKey } from './derive.ts'
 import { SmsPrompt } from './BankSms.tsx'
 import { Ring } from './Ring.tsx'
 import { TxnList } from './Transactions.tsx'
@@ -129,6 +129,7 @@ function SummaryView({ m, txns }: { m: MonthData; txns: Txn[] }) {
           <span className="whitespace-nowrap">Spent {rupees(s.spent_paise)}</span> ·{' '}
           <span className="whitespace-nowrap">Paid back {rupees(s.paid_back_paise)}</span>
         </p>
+        {investedLine(s) && <p className="mt-1 text-sm text-muted tabular-nums">{investedLine(s)}</p>}
         {compared && <p className="mt-1 text-sm text-muted">{comparison(m.changes.spent_paise, s.previous)}</p>}
       </div>
       {s.to_confirm.amount_paise > 0 && (

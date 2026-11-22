@@ -38,7 +38,7 @@ owner's transaction, label or sender is "404 not found".
 | GET | `/api/v1/labels` | Every label with its totals across all dates: `id`, `name`, `transactions`, `spent_paise`, `paid_back_paise`, `to_confirm_paise`, `net_paise` |
 | POST | `/api/v1/labels` | `{"name"}`: 201 with `{"id", "name"}`; 409 when the owner has that name in any case; 422 when the name breaks the rules (below) |
 | GET | `/api/v1/labels/{id}` | The label view across all dates: the totals above and Spent by category |
-| GET | `/api/v1/senders?status=to_confirm\|confirmed\|ignored\|all` | Senders of paybacks, uncertain credits, income and ignored credits, largest total first |
+| GET | `/api/v1/senders?status=to_confirm\|confirmed\|ignored\|all` | Senders of paybacks, uncertain credits, income and ignored credits, newest credit first, then the higher `txn_id` (5B-1) |
 | PUT | `/api/v1/senders/{id}` | `{"answer": "friend"}`, `{"answer": "income", "label": "..."}` or `{"answer": "ignore"}` |
 | DELETE | `/api/v1/senders/{id}` | Forget the answer: the sender is to confirm again |
 | PUT | `/api/v1/transactions/{id}/category` | `{"category": slug, "scope": "merchant" \| "transaction"}` |
@@ -53,6 +53,7 @@ owner's transaction, label or sender is "404 not found".
 | DELETE | `/api/v1/transactions/{id}/ignore` | "Count it again": removes that role (no change when there is none; 409 when the owner set another role) |
 | PUT | `/api/v1/transfers/{debit}/{credit}` | `{"verdict": "same" \| "different"}`: "Moved between your accounts?" (D-115). Same: both legs `self_transfer`; different: the pair is gone for good. 404 for a pair the engine never proposed; 409 when a leg is already "same" with another |
 | PUT | `/api/v1/profile/names` | `{"names": [...]}`: "Your name as banks show it" (D-117), the whole list (at most 6, 2 to 60 characters each); no recompute |
+| PUT | `/api/v1/profile/settings` | `{"count_investments_in_spent": true \| false}` (5B-1, D-136; JSON true or false only): the owner's setting, through the outbox; answers `{"settings": {...}}`, no recompute (totals read it when they are worked out) |
 | PUT | `/api/v1/people/{txn}/kind` | `{"kind": "self" \| "investment"}`: It's me or Investments for the person of `txn` (D-117, D-118); every payment of the party, both ways |
 | DELETE | `/api/v1/people/{txn}/kind` | Undo: the party gets back the kind it had (404 when it is neither) |
 | PUT | `/api/v1/people/{txn}/suggestion` | `{"kind"}`: No to "Is this you?" / "Is this an investment?": not asked again |
@@ -350,3 +351,24 @@ Since 5A the snapshot also has `devices` (the owner's phones: `device_id`,
 `name`, `created_utc`, `last_seen_utc`, `revoked_utc`) and `sms`
 (`{"newest_utc"}`: when the newest SMS the server has arrived, from a laptop
 import or the phone; the Bank SMS sheet starts a first scan a day before it).
+
+## 5B-1 additions (D-133 to D-138)
+
+- **To-do order.** Every To-do list in the snapshot (`todo.senders`,
+  `todo.answered`, `todo.merchants`, `todo.suggestions`, `todo.transfers`) and
+  `GET /senders` are newest first: the newest transaction's time, then the
+  higher transaction id (`txn_id`, or `debit` for a transfer). Suggestions gain
+  `last_time_utc`. The app sorts again with the same rule, so an older phone
+  copy shows the same order.
+- **Summary** (`/summary` and every snapshot month) gains `invested_paise`
+  (debits of role `investment`: investments the owner confirmed),
+  `invested_to_confirm_paise` (payments with an open "Is this an investment?"
+  question; they are in Spent) and `investments_in_spent` (the setting). With
+  the setting on, `spent_paise`, `net_paise`, the categories (Investments),
+  `previous`, the ring, "Paid to" and every label's totals count confirmed
+  investment debits as Spent; off (the default) they are outside Spent.
+- **Transaction item** gains `investment`: `"confirmed"` (role investment),
+  `"suggested"` (an open investment question) or `null`.
+- **Snapshot** gains `paybacks`: `[{"debit", "credit", "status"}]`, which
+  payment each payback pays back (D-134), `linked` or `candidate`; display
+  only. `profile` gains `settings`: `{"count_investments_in_spent": false}`.

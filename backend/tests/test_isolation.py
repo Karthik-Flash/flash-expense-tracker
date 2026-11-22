@@ -46,6 +46,7 @@ CASES: dict[tuple[str, str], tuple[object, bool]] = {
     ("PUT", "/api/v1/transactions/{txn_id}/label"): ({"label_id": "A_LABEL_ID"}, False),
     ("DELETE", "/api/v1/transactions/{txn_id}/label"): (None, False),
     ("PUT", "/api/v1/profile/names"): ({"names": ["B Test Name"]}, True),
+    ("PUT", "/api/v1/profile/settings"): ({"count_investments_in_spent": True}, True),  # 5B-1
     ("PUT", "/api/v1/people/{txn_id}/kind"): ({"kind": "self"}, False),
     ("DELETE", "/api/v1/people/{txn_id}/kind"): (None, False),
     ("PUT", "/api/v1/people/{txn_id}/suggestion"): ({"kind": "self"}, False),
@@ -135,7 +136,7 @@ def test_b_reaches_nothing_of_a_on_any_route(client, db_engine, two_users) -> No
     ids = two_users
     found = routes()
     assert found == set(CASES), f"routes without a case: {sorted(found - set(CASES))}"
-    assert len(found) == 39
+    assert len(found) == 40
     before = a_view(client)
     b = bearer(token(SUB_B))
     for (method, template), (body, own) in sorted(CASES.items()):

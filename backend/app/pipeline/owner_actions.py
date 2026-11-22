@@ -28,6 +28,7 @@ from app.models import (
     OwnerLinkDecision,
     OwnerName,
     OwnerRole,
+    OwnerSetting,
     Party,
     PartyText,
     Transaction,
@@ -326,6 +327,24 @@ def answer_transfer(
     row.verdict, row.decided_at, row.source = verdict, datetime.now(UTC), source
     session.flush()
     return a, b
+
+
+def owner_settings(session: Session, owner_id: uuid.UUID) -> dict:
+    """The owner's settings (D-136); every default when the owner never changed one."""
+    row = session.get(OwnerSetting, owner_id)
+    return {"count_investments_in_spent": bool(row and row.count_investments_in_spent)}
+
+
+def set_owner_settings(
+    session: Session, owner_id: uuid.UUID, count_investments_in_spent: bool, source: str
+) -> dict:
+    """ "Count investments in Spent" (D-136): owner data, read when totals are worked out."""
+    row = session.get(OwnerSetting, owner_id) or OwnerSetting(owner_id=owner_id)
+    row.count_investments_in_spent = count_investments_in_spent
+    row.updated_at, row.source = datetime.now(UTC), source
+    session.add(row)
+    session.flush()
+    return owner_settings(session, owner_id)
 
 
 MAX_OWNER_NAMES = 6

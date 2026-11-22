@@ -50,8 +50,8 @@ def test_every_data_route_needs_a_login(client) -> None:
     # 4A: a transfer answer. 4Z: owner names, a person's kind (set, undo), a suggestion's No.
     # 5A: devices (register, list, revoke) and the SMS ingest (a device token, D-122).
     # 5C: invites (make, list, revoke), members, delete my account; and sign-up, the one
-    # route with no login (an invite code instead, D-128).
-    assert len(data_routes) == 36
+    # route with no login (an invite code instead, D-128). 5B-1: the owner's settings.
+    assert len(data_routes) == 37
     for method, path in data_routes:
         if path == "/api/v1/signup":
             continue
@@ -187,7 +187,8 @@ def test_summary(client, data) -> None:
     s = response.json()
     assert set(s) == {
         "month", "spent_paise", "paid_back_paise", "to_confirm", "net_paise", "income_paise",
-        "categories", "counts", "stale", "last_recompute_utc", "previous",
+        "categories", "counts", "stale", "last_recompute_utc", "previous", "invested_paise",
+        "invested_to_confirm_paise", "investments_in_spent",
     }  # fmt: skip
     assert s["previous"] == {"month": "2025-12", "whole": True, "spent_paise": 0, "categories": []}
     assert sum(c["amount_paise"] for c in s["categories"]) == s["spent_paise"] > 0
@@ -255,7 +256,7 @@ def test_transactions_pages_filters_and_never_shows_message_text(client, data, d
     assert set(items[0]) == {
         "id", "time_utc", "amount_paise", "direction", "display_name", "identifier",
         "person_id", "role", "role_basis", "category", "category_name", "category_basis", "label",
-        "generic", "check", "statement", "category_guessed",
+        "generic", "check", "statement", "category_guessed", "investment",
     }  # fmt: skip
     for t in items[:5]:  # one transaction by id: the same item
         assert get(client, f"/api/v1/transactions/{t['id']}").json() == t
@@ -369,8 +370,8 @@ def test_an_app_write_survives_owner_load_and_recompute(
 def test_senders_confirm_and_net_follows(client, data) -> None:
     listed = get(client, "/api/v1/senders").json()
     assert listed and {s["status"] for s in listed} == {"to_confirm"}
-    totals_ = [s["total_paise"] for s in listed]
-    assert totals_ == sorted(totals_, reverse=True)
+    order = [(s["last_time_utc"], s["txn_id"]) for s in listed]  # newest first (5B-1)
+    assert order == sorted(order, reverse=True)
     assert all(
         s["id"].startswith("s_") and "@" not in s["id"] and ":" not in s["id"] for s in listed
     )

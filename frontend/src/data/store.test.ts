@@ -7,7 +7,7 @@ import type { Api } from '../api/client.ts'
 import type { Snapshot, SnapshotAnswer } from '../api/types.ts'
 import { monthData } from '../screens/derive.ts'
 import { addTiming, readLocal, readTimings, saveLocal, touchLocal, wipeLocal, type Meta, type Timing } from './local.ts'
-import { agoPhrase, clearData, dataState, freshnessLine, refresh, speedRows, startData } from './store.ts'
+import { agoPhrase, clearData, dataState, freshnessLine, refresh, refreshIfIdle, REFRESH_EVERY_MS, speedRows, startData } from './store.ts'
 
 // FAKE snapshots: only the fields the store and the Home selector read.
 function snap(spent: number, owner = 'owner-a', schema = 1): Snapshot {
@@ -132,7 +132,7 @@ test('a 200 replaces the copy; sign-out wipes it', async () => {
   await startData(api, 'user-a')
   await until(() => dataState().snapshot !== null && !dataState().refreshing)
   await eventually(async () => (await readLocal())?.meta.etag === '"new"')
-  assert.equal(freshnessLine(dataState()), 'Updated just now')
+  assert.match(freshnessLine(dataState()), /^Updated \d\d:\d\d$/) // 5B-1: the IST clock time
   await clearData()
   assert.equal(dataState().snapshot, null)
   assert.equal(await readLocal(), null)
@@ -211,4 +211,22 @@ test('Speed sheet rows from stored timings', () => {
     { when: 'Thu 19 Nov, 08:30', boot: 'local copy', local: '412 ms', fresh: '3.3 s', result: '200' },
     { when: 'Wed 18 Nov, 21:40', boot: '–', local: '–', fresh: '–', result: 'timeout, cold' },
   ])
+})
+
+test('5B-1: focus, return and the 60 s tick never start a second fetch or queue one', async () => {
+  assert.equal(REFRESH_EVERY_MS, 60_000)
+  let release: (() => void) | null = null
+  const { api, seen } = fakeApi(() => new Promise((resolve) => (release = () => resolve({ status: 304 }))))
+  await startData(api, 'user-a')
+  await until(() => seen.calls === 1)
+  const triggers = [refreshIfIdle(), refreshIfIdle(), refreshIfIdle()] // focus + visible + tick
+  release!()
+  await Promise.all(triggers)
+  assert.equal(seen.calls, 1) // one fetch answered all three
+  assert.equal(seen.most, 1)
+  const later = refreshIfIdle() // idle again: a new fetch
+  await until(() => seen.calls === 2)
+  release!()
+  await later
+  assert.equal(seen.most, 1)
 })

@@ -383,7 +383,8 @@ def test_recompute_after_owner_load_changes_roles(
     to_own = txn_id(db_engine, counterparty_raw="PERSON_900")
     to_friend = txn_id(db_engine, counterparty_raw="PERSON_901")
     before = stored(db_engine)
-    assert (before[upi_credit].role, before[upi_credit].role_basis) == ("payback", "engine")
+    # A person signal, but the owner never paid them: no payback guess (reconcile-1.7.0, D-134).
+    assert (before[upi_credit].role, before[upi_credit].role_basis) == ("uncertain", "engine")
     assert (before[neft_credit].role, before[to_own].role) == ("uncertain", "spend")
     assert before[upi_credit].display_name == "test.user@okaxis"
 
@@ -441,7 +442,7 @@ def test_recompute_records_a_run_with_versions_and_counts(loaded: str, db_engine
         == {
             "merchant": MERCHANT_VERSION,
             "reconcile": RECONCILE_VERSION,
-            "categorise": "categorise-1.2.0",
+            "categorise": "categorise-1.3.0",
         }
     )
     assert run_row.started_at <= run_row.finished_at

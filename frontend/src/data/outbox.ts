@@ -10,7 +10,7 @@
 import { useSyncExternalStore } from 'react'
 
 import { ApiError, type Api, type SendRequest } from '../api/client.ts'
-import type { Category, PartyKind, Person, PersonRole, Sender, SenderAnswer, Snapshot, Transfer, Txn } from '../api/types.ts'
+import type { Category, PartyKind, Person, PersonRole, Sender, SenderAnswer, Settings, Snapshot, Transfer, Txn } from '../api/types.ts'
 import { deleteOp, putOp, readOutbox } from './local.ts'
 import { asksSoFar, dataState, onApplied, onReset, refresh } from './store.ts'
 
@@ -45,6 +45,8 @@ export interface Targets {
   labels?: string[]
   /** Person keys a name or join is about (D-096). */
   people?: string[]
+  /** The owner's settings (D-136). */
+  settings?: boolean
 }
 
 export interface Op {
@@ -490,6 +492,16 @@ const isTransfer = (o: Op) => o.path.startsWith('/transfers/')
 /** It's me, Investments, or No to a suggestion (D-117, D-118). */
 const isKind = (o: Op) => /^\/people\/\d+\/(kind|suggestion)$/.test(o.path)
 
+/** The newest settings change waiting (failed ones too, so the row can say so). */
+export const settingsMark = (ops: Op[]): Op | undefined => ops.filter((o) => o.targets.settings).at(-1)
+
+/** The owner's settings with a waiting change applied (D-136); the defaults with none known. */
+export function shownSettings(ops: Op[], server: Settings | undefined): Settings {
+  const mark = settingsMark(ops)
+  if (mark && mark.state !== 'failed') return mark.body as Settings
+  return server ?? { count_investments_in_spent: false }
+}
+
 /** The newest It's me / Investments answer (or undo) waiting for this person. */
 export const kindMark = (ops: Op[], key: string): Op | undefined =>
   ops.filter((o) => o.state !== 'failed' && o.path.endsWith('/kind') && o.targets.people?.includes(key)).at(-1)
@@ -567,6 +579,16 @@ export function shownName(ops: Op[], p: Pick<Person, 'key' | 'name'>, fallback =
 export const roleConflict = (a: Pick<Person, 'role'>, b: Pick<Person, 'role'>): boolean =>
   a.role !== null && b.role !== null && a.role !== b.role
 
+/** Newest first, then the higher id (5B-1): the order of every To-do list, also for a phone
+ *  copy made before the server sorted them. A list item with no time goes last. */
+export function newestFirst<T>(items: T[], time: (x: T) => string | undefined, id: (x: T) => number | undefined): T[] {
+  const at = (x: T) => {
+    const ms = Date.parse(time(x) ?? '')
+    return Number.isNaN(ms) ? -Infinity : ms
+  }
+  return [...items].sort((a, b) => at(b) - at(a) || (id(b) ?? 0) - (id(a) ?? 0))
+}
+
 /** To-do without the items that already have an answer waiting; those are listed apart. */
 export function todoView(todo: Snapshot['todo'], ops: Op[]) {
   const live = ops.filter((o) => o.state !== 'failed')
@@ -574,12 +596,13 @@ export function todoView(todo: Snapshot['todo'], ops: Op[]) {
   const merchants = new Set(live.filter((o) => o.path.endsWith('/category')).flatMap((o) => o.targets.merchants ?? []))
   const moved = new Set(live.filter(isTransfer).map((o) => o.path))
   const asked = new Set(live.filter(isKind).flatMap((o) => o.targets.people ?? []))
+  const byTxn = <T extends { last_time_utc?: string; txn_id?: number }>(xs: T[]) => newestFirst(xs, (x) => x.last_time_utc, (x) => x.txn_id)
   return {
-    senders: todo.senders.filter((s) => !senders.has(s.id)),
-    answered: todo.answered.filter((s) => !senders.has(s.id)),
-    merchants: todo.merchants.filter((m) => !merchants.has(m.name)),
-    transfers: (todo.transfers ?? []).filter((t) => !moved.has(transferPath(t))),
-    suggestions: (todo.suggestions ?? []).filter((x) => !asked.has(x.key)),
+    senders: byTxn(todo.senders.filter((s) => !senders.has(s.id))),
+    answered: byTxn(todo.answered.filter((s) => !senders.has(s.id))),
+    merchants: byTxn(todo.merchants.filter((m) => !merchants.has(m.name))),
+    transfers: newestFirst((todo.transfers ?? []).filter((t) => !moved.has(transferPath(t))), (t) => t.debit_time_utc, (t) => t.debit),
+    suggestions: byTxn((todo.suggestions ?? []).filter((x) => !asked.has(x.key))),
     waiting: [
       ...live.filter(
         (o) =>
@@ -709,6 +732,11 @@ export const actions = {
   /** "Your name as banks show it" (D-117): the whole list. */
   setOwnerNames(names: string[]): NewOp {
     return { kind: 'Your names', item: 'Your name as banks show it', choice: names.join(', ') || 'None', method: 'PUT', path: '/profile/names', body: { names }, targets: {} }
+  },
+  /** "Count investments in Spent" (D-136): the owner's setting, the whole object. */
+  setSettings(settings: Settings): NewOp {
+    const choice = settings.count_investments_in_spent ? 'Investments count in Spent' : 'Investments outside Spent'
+    return { kind: 'Settings', item: 'Count investments in Spent', choice, method: 'PUT', path: '/profile/settings', body: settings, targets: { settings: true } }
   },
   /** It's me or Investments for a person (D-117, D-118): every payment of theirs, both ways. */
   setKind(p: Pick<Person, 'key' | 'txn_id' | 'name'>, kind: PartyKind): NewOp {

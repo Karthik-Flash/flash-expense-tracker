@@ -464,7 +464,8 @@ export class FakeApi implements Api {
           transfers: this.transfers(),
           suggestions: this.suggestions(),
         },
-        profile: { names: [...this.ownerNames] },
+        profile: { names: [...this.ownerNames], settings: { ...this.settings } },
+        paybacks: [], // the demo links no payback (5B-1)
         devices: this.devices.map((d) => ({ ...d })),
         sms: { newest_utc: transactions[0]?.time_utc ?? null },
         account: { role: 'admin', email: 'demo@example.invalid' },
@@ -573,8 +574,11 @@ export class FakeApi implements Api {
     }
   }
 
+  /** The owner's settings (D-136); the demo keeps them and shows them, no total moves. */
+  private settings = { count_investments_in_spent: false }
+
   private apply({ method, path, body }: SendRequest): void {
-    const b = (body ?? {}) as Record<string, string | number | undefined>
+    const b = (body ?? {}) as Record<string, string | number | boolean | undefined>
     const person = /^\/people\/(\d+)\/(name|join)$/.exec(path)
     if (person) return this.person(Number(person[1]), method, person[2], b)
     const check = /^\/transactions\/(\d+)\/(check|ignore)$/.exec(path)
@@ -589,6 +593,11 @@ export class FakeApi implements Api {
       const row = this.rows.find((r) => r.id === Number(kind[1]))
       if (!row || !this.personOf(row)) throw new ApiError(404, 'No such person.')
       return void this.dismissed.add(`${String(b.kind)}:${this.personOf(row)}`)
+    }
+    if (path === '/profile/settings' && method === 'PUT') {
+      if (typeof b.count_investments_in_spent !== 'boolean') throw new ApiError(422, 'Send true or false.')
+      this.settings = { count_investments_in_spent: b.count_investments_in_spent }
+      return
     }
     if (path === '/profile/names' && method === 'PUT') {
       this.ownerNames = ((b.names as unknown as string[]) ?? []).map((n) => n.trim().replace(/\s+/g, ' ')).filter(Boolean)

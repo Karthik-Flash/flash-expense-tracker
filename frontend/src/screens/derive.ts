@@ -1,8 +1,9 @@
 // Pure helpers the screens use on the snapshot (docs/ui-spec.md). They filter, sort and
 // search; every money figure comes from the server (D-088).
 
-import type { Category, MonthData, Person, Snapshot, Txn } from '../api/types.ts'
+import type { Category, MonthData, Person, Sender, Snapshot, Summary, Txn } from '../api/types.ts'
 import { dayLabel, monthOf } from '../lib/dates.ts'
+import { rupees } from '../lib/money.ts'
 import { nameOf } from './common.ts'
 
 export const LABEL_MAX = 30
@@ -70,4 +71,54 @@ export function identifiersText(p: Person | undefined): string {
 export function matches(t: Txn, q: string): boolean {
   const name = nameOf(t).toLowerCase()
   return q.toLowerCase().split(/\s+/).filter(Boolean).every((word) => name.includes(word))
+}
+
+// --- 5B-1 -----------------------------------------------------------------------------
+
+/** "Invested ₹3,000 · Invested (to confirm) ₹500, in Spent": the server's figures (D-136). */
+export function investedLine(s: Pick<Summary, 'invested_paise' | 'invested_to_confirm_paise' | 'investments_in_spent'>): string {
+  const parts = []
+  if (s.invested_paise) parts.push(`Invested ${rupees(s.invested_paise)}${s.investments_in_spent ? ', in Spent' : ''}`)
+  if (s.invested_to_confirm_paise) parts.push(`Invested (to confirm) ${rupees(s.invested_to_confirm_paise)}, in Spent`)
+  return parts.join(' · ')
+}
+
+/** The Investments filter: the category, or a payment tagged as an investment (confirmed or
+ *  to confirm), so a suggested one shows too. Any other category filter matches its slug. */
+export function inCategory(t: Txn, slug: string | null): boolean {
+  if (!slug) return true
+  return t.category === slug || (slug === 'investments' && Boolean(t.investment))
+}
+
+/** The row's tag (D-136): "Investment" or "Investment, to confirm". */
+export function investmentTag(t: Pick<Txn, 'investment'>): string {
+  if (t.investment === 'confirmed') return 'Investment'
+  return t.investment === 'suggested' ? 'Investment, to confirm' : ''
+}
+
+/** The sender a credit belongs to (D-134): by person, else the sender of that one credit. */
+export function senderOfCredit(t: Txn, todo: Snapshot['todo']): Sender | undefined {
+  if (t.direction !== 'credit') return undefined
+  const all = [...todo.senders, ...todo.answered]
+  return all.find((s) => (t.person_id !== null && s.person_id === t.person_id) || (!s.person_id && s.txn_id === t.id))
+}
+
+/** The sheet of a credit from a person asks "Paid back?" (the To-do answer, D-134). */
+export const asksPaidBack = (t: Txn, s: Sender | undefined): boolean =>
+  Boolean(s) && t.direction === 'credit' && ['payback', 'uncertain', 'income', 'ignored'].includes(t.role)
+
+/** On a payment: the paybacks linked to it, read only (D-134). "₹400 paid back by Ravi" for
+ *  one you confirmed; "to confirm" for one the app guessed; "may be for this" for a candidate. */
+export function paybackLines(debit: Txn, snap: Pick<Snapshot, 'paybacks' | 'transactions'>, name: (t: Txn) => string): string[] {
+  const out = []
+  for (const link of snap.paybacks ?? []) {
+    if (link.debit !== debit.id) continue
+    const back = snap.transactions.find((t) => t.id === link.credit)
+    if (!back) continue
+    const amount = rupees(back.amount_paise, true)
+    if (link.status === 'candidate') out.push(`${amount} from ${name(back)} on ${dayLabel(back.time_utc)} may be for this`)
+    else if (back.role_basis === 'owner') out.push(`${amount} paid back by ${name(back)}`)
+    else out.push(`${amount} from ${name(back)}, to confirm`)
+  }
+  return out
 }

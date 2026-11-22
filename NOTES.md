@@ -39,6 +39,13 @@ the owner's install on the phone (cheat sheet, "Android app"), then 5B.
 **Phase 5C done 22 Nov** (not pushed): several users (invite codes,
 `app_users`, sign-up, isolation test, Delete my account, first run, "What
 Flash stores"); owner steps in the cheat sheet, "Several users".
+**Phase 5B-1 done 22 Nov** (not pushed): daily-use correctness: To-do newest
+first, refresh at once and every 60 s with pull-to-refresh, People only when
+clearly personal (`categorise-1.3.0`), payback guesses need an earlier
+payment and payback links (`reconcile-1.7.0`), Invested totals and "Count
+investments in Spent" (migration `0016`), `category-diff` and
+`payback-review` (D-133 to D-138). Owner steps: cheat sheet, "After the 5B-1
+deploy". Next: 5B-2 (the phone, Kotlin).
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -572,6 +579,41 @@ After the planner's review, in this order:
 Owner commands now work on one owner's data: `--owner <owner_id>` before the
 command, else the admin, else `OWNER_ID`. For your own data nothing changes.
 
+### After the 5B-1 deploy (D-133 to D-138), in this order
+
+1. **Backup** (from the repo root, Docker running): `powershell -ExecutionPolicy
+   Bypass -File scripts\backup_db.ps1` (a new file in `D:\FlashPrivate\backups`).
+2. **Push** after the planner's review: `git push`. Render runs migration
+   `0016` (`owner_settings`). The first read after the deploy recomputes once
+   (D-102).
+3. **Reparse**, about 10 minutes (from `backend\`; no parser changed, so it
+   mostly runs the recompute with `reconcile-1.7.0` and `categorise-1.3.0`;
+   counts only, SAFE TO PASTE):
+   ```powershell
+   .\.venv\Scripts\python.exe -m app.cli reparse --dry-run
+   .\.venv\Scripts\python.exe -m app.cli reparse
+   ```
+4. **category-diff** (counts SAFE TO PASTE; the CSV is PRIVATE, never paste
+   it; `--out` must be outside the repository):
+   ```powershell
+   .\.venv\Scripts\python.exe -m app.cli category-diff --out D:\FlashPrivate\review\category-diff.csv
+   ```
+5. **payback-review** (the same rules):
+   ```powershell
+   .\.venv\Scripts\python.exe -m app.cli payback-review --out D:\FlashPrivate\review\payback-review.csv
+   ```
+   For another user's data put `--owner <owner_id>` before the command:
+   `.\.venv\Scripts\python.exe -m app.cli --owner <owner_id> payback-review --out ...`
+6. **Rebuild and install the APK** (from `frontend\`, then the phone over
+   USB, as in "Android app" above):
+   ```powershell
+   cd frontend; npm ci; npm run android:apk
+   adb install -r D:\Projects\FinancesApp\mobile\android\app\build\outputs\apk\debug\app-debug.apk
+   ```
+7. **Check on the phone**: To-do shows the newest first; pull down on Home and
+   it says "Updated hh:mm"; a credit from a friend in Transactions has Paid
+   back / Not paid back; Settings has "Count investments in Spent" (off).
+
 ### Cross-origin check (the test routine since 4F-B, D-104)
 
 ```powershell
@@ -1053,6 +1095,24 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-22: Phase 5B-1, daily-use correctness
+
+- To-do newest first (time, then id) on the server and in the app (D-138).
+- Refresh on focus and return, after the outbox flushes, every 60 s while
+  visible, never two at once; pull-to-refresh (own code) and a Refresh link on
+  desktop; "Updated hh:mm" (D-135). Load: one snapshot is 82 statements and
+  about 2 MB of database reads for 704 FAKE transactions.
+- `categorise-1.3.0`: People only when clearly personal (D-133); FAKE table of
+  46 payees in `tests/test_people_bias.py`.
+- `reconcile-1.7.0`: a payback guess needs a payment to the person in the 90
+  days before (`CR_no_debit` otherwise); payback links in the snapshot; Paid
+  back / Not paid back in the transaction sheet (D-134). The 13 engine
+  paybacks never counted in Paid back, Net or Spent.
+- Invested and Invested (to confirm) per month, the Investment tag and filter,
+  "Count investments in Spent" (migration `0016`, `PUT /profile/settings`,
+  default off) (D-136).
+- Owner commands `category-diff --out` and `payback-review --out` (D-137).
 
 ### 2026-11-22: 5C fix, CI red on 97aa4e2
 

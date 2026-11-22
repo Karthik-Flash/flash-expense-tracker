@@ -5,8 +5,18 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
 [PLAN.md](PLAN.md).
 
-## Current state (Phase 5C done, 22 Nov 2026)
+## Current state (Phase 5B-1 done, 22 Nov 2026)
 
+- **Phase 5B-1 is done, not pushed** (D-133 to D-138): To-do newest first;
+  refresh on focus, after the outbox, every 60 s while visible, pull-to-refresh
+  (`src/pull.ts`); People only when clearly personal (`categorise-1.3.0`); a
+  payback guess needs a payment to the person in the 90 days before, and
+  payback links in the snapshot (`reconcile-1.7.0`, `credits.payback_links`);
+  Paid back / Not paid back in the transaction sheet (the To-do sender
+  answer); Invested totals, the Investment tag and "Count investments in
+  Spent" (`owner_settings`, migration `0016`); owner commands `category-diff`
+  and `payback-review` (PRIVATE CSV outside the repo). Owner steps: NOTES
+  cheat sheet, "After the 5B-1 deploy". Next: 5B-2 (the phone, Kotlin).
 - **Phase 5C is done, not pushed** (D-128 to D-132): several users. Logins
   live in `app_users` (migration `0015`; `AUTH_USERS` seeds the admin on the
   first request, then is only a fallback); testers join with an invite code
@@ -54,10 +64,10 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   the push was verified and the git backup deleted (D-121). Enable the hook
   once per clone: `git config core.hooksPath .githooks`.
 - Engine versions: parsers `hdfc-1.2.0`, `sbi-1.0.0` and `generic-1.0.0`
-  (other banks), `merchant-1.1.1`, `reconcile-1.6.0`, `categorise-1.2.0`;
+  (other banks), `merchant-1.1.1`, `reconcile-1.7.0`, `categorise-1.3.0`;
   statement reader `stmt-hdfc-1.1.0`.
-- Alembic head: `0015` (app_users, invites, auth_deletions; `0011` was not used).
-- Decisions: D-001 to D-132 ([DECISIONS.md](DECISIONS.md)).
+- Alembic head: `0016` (owner_settings; `0011` was not used).
+- Decisions: D-001 to D-138 ([DECISIONS.md](DECISIONS.md)).
 - Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
   lint/typecheck/tests/build, the cross-origin check
   (`node scripts/cross-origin-check.mjs` from `frontend\`, which covers the
@@ -100,6 +110,7 @@ unless marked private.
 | `merchant-review`, `reconcile-review`, `category-review`, `credit-review` | Terminal-only reviews and answers (private) |
 | `owner-load <file>`, `owner-export <file>` | Owner file into the owner tables, and back out (files in `D:\FlashPrivate\private\`) |
 | `payback-audit`, `--fix`, `--fix --apply` | Paybacks no owner answer confirmed (D-099): counts, dry run, repair |
+| `category-diff --out <csv>`, `payback-review --out <csv>` | 5B-1 reviews (D-137): counts on screen, rows to a PRIVATE CSV outside the repo |
 | `bank-survey`, `generic-preview` | Messages by bank, kind and parse status; what the generic parser would read (counts) |
 | `redact-sample --family <bank>`, `--approve <bank>` | A redacted sample of one bank to `D:\FlashPrivate\review\`, then into `data\sample\` (D-100) |
 | `scripts\redact_sms.py ... --verify` (from the repo root) | Makes the redacted sample; must end with `Leaks: 0` |

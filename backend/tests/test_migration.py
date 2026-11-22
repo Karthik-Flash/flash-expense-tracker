@@ -40,6 +40,7 @@ MARK_TABLES = {"recompute_marks"}  # 0010: writes before recompute (D-106)
 NAME_TABLES = {"owner_names"}  # 0013: "Your name as banks show it" (D-117)
 DEVICE_TABLES = {"devices"}  # 0014: phones that upload bank SMS (D-122)
 USER_TABLES = {"app_users", "invites", "auth_deletions"}  # 0015: several users (D-128, D-129)
+SETTING_TABLES = {"owner_settings"}  # 0016: "Count investments in Spent" (D-136)
 NEW_TABLES = (
     PIPELINE_TABLES
     | OWNER_TABLES
@@ -51,6 +52,7 @@ NEW_TABLES = (
     | NAME_TABLES
     | DEVICE_TABLES
     | USER_TABLES
+    | SETTING_TABLES
 )  # every app table but heartbeat
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 BACKEND = Path(__file__).resolve().parent.parent
@@ -97,7 +99,11 @@ def test_upgrade_check_downgrade_upgrade(url: str) -> None:
     assert NEW_TABLES | {"heartbeat"} <= tables(url)
     command.check(cfg)  # models and migrations agree
 
-    command.downgrade(cfg, "0014")  # one step at a time: each downgrade works alone
+    command.downgrade(cfg, "0015")  # one step at a time: each downgrade works alone
+    assert not SETTING_TABLES & tables(url) and tables(url) >= USER_TABLES
+    command.upgrade(cfg, "head")
+    assert tables(url) >= SETTING_TABLES
+    command.downgrade(cfg, "0014")
     assert not USER_TABLES & tables(url) and tables(url) >= DEVICE_TABLES
     command.upgrade(cfg, "head")
     assert tables(url) >= USER_TABLES

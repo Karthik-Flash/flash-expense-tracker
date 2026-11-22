@@ -102,10 +102,12 @@ CASES = [
     (credit("test.parent@okaxis"), OWNER, "income", "CR_income_party", "owner"),
     (credit("TEST EMPLOYER PVT LTD", channel="neft"), OWNER, "income", "CR_income_party", "owner"),
     (credit("test.friend@ybl"), OWNER, "payback", "CR_person_party", "owner"),
-    (credit("MR TEST PERSON", channel="neft"), None, "payback", "CR_person_signal", "engine"),
-    (credit("9000000001@ybl"), None, "payback", "CR_person_signal", "engine"),
-    (credit("test.other@okaxis"), None, "payback", "CR_person_signal", "engine"),
-    (credit("*user@oksbi"), None, "payback", "CR_person_signal", "engine"),  # no own UPI ID listed
+    # A person signal alone is no payback guess since reconcile-1.7.0 (D-134): the owner must
+    # have paid them before. With a payment first: test_a_person_signal_needs_a_payment_before.
+    (credit("MR TEST PERSON", channel="neft"), None, "uncertain", "CR_no_debit", "engine"),
+    (credit("9000000001@ybl"), None, "uncertain", "CR_no_debit", "engine"),
+    (credit("test.other@okaxis"), None, "uncertain", "CR_no_debit", "engine"),
+    (credit("*user@oksbi"), None, "uncertain", "CR_no_debit", "engine"),  # no own UPI ID listed
     (credit("TEST PERSON", channel="neft"), None, "uncertain", "CR_name_only", "engine"),
     (credit("TEST TRADERS PVT LTD"), None, "uncertain", "CR_business", "engine"),
     (credit("TEST STORES test.other@okaxis"), None, "uncertain", "CR_unsure", "engine"),
@@ -152,11 +154,11 @@ def test_one_case_per_rule(t, owner, role, rule, basis) -> None:
 def test_every_role_and_every_rule_is_reached() -> None:
     # No rule gives "duplicate" before step 3C-3, and the owner cannot set it as a role.
     # The role duplicate and these three rules need two transactions: test_reconcile_links.py.
-    by_link = {"OWNER_link", "DUP_autopay_card", "ST_reference", "ST_pair"}
+    by_link = {"OWNER_link", "DUP_autopay_card", "ST_reference", "ST_pair", "CR_person_signal"}
     assert {role for _, _, role, _, _ in CASES} | {"duplicate"} == set(ROLES)
     assert {rule for _, _, _, rule, _ in CASES} | by_link == set(RULES)
     assert len(ROLES) == 12 and set(COUNTED) | DEBIT_ONLY | CREDIT_ONLY <= set(ROLES)
-    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.6.0"
+    assert VERSIONS["reconcile"] == RECONCILE_VERSION == "reconcile-1.7.0"
 
 
 def test_unexplained_debit_is_spend_and_unexplained_credit_is_uncertain() -> None:
@@ -166,12 +168,44 @@ def test_unexplained_debit_is_spend_and_unexplained_credit_is_uncertain() -> Non
 
 
 def test_income_is_checked_before_payback() -> None:
-    money_in = credit("test.parent@okaxis")  # a consumer handle: the engine alone says payback
-    assert one(money_in).rule == "CR_person_signal"
+    money_in = credit("test.parent@okaxis")  # a consumer handle, never paid: no guess
+    assert one(money_in).rule == "CR_no_debit"
     person = OwnerData(parties=(Party("person", texts=("test.parent@okaxis",)),))
     assert (one(money_in, person).role, one(money_in, person).basis) == ("payback", "owner")
     income = OwnerData(parties=(Party("person", income=True, texts=("test.parent@okaxis",)),))
     assert (one(money_in, income).role, one(money_in, income).basis) == ("income", "owner")
+
+
+@pytest.mark.parametrize(
+    ("paid", "role", "rule"),
+    [
+        (-90 * DAY, "payback", "CR_person_signal"),  # the window's far end counts
+        (-DAY, "payback", "CR_person_signal"),
+        (timedelta(0), "payback", "CR_person_signal"),  # the same moment
+        (-91 * DAY, "uncertain", "CR_no_debit"),  # too long ago
+        (DAY, "uncertain", "CR_no_debit"),  # paid only afterwards
+    ],
+)
+def test_a_person_signal_needs_a_payment_before(paid, role, rule) -> None:
+    """reconcile-1.7.0 (D-134): a credit is a payback guess only from a person the owner
+    paid in the 90 days before; else it is uncertain. Neither lowers Net."""
+    pay = txn(1, party="test.friend2@okaxis", txn_time_utc=T0 + paid)
+    back = credit("test.friend2@okaxis", id=2, txn_time_utc=T0)
+    d = derive([pay, back]).roles[2]
+    assert (d.role, d.rule, d.basis) == (role, rule, "engine")
+    assert totals([pay, back], derive([pay, back]).roles, T0 - 99 * DAY, T0 + DAY).net_paise == (
+        10_000 if paid <= timedelta(0) else 0
+    )
+
+
+def test_a_payment_under_a_joined_name_counts_for_the_person() -> None:
+    """The owner joined a name and a UPI ID into one person (a party of kind unsure, D-096):
+    a payment to the name and a credit from the UPI ID are the same person."""
+    joined = OwnerData(parties=(Party("unsure", texts=("TEST FRIEND NAME", "test.f3@okaxis")),))
+    pay = txn(1, party="TEST FRIEND NAME", channel="imps", txn_time_utc=T0 - DAY)
+    back = credit("test.f3@okaxis", id=2)
+    assert derive([pay, back], joined).roles[2].rule == "CR_person_signal"
+    assert derive([pay, back]).roles[2].rule == "CR_no_debit"  # not joined: two people
 
 
 def test_a_party_overrides_the_engine_both_ways() -> None:
@@ -214,10 +248,10 @@ def test_card_bill_counts_when_no_purchase_proves_tracking(purchase: dict) -> No
 
 def test_masked_upi_id_must_fit_handle_and_end() -> None:
     assert one(credit("**ser@oksbi"), OWNER).rule == "ST_masked"
-    assert one(credit("*other@oksbi"), OWNER).rule == "CR_person_signal"  # another ending
-    assert one(credit("*user@okaxis"), OWNER).rule == "CR_person_signal"  # another handle
+    assert one(credit("*other@oksbi"), OWNER).rule == "CR_no_debit"  # another ending
+    assert one(credit("*user@okaxis"), OWNER).rule == "CR_no_debit"  # another handle
     assert one(credit("*@oksbi"), OWNER).rule == "ST_masked"  # nothing visible: fits any ID
-    assert one(credit("*@okaxis"), OWNER).rule == "CR_person_signal"
+    assert one(credit("*@okaxis"), OWNER).rule == "CR_no_debit"
     assert one(txn(party="*user@oksbi"), OWNER).role == "spend"  # debits: text match only
 
 
@@ -408,6 +442,8 @@ def test_totals_range_is_start_inclusive_end_exclusive_and_ist_months_work() -> 
         credit("9000000001@ybl", id=4, amount_paise=3_000, txn_time_utc=first_minute + DAY),
         credit("TEST", id=5, amount_paise=7, txn_time_utc=first_minute + DAY),  # uncertain
         txn(6, amount_paise=900, txn_time_utc=datetime(2026, 11, 30, 18, 30, tzinfo=UTC)),  # Dec
+        # October: the owner paid that person first, so their credit is a payback guess.
+        txn(7, party="9000000001@ybl", amount_paise=3_000, txn_time_utc=first_minute - DAY),
     ]
     t = totals(txns, derive(txns).roles, *november)
     assert (t.spent_paise, t.paid_back_paise, t.net_paise, t.income_paise) == (

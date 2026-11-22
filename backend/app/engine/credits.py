@@ -17,6 +17,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.engine.reconcile import PAYBACK_WINDOW
+
 SENDER_ROLES = ("payback", "uncertain", "income", "ignored")
 STATUSES = ("to_confirm", "confirmed", "ignored")
 
@@ -58,6 +60,74 @@ def sender_id(salt: str, merchant_key: str | None, txn_id: int) -> str:
 
 def to_confirm(row: CreditRow) -> bool:
     return row.role == "uncertain" or (row.role == "payback" and row.basis != "owner")
+
+
+@dataclass(frozen=True)
+class PaybackRow:
+    """One transaction as payback_links() reads it. `person`: who it is with (a party, else
+    one merchant key), as the API's person_id; None with no counterparty text."""
+
+    id: int
+    direction: str
+    amount_paise: int
+    txn_time_utc: datetime
+    person: str | None
+    role: str
+
+
+@dataclass(frozen=True)
+class PaybackLink:
+    debit: int
+    credit: int
+    status: str  # linked or candidate
+    reason: str  # one_payment, several_payments, more_than_paid
+
+
+PAID_ROLES = ("spend", "card_bill_counted")
+
+
+def payback_links(rows: Iterable[PaybackRow]) -> list[PaybackLink]:
+    """Which payment a payback pays back (D-134). Display only: a link changes no role and
+    no total; Paid back is the sum of confirmed paybacks, linked or not (D-076).
+
+    A credit of role payback and a payment (spend) to the same person (one party, so joined
+    names and UPI IDs are one person; else one merchant key), paid at most PAYBACK_WINDOW
+    before it. A credit with exactly one such payment is linked to it; with several it is a
+    candidate of each (several_payments): the engine never picks the closest in time. A
+    payment whose linked credits add up to more than it is makes them all candidates
+    (more_than_paid). A split, where friends pay back a payment the owner made to a shop, has
+    no person to match and is never linked; its paybacks still count once confirmed.
+    """
+    rows = sorted(rows, key=lambda r: r.id)
+    payments: dict[str, list[PaybackRow]] = {}
+    for r in rows:
+        if r.direction == "debit" and r.role in PAID_ROLES and r.person:
+            payments.setdefault(r.person, []).append(r)
+    found: dict[int, list[PaybackRow]] = {}  # credit -> its possible payments
+    for c in rows:
+        if c.direction == "credit" and c.role == "payback" and c.person:
+            mine = [
+                d for d in payments.get(c.person, ())
+                if d.txn_time_utc <= c.txn_time_utc <= d.txn_time_utc + PAYBACK_WINDOW
+            ]  # fmt: skip
+            if mine:
+                found[c.id] = mine
+    amount = {r.id: r.amount_paise for r in rows}
+    back: Counter[int] = Counter()  # payment -> the credits linked to it, in paise
+    for c, mine in found.items():
+        if len(mine) == 1:
+            back[mine[0].id] += amount[c]
+    out = []
+    for c, mine in found.items():
+        for d in mine:
+            if len(mine) > 1:
+                status, reason = "candidate", "several_payments"
+            elif back[d.id] > d.amount_paise:
+                status, reason = "candidate", "more_than_paid"
+            else:
+                status, reason = "linked", "one_payment"
+            out.append(PaybackLink(d.id, c, status, reason))
+    return sorted(out, key=lambda x: (x.debit, x.credit))
 
 
 def credit_senders(rows: Iterable[CreditRow], salt: str) -> list[Sender]:

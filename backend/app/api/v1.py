@@ -10,12 +10,13 @@ read first runs a recompute a deferred write left (D-094).
 
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -136,12 +137,44 @@ def _stored(session: Session, owner: uuid.UUID, *where) -> list:
 def _engine_view(rows: list) -> tuple[list, dict, dict]:
     """Stored rows as the engine's inputs for totals(), breakdown() and label_view()."""
     txns = [
-        SimpleNamespace(id=t.id, amount_paise=t.amount_paise, txn_time_utc=t.txn_time_utc)
+        SimpleNamespace(
+            id=t.id, amount_paise=t.amount_paise, txn_time_utc=t.txn_time_utc, direction=t.direction
+        )
         for t, _ in rows
     ]
     roles = {t.id: SimpleNamespace(role=d.role, basis=d.role_basis) for t, d in rows}
     categories = {t.id: SimpleNamespace(category=d.category) for t, d in rows}
     return txns, roles, categories
+
+
+@dataclass(frozen=True)
+class Investments:
+    """How investments show (D-136): the owner's setting, and the payments an open "Is this an
+    investment?" question is about (they stay in Spent until the owner answers)."""
+
+    in_spent: bool = False
+    suggested: frozenset[int] = frozenset()
+
+
+NO_INVESTMENTS = Investments()
+
+
+def investments(session: Session, owner: uuid.UUID, found: dict | None = None) -> Investments:
+    found = _suggestions(session, owner, ()) if found is None else found
+    suggested = frozenset(
+        i for (kind, _), entry in found.items() if kind == "investment" for i in entry["txn_ids"]
+    )
+    in_spent = owner_actions.owner_settings(session, owner)["count_investments_in_spent"]
+    return Investments(in_spent, suggested)
+
+
+def investment_of(d: TxnDerived, t: Transaction, inv: Investments) -> str | None:
+    """confirmed (the owner said Investments), suggested (asked, not answered), or None."""
+    if d.role == "investment":
+        return "confirmed"
+    if t.id in inv.suggested and d.role not in ("ignored", "duplicate", "self_transfer"):
+        return "suggested"
+    return None
 
 
 def _categories(parts: dict[str, int]) -> list[dict]:
@@ -172,7 +205,12 @@ def _identifier(t: Transaction, d: TxnDerived) -> str | None:
 
 
 def _item(
-    owner: uuid.UUID, t: Transaction, d: TxnDerived, lab: Label | None, checked: int | None
+    owner: uuid.UUID,
+    t: Transaction,
+    d: TxnDerived,
+    lab: Label | None,
+    checked: int | None,
+    inv: Investments = NO_INVESTMENTS,
 ) -> dict:
     hints = t.hints or ()
     generic = GENERIC in hints  # read by the generic parser (D-101)
@@ -198,6 +236,8 @@ def _item(
         "statement": statement,
         # Asks the owner "Looks right?" until answered, or until it is not a payment.
         "check": asks and checked is None and d.role not in ("ignored", "duplicate"),
+        # The "Investment" tag (D-136): confirmed, suggested (to confirm) or null.
+        "investment": investment_of(d, t, inv),
     }
 
 
@@ -212,7 +252,7 @@ def _items(owner: uuid.UUID):
     )
 
 
-def _previous(session: Session, owner: uuid.UUID, month: str) -> dict:
+def _previous(session: Session, owner: uuid.UUID, month: str, in_spent: bool = False) -> dict:
     """The month before, to compare with: up to the same IST day when `month` is the current
     IST month, else the whole month. Same rules as Spent."""
     year, number = map(int, month.split("-"))
@@ -229,14 +269,14 @@ def _previous(session: Session, owner: uuid.UUID, month: str) -> dict:
     return {
         "month": before,
         "whole": whole,
-        "spent_paise": totals(txns, roles, start, end).spent_paise,
-        "categories": _categories(breakdown(txns, roles, categories, start, end)),
+        "spent_paise": totals(txns, roles, start, end, in_spent).spent_paise,
+        "categories": _categories(breakdown(txns, roles, categories, start, end, in_spent)),
     }
 
 
-def _label_totals(rows: list) -> dict:
+def _label_totals(rows: list, in_spent: bool = False) -> dict:
     txns, roles, cats = _engine_view(rows)
-    t, parts = label_view(txns, roles, cats, [x.id for x in txns])
+    t, parts = label_view(txns, roles, cats, [x.id for x in txns], in_spent)
     return {
         "transactions": len(rows),
         "spent_paise": t.spent_paise,
@@ -262,16 +302,28 @@ def summary(owner: Owner, session: Db, month: Month) -> dict:
 
 
 def month_summary(
-    session: Session, owner: uuid.UUID, month: str, stale: bool, last_recompute: str | None
+    session: Session,
+    owner: uuid.UUID,
+    month: str,
+    stale: bool,
+    last_recompute: str | None,
+    inv: Investments | None = None,
 ) -> dict:
     """The /summary answer for one IST month; the snapshot reuses it (D-088)."""
+    inv = investments(session, owner) if inv is None else inv
     start, end = _month(month)
     rows = _stored(
         session, owner, Transaction.txn_time_utc >= start, Transaction.txn_time_utc < end
     )
     txns, roles, categories = _engine_view(rows)
-    t = totals(txns, roles, start, end)
-    parts = breakdown(txns, roles, categories, start, end)
+    t = totals(txns, roles, start, end, inv.in_spent)
+    parts = breakdown(txns, roles, categories, start, end, inv.in_spent)
+    # Asked "Is this an investment?", not answered: still in Spent (D-136).
+    to_confirm_invested = sum(
+        x.amount_paise
+        for x, d in rows
+        if x.id in inv.suggested and x.direction == "debit" and d.role in SPENDING_ROLES
+    )
     open_senders = [
         s for s in owner_actions.senders(session, owner, start, end) if s.status == "to_confirm"
     ]
@@ -294,6 +346,11 @@ def month_summary(
         "to_confirm": {"amount_paise": t.to_confirm_paise, "senders": len(open_senders)},
         "net_paise": t.net_paise,
         "income_paise": t.income_paise,
+        # Investments (D-136): confirmed ones are outside Spent unless the setting counts
+        # them; ones still to confirm are in Spent.
+        "invested_paise": t.invested_paise,
+        "invested_to_confirm_paise": to_confirm_invested,
+        "investments_in_spent": inv.in_spent,
         "categories": _categories(parts),
         "counts": {
             "uncategorised_spend": sum(
@@ -304,7 +361,7 @@ def month_summary(
         },
         "stale": stale,
         "last_recompute_utc": last_recompute,
-        "previous": _previous(session, owner, month),
+        "previous": _previous(session, owner, month, inv.in_spent),
     }
 
 
@@ -339,7 +396,8 @@ def transactions(
         )
     query = query.order_by(Transaction.txn_time_utc.desc(), Transaction.id.desc()).limit(limit + 1)
     rows = list(session.execute(query))
-    items = [_item(owner, *row) for row in rows[:limit]]
+    inv = investments(session, owner)
+    items = [_item(owner, *row, inv) for row in rows[:limit]]
     next_cursor = None
     if len(rows) > limit:
         last = rows[limit - 1][0]
@@ -352,7 +410,7 @@ def transaction(owner: Owner, session: Db, txn_id: int) -> dict:
     row = session.execute(_items(owner).where(Transaction.id == txn_id)).first()
     if row is None:
         raise HTTPException(404, "no such transaction")
-    return _item(owner, *row)
+    return _item(owner, *row, investments(session, owner))
 
 
 @router.get("/categories")
@@ -373,9 +431,10 @@ def labels(owner: Owner, session: Db) -> list[dict]:
     for t, d, label_id in session.execute(query):
         rows[label_id].append((t, d))
     found = session.scalars(select(Label).where(Label.owner_id == owner).order_by(Label.name))
+    in_spent = owner_actions.owner_settings(session, owner)["count_investments_in_spent"]
     out = []
     for x in found:
-        view = _label_totals(rows[x.id])
+        view = _label_totals(rows[x.id], in_spent)
         del view["categories"]
         out.append({"id": x.id, "name": x.name, **view})
     return out
@@ -389,7 +448,8 @@ def label_detail(owner: Owner, session: Db, label_id: int) -> dict:
     rows = _stored(session, owner, Transaction.id.in_(
         select(TxnLabel.transaction_id).where(TxnLabel.label_id == label_id)
     ))  # fmt: skip
-    return {"id": found.id, "name": found.name, **_label_totals(rows)}
+    in_spent = owner_actions.owner_settings(session, owner)["count_investments_in_spent"]
+    return {"id": found.id, "name": found.name, **_label_totals(rows, in_spent)}
 
 
 @router.get("/senders", dependencies=Fresh)
@@ -423,9 +483,14 @@ def senders(
             else (s.id if s.merchant_key else None),
             "txn_id": s.txn_ids[-1],
         }
-        for s in owner_actions.senders(session, owner)
+        for s in newest_first(owner_actions.senders(session, owner))
         if status in ("all", s.status)
     ]
+
+
+def newest_first(senders: list) -> list:
+    """A question queue's order (5B-1): the newest transaction first, then the higher id."""
+    return sorted(senders, key=lambda s: (s.last_time_utc, s.txn_ids[-1]), reverse=True)
 
 
 @router.put("/senders/{sender_id}")
@@ -641,11 +706,20 @@ def dismiss_suggestion(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, bo
     return ops.write(session, owner, op, action, body.model_dump())  # may make a party
 
 
-def suggestions(session: Session, owner: uuid.UUID, names: tuple[str, ...]) -> list[dict]:
+def suggestions(
+    session: Session, owner: uuid.UUID, names: tuple[str, ...], found: dict | None = None
+) -> list[dict]:
     """To-do (D-117, D-118): "Is this you?" for a person whose text matches the owner's name
     variants; "Is this an investment?" for a broker, clearing corporation, fund or SIP. Only
     suggestions: nothing changes until the owner answers. Never for a person the owner
-    answered (Friend, Family, It's me, Investments) or said No to."""
+    answered (Friend, Family, It's me, Investments) or said No to. Newest first (5B-1)."""
+    found = _suggestions(session, owner, names) if found is None else found
+    # _suggestions makes each entry at its newest transaction, walking newest first: in order.
+    return [{k: v for k, v in x.items() if k != "txn_ids"} for x in found.values()]
+
+
+def _suggestions(session: Session, owner: uuid.UUID, names: tuple[str, ...]) -> dict:
+    """(kind, person) -> the suggestion, with every transaction it is about (txn_ids)."""
     parties = {p.id: p for p in session.scalars(select(Party).where(Party.owner_id == owner))}
     found: dict[tuple[str, str], dict] = {}
     rows = _stored(session, owner, TxnDerived.merchant_key.is_not(None))
@@ -667,11 +741,39 @@ def suggestions(session: Session, owner: uuid.UUID, names: tuple[str, ...]) -> l
         for kind in kinds:
             if party and kind in (party.dismissed or []):
                 continue
-            entry = found.setdefault((kind, key), {
-                "kind": kind, "key": key, "txn_id": t.id, "name": d.display_name, "count": 0,
-            })  # fmt: skip
+            entry = found.setdefault(
+                (kind, key),
+                {
+                    "kind": kind,
+                    "key": key,
+                    "txn_id": t.id,
+                    "name": d.display_name,
+                    "count": 0,
+                    "last_time_utc": _iso(t.txn_time_utc),
+                    "txn_ids": [],
+                },
+            )  # fmt: skip  (rows are newest first: txn_id and the time are the newest)
             entry["count"] += 1
-    return sorted(found.values(), key=lambda x: (x["kind"], -x["count"], x["key"]))
+            entry["txn_ids"].append(t.id)
+    return found
+
+
+class Settings(Body):
+    count_investments_in_spent: StrictBool  # true or false only, never "yes" or 1
+
+
+@router.put("/profile/settings")
+def set_settings(owner: Owner, session: Db, op: ops.OpDep, body: Settings):
+    """The owner's settings (D-136): "Count investments in Spent". No derived row changes:
+    totals read the setting when they are worked out."""
+
+    def action() -> dict:
+        changed = owner_actions.set_owner_settings(
+            session, owner, body.count_investments_in_spent, "app"
+        )
+        return {"settings": changed}
+
+    return ops.write(session, owner, op, action, body.model_dump(), recomputes=False)
 
 
 @router.put("/people/{txn_id}/name")

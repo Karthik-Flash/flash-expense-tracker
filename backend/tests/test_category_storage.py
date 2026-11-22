@@ -128,7 +128,8 @@ def test_i24_transaction_decision_beats_party_default_beats_engine(
 ) -> None:
     first, second, third = ids(db_engine, "TEST MERCHANT")
     engine = {stored(db_engine)[i].category_rule for i in (first, second, third)}
-    assert engine == {"NONE", "PERSON"}  # by UPI the two plain words look like a person
+    # categorise-1.3.0 (D-133): "merchant" is a business word, so never People (1.2.0: PERSON).
+    assert engine == {"NONE"}
     run("owner-load", write(tmp_path, FILE))  # the party default
     decide(db_engine, category_decision(second, "gifts_donations"))  # a one-off
     run("recompute")
@@ -225,7 +226,7 @@ def test_category_stats_prints_counts_and_percentages_only(
     before = derived_rows(db_engine)
     out = run("category-stats")
     assert derived_rows(db_engine) == before
-    assert out.startswith("category-stats (categorise-1.2.0, read-only)\n")
+    assert out.startswith("category-stats (categorise-1.3.0, read-only)\n")
     block = out.split("spend transactions by category\n")[1].split("by rule")[0]
     counts = dict(re.findall(r"^  (\w+)\s+(\d+)$", block, flags=re.M))
     assert list(counts) == list(CATEGORIES)  # every category, in list order

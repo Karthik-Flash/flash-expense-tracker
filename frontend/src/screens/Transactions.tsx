@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 
-import type { Txn } from '../api/types.ts'
-import { actions, discard, enqueue, isStuck, markFor, markText, personMark, retry, shownName, STUCK_MS, timing, undo, useOutbox, waitingLabels, type Op } from '../data/outbox.ts'
+import type { Sender, Txn } from '../api/types.ts'
+import { actions, discard, enqueue, isStuck, markFor, markText, personMark, retry, senderMark, shownName, STUCK_MS, timing, undo, useOutbox, waitingLabels, type Op } from '../data/outbox.ts'
 import { OpSheet } from './Sync.tsx'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { currentMonth, dayKey, dayLabel, fullLabel } from '../lib/dates.ts'
 import { useNav } from '../state.tsx'
 import { Button, CategoryTile, Empty, Freshness, Icon, Loaded, Money, MonthSwitcher, RowButton, Section, Sheet } from '../ui.tsx'
-import { countsInSpent, labelName, matches, monthTxns, personKey } from './derive.ts'
+import { asksPaidBack, countsInSpent, inCategory, investmentTag, labelName, matches, monthTxns, paybackLines, personKey, senderOfCredit } from './derive.ts'
 import { isCredit, nameOf, roleText, subtitle } from './common.ts'
 
 export function Transactions() {
@@ -74,7 +74,7 @@ export function Transactions() {
           <TxnList
             txns={(who ? s.transactions.filter((t) => personKey(t) === who) : monthTxns(s, month)).filter(
               (t) =>
-                (!view.category || t.category === view.category) &&
+                inCategory(t, view.category) &&
                 (view.label === null || t.label?.id === view.label) &&
                 matches(t, view.q),
             )}
@@ -142,6 +142,7 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
                   {t.identifier && `${t.identifier} · `}
                   {title && `${dayLabel(t.time_utc)} · `}
                   {subtitle(shown)}
+                  {investmentTag(t) && ` · ${investmentTag(t)}`}
                   {label && ` · ${label}`}
                   {note && ` · ${note}`}
                 </span>
@@ -181,6 +182,9 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
   const person = usePeople().find(txn.person_id)
   const personNote = person && personMark(ops, person.key)
   const here = person?.identifiers.find((i) => i.txn_id === txn.id || i.name === (txn.identifier ?? txn.display_name))
+  // 5B-1 (D-134): a credit from a person asks "Paid back?"; a payment lists its paybacks.
+  const sender = load.status === 'ready' ? senderOfCredit(txn, load.data.todo) : undefined
+  const paybacks = load.status === 'ready' && txn.direction === 'debit' ? paybackLines(txn, load.data, nameOf) : []
   // Not a payment (D-103) as it will be once a waiting action syncs.
   const pendingCount = mark.counted && mark.counted.kind !== 'Looks right' ? mark.counted : undefined
   const ignoredNow = pendingCount ? pendingCount.kind === 'Not a payment' : txn.role === 'ignored'
@@ -211,6 +215,7 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
           )}
           <dl className="mt-4 space-y-3 text-sm">
             <Item term="When" value={fullLabel(txn.time_utc)} />
+            {investmentTag(txn) && <Item term="Investment" value={txn.investment === 'confirmed' ? 'Yes, you said so' : 'To confirm in To-do'} />}
             <Item term="Counted" value={mark.counted ? mark.counted.choice : roleText(txn)} mark={mark.counted} />
             <Item term="Category" value={category} mark={mark.category} />
             <Item term="Label" value={label} mark={mark.label} />
@@ -222,6 +227,12 @@ function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
               />
             )}
           </dl>
+          {sender && asksPaidBack(txn, sender) && <PaidBack s={sender} />}
+          {paybacks.length > 0 && (
+            <ul className="mt-3 space-y-1 text-sm" aria-label="Paid back">
+              {paybacks.map((line) => <li key={line} className="wrap-break-word">{line}</li>)}
+            </ul>
+          )}
           {person && (
             <div className="mt-2 flex flex-wrap justify-end gap-x-3">
               <button type="button" className="min-h-11 px-1 text-sm text-accent" onClick={() => open({ person: person.key, act: null })}>
@@ -388,6 +399,29 @@ export function Pending({ op }: { op: Op }) {
         </>
       )}
     </span>
+  )
+}
+
+/** Paid back / Not paid back on a credit: the To-do sender answer (Friend / Ignore), the same
+ *  outbox action, so answering here clears To-do and the other way round (D-134). */
+function PaidBack({ s }: { s: Sender }) {
+  const { ops } = useOutbox()
+  const mark = senderMark(ops, [s.id])
+  const waiting = mark && mark.state !== 'failed' ? (mark.body as { answer?: string } | null)?.answer : undefined
+  const now = waiting ?? (s.status === 'to_confirm' ? null : s.role === 'payback' ? 'friend' : s.role === 'ignored' ? 'ignore' : s.role)
+  const answer = (a: 'friend' | 'ignore') => void enqueue(actions.answerSender(s, { answer: a }))
+  const pressed = 'aria-pressed:border-accent aria-pressed:font-medium'
+  return (
+    <div className="mt-4 text-sm">
+      <p className="text-muted">Is this money paid back to you?</p>
+      <div className="mt-2 grid grid-cols-2 gap-2" role="group" aria-label="Paid back?">
+        <button type="button" aria-pressed={now === 'friend'} className={`min-h-11 rounded-lg border border-line bg-surface px-3 ${pressed}`} onClick={() => answer('friend')}>Paid back</button>
+        <button type="button" aria-pressed={now === 'ignore'} className={`min-h-11 rounded-lg border border-line bg-surface px-3 ${pressed}`} onClick={() => answer('ignore')}>Not paid back</button>
+      </div>
+      {now === 'income' && <p className="mt-1 text-xs text-muted">Answered as income ({s.income_label ?? 'no label'}).</p>}
+      {s.count > 1 && <p className="mt-1 text-xs text-muted">For all {s.count} credits from {s.display_name ?? 'this sender'}, as in To-do.</p>}
+      {mark && <Pending op={mark} />}
+    </div>
   )
 }
 

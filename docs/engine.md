@@ -370,7 +370,8 @@ Only when none of those matched:
 | ---- | -------- | ---- | ----- |
 | `CR_income_party` | Credit from a party marked as income | `income` | owner |
 | `CR_person_party` | Credit from a party of kind person | `payback` | owner |
-| `CR_person_signal` | Credit; the merchant engine says person with `R5_honorific`, `R5_mobile_vpa` or `R5_consumer_vpa` | `payback` | engine |
+| `CR_person_signal` | Credit; the merchant engine says person with `R5_honorific`, `R5_mobile_vpa` or `R5_consumer_vpa`, and (since `reconcile-1.7.0`, D-134) the owner paid that person at most 90 days before | `payback` | engine |
+| `CR_no_debit` | The same signals, with no such payment (`reconcile-1.7.0`) | `uncertain` | engine |
 | `CR_name_only` | Credit; person on the shape of the name alone | `uncertain` | engine |
 | `CR_business` | Credit from a business (the engine, or a party of kind business) | `uncertain` | engine or owner |
 | `CR_unsure`, `CR_no_text` | Credit; merchant unsure, or no text | `uncertain` | engine |
@@ -606,3 +607,125 @@ else by merchant key. Nothing changes for data without unsure parties.
   name the merchant engine was unsure of, or a bare personal UPI ID.
   `GUESS_RULES` (BRAND, KEYWORD, PERSON, NAME_person) are shown as "guessed
   from the name".
+
+## 5B-1: People, paybacks and investments (D-133 to D-136)
+
+### Engine changelog
+
+| Version | Was | What changed |
+| ------- | --- | ------------ |
+| `categorise-1.3.0` | 1.2.0 | People only when clearly personal (below); rules `PERSON_name`, `PERSON_vpa` replace the merchant engine's kind and `NAME_person`; `PERSON` is only an owner party of kind person |
+| `reconcile-1.7.0` | 1.6.0 | `CR_person_signal` needs a payment to the same person in the 90 days before; else `CR_no_debit` (uncertain). `totals()` gains `invested_paise` and the `invest` setting |
+| `merchant-1.1.1` | unchanged | no brand, word list or key change, so no merchant key moves and recompute's key-change stop cannot fire |
+| parsers | unchanged | `hdfc-1.2.0`, `sbi-1.0.0`, `generic-1.0.0`: a reparse changes no result; it runs the new recompute |
+
+### Which rules sent a payee to People (categorise-1.2.0)
+
+A spending debit with no owner decision, party default, channel rule, brand or
+keyword was People when:
+
+1. `PERSON`: the merchant engine said person. Its person signals are an
+   honorific with more words, a 10-digit mobile UPI ID at any handle, one of
+   the handles `okaxis`, `okhdfcbank`, `okicici`, `oksbi` (alone enough), or two
+   to four words of letters with no merchant business word. Only a word of the
+   1.2.0 list (`BUSINESS_WORDS`, the category keywords, hall, depot, hotel,
+   agency, store, traders, …) stopped it. So "Sharma and Sons", "Test India
+   Payments", "PAYTM*Ravi Kumar" (the gateway prefix is stripped first) and a
+   masked `*k77@okhdfcbank` were People.
+2. `NAME_person`: the merchant engine was unsure (mixed signals) and the name
+   alone looked like a person's. So a person's name beside a merchant QR UPI ID
+   (`paytmqr…`, `bharatpe…`, a Razorpay or `okbiz` handle) was People.
+3. A party of kind person (the owner answered Friend) was People whatever the
+   name.
+
+### People only when clearly personal (categorise-1.3.0, D-133)
+
+- An owner party of kind person: `PERSON` (People). Of kind business: never.
+- Else nothing business-like may be anywhere (`business_like()`): a word of
+  `NOT_PERSON` in the name or the UPI ID's words (the 1.2.0 list plus tech,
+  co, and, sons, bros, india, payments, merchant, market, palace, …); a
+  gateway, aggregator or merchant QR word in the UPI ID or its handle
+  (`MERCHANT_VPA_WORDS`: rzp, razorpay, cashfree, payu, billdesk, paytmqr,
+  bharatpe, gpay, mab, qr, pos, fbpe, …) or `biz` in the handle; and the
+  merchant engine's own business reasons (card or AutoPay channel, a business
+  word, a domain, a merchant UPI ID, an `okbiz` handle, digits in the name, a
+  gateway prefix, two brands at once).
+- Then `PERSON_name`: two to four words of letters, one of three letters or
+  more (initials allowed), or an honorific with one to four words.
+  `PERSON_vpa`: a personal UPI ID (a mobile number, or letters, digits and dots)
+  at a consumer app's or a bank's handle (`ok*` but not `okbiz*`, `ybl`, `ibl`,
+  `axl`, `paytm`, `apl`, `upi`, the banks' handles), with no name or with one
+  word.
+- Anything else, one word alone, five words, a masked UPI ID, an unknown
+  handle: Uncategorised (`NONE`), and To-do asks.
+- Categories never touch a role, a link or a total (categorise runs after
+  reconcile; tested in `tests/test_people_bias.py` under both rule sets). The
+  People ledger's "Sent" and the Home People slice move with the category.
+- `categorise(rules="1.2.0")` keeps the old rules for `category-diff` only.
+
+### Paybacks (reconcile-1.7.0, D-134)
+
+How a credit becomes money back from a person, in order (the first that
+matches decides):
+
+1. **Owner answers** win: an owner role decision; It's me (party kind self:
+   `self_transfer`); Investments (kind investment); a listed own account
+   (`ST_own_text`); a shared 12-digit reference between two own accounts
+   (`ST_reference`). A refund is a refund (`RF_type`), never a payback.
+2. **`CR_income_party`**: a party marked as income (Family, Income) is income.
+3. **`CR_person_party`**: a party of kind person (the owner answered Friend or
+   Paid back): every credit of that person is a payback, basis owner, and
+   counts in Paid back. A party of kind unsure (named or joined, no answer)
+   gives no opinion.
+4. **`CR_person_signal`**: no party answer, the merchant engine's person signal
+   (honorific, mobile UPI ID, consumer handle) **and** the owner paid the same
+   person (one party, so joined names and UPI IDs count together; else the same
+   merchant key) at most 90 days before (`PAYBACK_WINDOW`, both ends included):
+   a payback guess, basis engine. **It counts in To confirm only, never in
+   Paid back, Net or Spent** (D-076: `totals()` moves a payback of basis engine
+   to `to_confirm_paise`).
+5. **`CR_no_debit`**: the same signal with no such payment: uncertain. Pocket
+   money, a gift or a sale is not called a payback just because the sender is
+   a person.
+6. Every other credit: uncertain (`CR_name_only`, `CR_business`, `CR_unsure`,
+   `CR_no_text`, `CR_own_account`, and `SM_credit` for a statement credit).
+
+**Which payment a payback pays back** (`credits.payback_links`, the snapshot's
+`paybacks`; display only, never a role or a total): a credit of role payback
+and a spending debit (`spend`, `card_bill_counted`) to the same person, paid
+at most 90 days before it. A credit with exactly one such payment is
+`linked`; with several, a `candidate` of each (`several_payments`; the engine
+never picks the closest in time). When a payment's linked credits add up to
+more than the payment, they are all candidates (`more_than_paid`).
+
+| Case (tests/test_paybacks.py, FAKE) | What happens |
+| ----------------------------------- | ------------ |
+| Payback in a later month | Linked; counts in the month it arrives (D-060), To confirm until answered, then Paid back |
+| Partial paybacks | Each part linked to the one payment; Paid back is their sum |
+| One payment paid back by several people (a split at a shop) | Not linked (no person to match), no guess (`CR_no_debit` or uncertain); each counts once the owner answers Friend |
+| Several credits for one payment | Each linked to it while they add up to at most the payment |
+| One credit covering several payments | A candidate of each payment; counted in full once confirmed |
+| The same person under joined identities | Joined into one party: linked and a guess; answered Friend: confirmed |
+| A credit from a person never paid | `CR_no_debit`, uncertain: not a payback, not even To confirm |
+| A merchant refund vs a payback | Only refund wording (`RF_type`) is a refund (lowers Spent); a plain credit from a shop is uncertain |
+| A transfer from the owner's own account under the owner's name | A bare name is uncertain; It's me or a listed account makes both legs `self_transfer`; never Paid back |
+
+**The 13 engine paybacks** (the owner's `reconcile-stats`: payback 139 = owner
+126 + engine 13) are role payback with basis engine. Before 5B-1 they already
+counted in neither Paid back nor Net nor Spent: only in To confirm (the Home
+"To confirm" row and the People ledger's "To confirm" column). Nothing needed
+fixing; 1.7.0 makes them stricter (a payment to the person before), so those
+with no such payment become uncertain. `payback-review` counts them.
+
+### Investments (D-136)
+
+- Only the owner makes an investment: the answer Investments (party kind
+  investment, `PT_investment`) or an owner role. Role `investment` is in no
+  total by default; `totals(..., invest=True)` (the owner's setting "Count
+  investments in Spent") counts investment debits in Spent too, under the
+  Investments category, so the breakdown still adds up to Spent.
+- `Totals.invested_paise`: the month's investment debits, whatever the
+  setting. A credit from a broker (a redemption) is in no total either way.
+- A payee the app only suggests ("Is this an investment?", `suggest.is_investment`)
+  stays a spend in Spent and is shown as Invested (to confirm) until the
+  owner answers.

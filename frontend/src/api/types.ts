@@ -35,6 +35,11 @@ export interface Summary {
   last_recompute_utc: string | null
   /** The month before: up to the same IST day for the current month (whole: false), else whole. */
   previous: { month: string; whole: boolean; spent_paise: number; categories: CategoryAmount[] }
+  /** 5B-1 (D-136): investments you confirmed (outside Spent unless the setting counts them),
+   *  ones still asked about (in Spent), and the setting. Absent in an older phone copy. */
+  invested_paise?: number
+  invested_to_confirm_paise?: number
+  investments_in_spent?: boolean
 }
 
 export interface Txn {
@@ -63,6 +68,8 @@ export interface Txn {
   category_guessed?: boolean
   /** A generic row the owner has not checked yet: "Looks right" or "Not a payment". */
   check?: boolean
+  /** The "Investment" tag (D-136): confirmed by you, or suggested (to confirm). */
+  investment?: 'confirmed' | 'suggested' | null
 }
 
 export interface Category {
@@ -151,6 +158,21 @@ export interface Suggestion {
   txn_id: number
   name: string | null
   count: number
+  /** The newest payment it is about (5B-1: To-do is newest first). */
+  last_time_utc?: string
+}
+
+/** A payback and the payment it pays back (D-134): linked when it is the one payment to that
+ *  person before it, else a candidate. Display only: no total depends on it. */
+export interface PaybackLink {
+  debit: number
+  credit: number
+  status: 'linked' | 'candidate'
+}
+
+/** The owner's settings (D-136). */
+export interface Settings {
+  count_investments_in_spent: boolean
 }
 
 /** A possible transfer between two of the owner's accounts, same amount, no shared reference
@@ -213,8 +235,10 @@ export interface Snapshot {
     /** Is this you? Is this an investment? (D-117, D-118). Absent before 4Z. */
     suggestions?: Suggestion[]
   }
-  /** "Your name as banks show it" (D-117). Absent before 4Z. */
-  profile?: { names: string[] }
+  /** "Your name as banks show it" (D-117). Absent before 4Z. Settings: 5B-1 (D-136). */
+  profile?: { names: string[]; settings?: Settings }
+  /** Payback links (D-134). Absent before 5B-1. */
+  paybacks?: PaybackLink[]
   /** Phones that upload bank SMS (5A, D-122). Absent before 5A. */
   devices?: Device[]
   /** When the newest SMS the server has arrived: where a first scan starts (5A). */
