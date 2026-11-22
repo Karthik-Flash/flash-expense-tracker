@@ -2011,3 +2011,19 @@ To-do "Person" and "Name" text buttons (now at least 44 px wide). Contrast, comp
 text token is AA on every surface in both themes (lowest 5.44:1, muted on banner, light);
 faint is used only for a disabled icon. No US spellings in the UI text. Screenshots stay
 outside the repository.
+
+## D-152 Ready for testers: first-run checklist and About (2026-11-23)
+
+Premium run, part F. Home shows "Getting started" until every item is done, then nothing.
+In the Android app: Set up Bank SMS (the sheet's step is "on"), Allow payment notifications
+(only when the app reports a notification state, so an APK from before 5B-2 is not asked),
+Battery: Unrestricted, and First bank SMS synced (the server has a bank SMS, or this phone
+uploaded). In a browser: Set up Bank SMS in the Android app (a phone that is not removed)
+and the first sync. Each item ticks itself from the phone's status and the snapshot; its
+button opens the Bank SMS sheet, asks for notifications or opens the battery settings. It
+replaces the one-line "Read bank SMS on this phone" prompt. Profile gains About: the app's
+version line, the Android versionCode (`scripts/android.mjs` passes the commit count to the
+build as `FLASH_BUILD_CODE`; "web app" in a browser), the server's version from the public
+`GET /health`, and three plain sentences: only banks' payment SMS, what Flash reads from them
+and the owner's answers are kept, on a server only they can reach; every other SMS stays on
+the phone; Delete my account removes all of it, with a link to What Flash stores.

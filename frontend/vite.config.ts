@@ -29,6 +29,8 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       __VERSION_LINE__: JSON.stringify(`Version ${version} · build ${buildId(sha)}`),
+      // Premium F: the Android versionCode (scripts/android.mjs sets it); empty on the web.
+      __VERSION_CODE__: JSON.stringify(process.env.FLASH_BUILD_CODE ?? ''),
       ...(android ? { 'import.meta.env.VITE_API_URL': JSON.stringify(ANDROID_API_URL) } : {}),
     },
     plugins: [react(), tailwindcss(), VitePWA(pwaOptions)],

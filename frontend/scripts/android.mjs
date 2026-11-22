@@ -32,7 +32,7 @@ const { version } = JSON.parse(readFileSync(join(FRONTEND, 'package.json'), 'utf
 if (step === 'web' || step === 'apk') {
   run(`"${process.execPath}" node_modules/vite/bin/vite.js build --mode android --outDir dist-android --emptyOutDir`, {
     cwd: FRONTEND,
-    env: { ...process.env, FLASH_BUILD_SHA: sha },
+    env: { ...process.env, FLASH_BUILD_SHA: sha, FLASH_BUILD_CODE: code },
   })
 }
 if (step === 'sync' || step === 'apk') run('npx cap sync android', { cwd: FRONTEND })

@@ -6,7 +6,7 @@ import { enqueue, useOutbox } from '../data/outbox.ts'
 import { useSnapshot } from '../data/store.ts'
 import { dayLabel } from '../lib/dates.ts'
 import { allowNotifications, allowSms, connectPhone, diagnostics, loadSms, openAppInfo, openSleepingApps, startReading, syncNow, useSms } from '../native/sms.ts'
-import { errorText, eventText, needsBatteryHint, PERIODS, smsStep, statusRows, type Period, type SmsStatus } from '../native/smsState.ts'
+import { errorText, eventText, firstRun, needsBatteryHint, PERIODS, smsStep, statusRows, type CheckKey, type Period, type SmsStatus } from '../native/smsState.ts'
 import { useApp } from '../state.tsx'
 import { Button, Sheet } from '../ui.tsx'
 import { Pending } from './Transactions.tsx'
@@ -27,19 +27,45 @@ export function SmsRows({ status }: { status: SmsStatus }) {
   )
 }
 
-/** Home, in the Android app only, until bank SMS are on: one quiet line that opens the sheet. */
-export function SmsPrompt({ open }: { open: () => void }) {
+/** Premium F: the first-run checklist on Home until every item is done; each item ticks
+ *  itself (firstRun) and opens what does it. Then nothing. */
+export function FirstRun({ open }: { open: () => void }) {
   const sms = useSms()
-  const step = smsStep(sms)
-  if (step === 'browser' || step === 'on') return null
-  const text = step === 'revoked' ? 'Bank SMS stopped: this phone was disconnected' : step === 'blocked' ? 'Bank SMS: Android did not allow access' : 'Read bank SMS on this phone'
+  const [load] = useSnapshot()
+  if (load.status !== 'ready') return null
+  const items = firstRun(sms, load.data)
+  if (items.every((i) => i.done)) return null
+  const act = (key: CheckKey) => () => {
+    if (key === 'notifications') void allowNotifications()
+    else if (key === 'battery') void openSleepingApps()
+    else open()
+  }
   return (
-    <p className="px-4 text-center text-xs text-muted">
-      {text} ·{' '}
-      <button type="button" className="inline-flex min-h-11 items-center px-1 text-accent" onClick={open}>
-        {step === 'period' ? 'Choose' : 'Set up'}
-      </button>
-    </p>
+    <section className="mx-4 mt-3 rounded-lg border border-line bg-surface px-4 py-3 text-sm" aria-label="Getting started">
+      <h2 className="font-medium">Getting started</h2>
+      <ul className="mt-1">
+        {items.map((i) => (
+          <li key={i.key} className="flex min-h-11 items-center gap-3">
+            <span aria-hidden="true" className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${i.done ? 'border-accent bg-accent text-on-accent' : 'border-line'}`}>
+              {i.done && (
+                <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              )}
+            </span>
+            <span className={`min-w-0 flex-1 wrap-break-word ${i.done ? 'text-muted line-through' : ''}`}>
+              {i.label}
+              <span className="sr-only">{i.done ? ', done' : ', to do'}</span>
+            </span>
+            {!i.done && (i.key !== 'sms' || sms.available) && (
+              <button type="button" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center px-1 text-accent" onClick={act(i.key)}>
+                {i.key === 'sync' ? 'Open' : 'Set up'}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
