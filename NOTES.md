@@ -52,6 +52,9 @@ screen with an event log; a 304 snapshot without building it (D-139 to D-144;
 the phone test plan: cheat sheet, "After the 5B-2 deploy". **5F part 1 done 23 Nov**
 (not pushed): an Insights tab with Export (CSV and Excel), Profile and Admin (D-146);
 Analytics and "Learn from the owner" still to come.
+**Premium run, 23 Nov** (not pushed): part A pre-push safety (admin privacy test, Profile
+facts, duplicate checks, export range tests, a cross-origin check that waits for the page;
+D-147).
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -672,7 +675,8 @@ with every app header, the snapshot, registering a phone, the phone's native
 upload (no Origin), a revoke; and checks another origin is refused. It
 prints every preflight and write with its status and ends with
 `CROSS-ORIGIN CHECK: PASS` (exit 0) or `FAIL`.
-Run it whenever headers, CORS or the outbox change.
+Run it whenever headers, CORS or the outbox change. Since D-147 it warms the API first and
+waits for the page's load event and the To-do card (prints "page ready after N s").
 
 ### Screens for design review (4H, D-113)
 

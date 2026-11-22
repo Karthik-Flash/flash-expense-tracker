@@ -236,7 +236,12 @@ export interface Snapshot {
     suggestions?: Suggestion[]
   }
   /** "Your name as banks show it" (D-117). Absent before 4Z. Settings: 5B-1 (D-136). */
-  profile?: { names: string[]; settings?: Settings }
+  profile?: {
+    names: string[]
+    settings?: Settings
+    /** Premium A.2: the payments and the days they span. Absent before. */
+    data?: { payments: number; first_utc: string | null; last_utc: string | null }
+  }
   /** Payback links (D-134). Absent before 5B-1. */
   paybacks?: PaybackLink[]
   /** Phones that upload bank SMS (5A, D-122). Absent before 5A. */
@@ -244,7 +249,7 @@ export interface Snapshot {
   /** When the newest SMS the server has arrived: where a first scan starts (5A). */
   sms?: { newest_utc: string | null }
   /** This login (5C, D-129). Absent before 5C. */
-  account?: { role: 'admin' | 'member'; email: string | null }
+  account?: { role: 'admin' | 'member'; email: string | null; since_utc?: string | null }
   /** The admin only (5C, D-128): the invites they made and everyone who uses Flash. */
   admin?: { invites: InviteItem[]; members: Member[] }
   labels: LabelView[]

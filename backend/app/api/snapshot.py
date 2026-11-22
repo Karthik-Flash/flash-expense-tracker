@@ -20,7 +20,7 @@ from app.api.auth import Caller, current_owner, current_user
 from app.engine.categorise import UNCATEGORISED
 from app.engine.credits import PaybackRow, payback_links
 from app.engine.reconcile import IST, counted
-from app.models import Label, OwnerLinkDecision, Transaction, TxnDerived, TxnLink
+from app.models import AppUser, Label, OwnerLinkDecision, Transaction, TxnDerived, TxnLink
 from app.pipeline import owner_actions, statement, version
 from app.pipeline.recompute import VERSIONS
 
@@ -264,6 +264,12 @@ def build(session, owner, caller: Caller | None = None) -> dict:
         "profile": {
             "names": list(names),
             "settings": owner_actions.owner_settings(session, owner),  # D-136
+            # Premium A.2: how many payments and which days they span (newest first).
+            "data": {
+                "payments": len(items),
+                "first_utc": items[-1]["time_utc"] if items else None,
+                "last_utc": items[0]["time_utc"] if items else None,
+            },
         },
         # 5A (D-122, D-124): the phones that upload bank SMS, and where a first scan starts.
         "devices": devices.devices_of(session, owner),
@@ -278,7 +284,14 @@ def account(session, caller: Caller | None) -> dict:
     """5C (D-128, D-129): the login's role; for the admin, the invites and the members."""
     if caller is None:
         return {}
-    out: dict = {"account": {"role": caller.role, "email": caller.claims.get("email")}}
+    row = session.get(AppUser, caller.auth_uid)
+    out: dict = {
+        "account": {
+            "role": caller.role,
+            "email": caller.claims.get("email"),
+            "since_utc": users._iso(row.created_at) if row else None,  # premium A.2
+        }
+    }
     if caller.admin:
         out["admin"] = {
             "invites": users.invites_of(session, caller.owner_id),

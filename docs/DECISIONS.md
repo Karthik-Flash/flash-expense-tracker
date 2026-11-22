@@ -1916,3 +1916,18 @@ Android app it is written to the cache and opened in the share sheet through a F
 holds the owner's names, Bank SMS, Count investments in Spent, What Flash stores, Speed and
 sync, Delete my account and Sign out; Admin (the admin only) opens People who use Flash. No
 new package.
+
+## D-147 Pre-push safety: admin privacy, Profile facts, duplicates (2026-11-23)
+
+Premium run, part A. The admin's answers (`GET /members`, `GET /invites`, the snapshot's
+`admin` block) hold only emails, roles, dates and counts (transactions and phones per
+login); a test uploads a member's payment and checks no amount field, payee name or SMS text
+reaches the admin, and that a member gets 403 on every admin route. Profile now shows email,
+role, member since (`account.since_utc`, from `app_users.created_at`), payment count and the
+days they span (`profile.data`), the app's last sync (on the device), and each phone's last
+upload or Removed. The live/inbox join (D-139) runs only in `store.ingest`, when a message
+is stored; recompute and reparse never call it, and a duplicate role still needs a linked
+group (an AutoPay plus card rule or the owner); same-amount pairs stay candidates. A test
+stores four look-alike payments and runs recompute, reparse and recompute: still four, none a
+duplicate. The cross-origin check warms the API with one snapshot request, then waits for
+the page's load event and the To-do card (up to 90 s) instead of a fixed 30 s.

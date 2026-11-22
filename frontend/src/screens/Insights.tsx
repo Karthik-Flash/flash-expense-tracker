@@ -3,12 +3,14 @@
 
 import { useState } from 'react'
 
-import { useSnapshot } from '../data/store.ts'
+import { freshnessLine, useData, useSnapshot } from '../data/store.ts'
 import { fileName, MIME, PRESETS, rangeOf, type Preset } from '../exportRange.ts'
-import { today } from '../lib/dates.ts'
+import { dayLabel, fullLabel, today } from '../lib/dates.ts'
+import { groupIndian } from '../lib/money.ts'
 import { isNativeApp, shareFile } from '../native/sms.ts'
 import { useApp, useNav } from '../state.tsx'
 import { Button, Header, Icon, Loaded, RowButton, Section } from '../ui.tsx'
+import type { Snapshot } from '../api/types.ts'
 import type { SheetName } from '../view.ts'
 import { InvestmentsSetting } from './Account.tsx'
 
@@ -29,6 +31,7 @@ export function Insights() {
             <>
               <ExportSection />
               <Section title="Profile">
+                <Facts s={s} />
                 <Link onClick={go('profile')} title="Your name as banks show it" detail={names.length ? names.join(', ') : 'Not set: "Is this you?" needs it'} />
                 <Link onClick={go('sms')} title="Bank SMS" detail={isNativeApp() ? 'This phone: status, Sync now' : 'Your phones; SMS are read by the Android app'} />
                 <div>
@@ -124,6 +127,35 @@ function ExportSection() {
         {status && <p className="text-xs text-muted" role="status">{status}</p>}
       </div>
     </Section>
+  )
+}
+
+/** Premium A.2: who this is and what Flash holds for them. Phones: name, last upload, status. */
+function Facts({ s }: { s: Snapshot }) {
+  const data = useData()
+  const info = s.profile?.data
+  const year = (iso: string) => `${dayLabel(iso)} ${iso.slice(0, 4)}`
+  const rows: [string, string][] = [
+    ['Email', s.account?.email ?? '–'],
+    ['Role', s.account?.role === 'admin' ? 'Admin' : 'Member'],
+    ['Member since', s.account?.since_utc ? year(s.account.since_utc) : '–'],
+    ['Payments', info ? groupIndian(info.payments) : groupIndian(s.transactions.length)],
+    ['Data from', info?.first_utc && info.last_utc ? `${year(info.first_utc)} to ${year(info.last_utc)}` : 'No payments yet'],
+    ['Last sync', freshnessLine(data).replace(/^Updated /, '') || '–'],
+  ]
+  for (const d of s.devices ?? []) {
+    const state = d.revoked_utc ? 'Removed' : d.last_seen_utc ? `Last upload ${fullLabel(d.last_seen_utc)}` : 'No upload yet'
+    rows.push([`Phone: ${d.name}`, state])
+  }
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-4 py-3 text-sm">
+      {rows.map(([term, value], n) => (
+        <div key={n} className="contents">
+          <dt className="text-muted">{term}</dt>
+          <dd className="min-w-0 wrap-break-word tabular-nums">{value}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 

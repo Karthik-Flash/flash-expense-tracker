@@ -430,3 +430,43 @@ def test_owner_commands_default_to_the_admin_or_take_owner(
         )  # noqa: E501
         assert owners == {OWNER_A: 1, other: 1}
     assert settings.owner_id == other  # restored after each run
+
+
+# --- the admin never sees a member's money (premium A.1) ---------------------------------------
+
+
+def keys_of(value) -> set[str]:
+    if isinstance(value, dict):
+        return set(value) | {k for v in value.values() for k in keys_of(v)}
+    if isinstance(value, list):
+        return {k for v in value for k in keys_of(v)}
+    return set()
+
+
+def test_admin_answers_hold_no_member_money_names_or_text(client, admin_api) -> None:
+    """Every admin answer (members, invites, the snapshot's admin block) after a member uploads
+    a payment: counts and dates only. No amount field, no payee name, no SMS text."""
+    join(client, make_invite(client))
+    uid = next(iter(admin_api["users"]))
+    body = {"device_id": str(uuid.uuid4()), "name": "TEST PHONE"}
+    secret = client.post("/api/v1/devices", headers=bearer(token(uid)), json=body).json()["token"]
+    upload = client.post("/api/v1/ingest/sms", headers=bearer(secret), json={"messages": [sms()]})
+    assert upload.status_code == 200
+    answers = [
+        client.get("/api/v1/members", headers=admin_headers()).json(),
+        client.get("/api/v1/invites", headers=admin_headers()).json(),
+        client.get("/api/v1/sync/snapshot", headers=admin_headers()).json()["admin"],
+    ]
+    for answer in answers:
+        assert not {k for k in keys_of(answer) if "paise" in k or "amount" in k}
+        text = str(answer)
+        assert "TEST CAFE" not in text and "Sent Rs" not in text and "250" not in text
+    member = next(m for m in answers[0]["members"] if m["role"] == "member")
+    assert member["transactions"] == 1 and member["phones"] == 1
+    # A member gets 403 on every admin route.
+    headers = bearer(token(uid))
+    assert client.get("/api/v1/members", headers=headers).status_code == 403
+    assert client.get("/api/v1/invites", headers=headers).status_code == 403
+    assert client.post("/api/v1/invites", headers=headers).status_code == 403
+    revoke = client.delete("/api/v1/invites/1", headers=headers | {"Idempotency-Key": "k-1"})
+    assert revoke.status_code == 403

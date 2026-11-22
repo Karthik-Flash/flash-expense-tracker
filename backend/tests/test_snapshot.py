@@ -316,3 +316,12 @@ def test_small_answers_are_not_gzipped(client) -> None:
 
 def test_the_snapshot_route_is_in_the_app() -> None:
     assert PATH in app.openapi()["paths"]
+
+
+def test_profile_shows_member_since_and_the_payments_it_spans(client, data) -> None:
+    """Premium A.2: the account's start and the payments' count and first and last days."""
+    s = body(client)
+    assert s["account"]["since_utc"].endswith("Z")
+    info = s["profile"]["data"]
+    times = sorted(t["time_utc"] for t in s["transactions"])
+    assert info == {"payments": len(times), "first_utc": times[0], "last_utc": times[-1]}
