@@ -6,7 +6,7 @@ import zipfile
 from xml.etree import ElementTree
 
 from app.pipeline.export import Sheet, safe, to_csv, to_xlsx
-from tests.apiclient import SUB_B, bearer, get, token
+from tests.apiclient import SUB_B, bearer, get, put, token
 from tests.test_devices import UPI_SENT, WHEN, register, sms, upload
 
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
@@ -98,3 +98,53 @@ def test_bad_ranges_and_another_owners_rows(client, data) -> None:
     mine = fetch(client, start="2026-03-01", end="2026-03-31").content.decode("utf-8-sig")
     theirs = fetch(client, SUB_B, start="2026-03-01", end="2026-03-31").content.decode("utf-8-sig")
     assert "Test B Only" not in mine and "Test B Only" in theirs
+
+
+def summary_of(content: bytes) -> dict[str, int]:
+    z = zipfile.ZipFile(io.BytesIO(content))
+    out = {}
+    for row in ElementTree.fromstring(z.read("xl/worksheets/sheet2.xml")).iterfind(".//m:row", NS):
+        cells = list(row)
+        value = cells[1].find("m:v", NS) if len(cells) > 1 else None
+        if value is not None:
+            out["".join(cells[0].itertext())] = round(float(value.text) * 100)
+    return out
+
+
+def test_a_range_of_months_adds_up_to_each_months_summary(client, data) -> None:
+    """Premium A.4: Spent, Invested, Paid back, Net and Income of a three-month range equal
+    the sum of /summary for each month."""
+    answer = fetch(client, format="xlsx", start="2026-01-01", end="2026-03-31")
+    got = summary_of(answer.content)
+    months = [
+        get(client, "/api/v1/summary", month=m).json() for m in ("2026-01", "2026-02", "2026-03")
+    ]
+    for term, key in (
+        ("Spent", "spent_paise"),
+        ("Invested", "invested_paise"),
+        ("Paid back", "paid_back_paise"),
+        ("Net", "net_paise"),
+        ("Income", "income_paise"),
+    ):
+        assert got[term] == sum(m[key] for m in months), term
+
+
+def test_the_workbook_reopens_with_formulas_neutralised(client, data) -> None:
+    """Premium A.4: a label named like a formula is text in the file, every part parses as
+    XML, and no SMS text or reference is in it."""
+    label = client.post("/api/v1/labels", headers=bearer(token()), json={"name": "=SUM(A1)"})
+    january = get(client, "/api/v1/transactions", month="2026-01", limit=200).json()["items"]
+    spend = next(t for t in january if t["direction"] == "debit")
+    path = f"/api/v1/transactions/{spend['id']}/label"
+    assert put(client, path, {"label_id": label.json()["id"]}).status_code == 200
+    z = zipfile.ZipFile(io.BytesIO(fetch(client, format="xlsx").content))
+    assert z.testzip() is None
+    for part in z.namelist():
+        if part.endswith(".xml") or part.endswith(".rels"):
+            ElementTree.fromstring(z.read(part))  # each part parses
+    sheet = ElementTree.fromstring(z.read("xl/worksheets/sheet1.xml"))
+    texts = ["".join(c.itertext()) for c in sheet.iterfind(".//m:c", NS)]
+    assert "'=SUM(A1)" in texts and "=SUM(A1)" not in texts
+    assert sheet.find(".//m:f", NS) is None  # no formula cell anywhere
+    everything = b"".join(z.read(p) for p in z.namelist()).decode()
+    assert "Not You?" not in everything and "BLOCK" not in everything

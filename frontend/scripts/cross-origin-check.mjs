@@ -78,9 +78,11 @@ await new Promise((r) => ws.addEventListener('open', r, { once: true }))
 let id = 0
 const pending = new Map()
 const requests = new Map()
+let loaded = 0
 ws.addEventListener('message', (e) => {
   const m = JSON.parse(e.data)
   if (m.id && pending.has(m.id)) pending.get(m.id)(m.result)
+  if (m.method === 'Page.loadEventFired') loaded++
   const p = m.params
   if (m.method === 'Network.requestWillBeSent' && p.request.url.startsWith(API)) requests.set(p.requestId, { method: p.request.method, path: new URL(p.request.url).pathname, result: '...' })
   if (m.method === 'Network.responseReceived' && requests.has(p.requestId)) requests.get(p.requestId).result = String(p.response.status)
@@ -99,12 +101,25 @@ await cdp('Page.navigate', { url: `${APP}/` })
 await sleep(1500)
 const session = { access_token: token, refresh_token: 'xo-refresh', token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-a', aud: 'authenticated', role: 'authenticated', email: 'xo@example.invalid' } }
 await js(`localStorage.setItem('sb-127-auth-token', ${JSON.stringify(JSON.stringify(session))})`)
+// Warm the API first (the first snapshot runs the deferred recompute), so the page's wait is
+// for the page, not for a cold server.
+for (let i = 0; i < 120; i++) {
+  const warm = await fetch(`${API}/api/v1/sync/snapshot`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
+  if (warm?.status === 200) break
+  await sleep(500)
+}
 await cdp('Page.navigate', { url: `${APP}/#/todo` })
+const before = loaded
 await cdp('Page.reload', { ignoreCache: true })
-// Up to 30 s for the To-do card (a cold first run is slow), then a moment to settle.
-for (let i = 0; i < 60 && !(await js(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Friend')`)); i++) await sleep(500)
-await sleep(1000)
-if (process.env.XO_DEBUG) console.log('page:', (await js('document.body.innerText')).slice(0, 400))
+// The page's real ready state: its load event, then the document complete, then the To-do
+// card on screen (the snapshot drawn). Up to 90 s in all, checked every 250 ms.
+const ready = async () => (await js(`document.readyState === 'complete' && [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Friend')`)) === true
+const deadline = Date.now() + 90_000
+while (loaded === before && Date.now() < deadline) await sleep(100)
+while (!(await ready()) && Date.now() < deadline) await sleep(250)
+const waited = Date.now() - (deadline - 90_000)
+console.log(`page ready after ${(waited / 1000).toFixed(1)} s`)
+if (!(await ready())) console.log('page text:', String(await js('document.body.innerText')).slice(0, 400))
 
 const results = []
 // Online: one tap.

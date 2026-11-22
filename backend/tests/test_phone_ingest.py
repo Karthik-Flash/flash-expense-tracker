@@ -131,3 +131,29 @@ def test_a_device_token_never_gets_another_owners_payment(client, db_engine, tok
         owners = {t.id: t.owner_id for t in s.scalars(select(Transaction))}
     assert owners[mine[0]["id"]] != owners[theirs[0]["id"]]
     assert upload(client, b, sms(CARD, n=1)).json()["new_transactions"] == []
+
+
+def test_recompute_and_reparse_never_join_stored_payments(run, db_engine, tmp_path) -> None:
+    """Premium A.3 (b): the live/inbox join runs only when a message is stored
+    (store.ingest). Payments stored before it, here two same-amount card spends to one payee
+    five minutes apart and two Rs 1 UPI payments, stay four through recompute and reparse,
+    and none gets role duplicate (DUP_same_amount is only ever a candidate)."""
+    from app.models import TxnDerived
+    from tests.smsdata import write_backup
+
+    one = UPI_SENT.replace("Rs.250.00", "Rs.1.00")
+    rows = [
+        ("VM-HDFCBK-S", CARD, WHEN),
+        ("VM-HDFCBK-S", CARD, WHEN + timedelta(minutes=5)),
+        ("VM-HDFCBK-S", one, WHEN + timedelta(hours=2)),
+        ("VM-HDFCBK-S", one.replace("612300000002", "612300000003"), WHEN + timedelta(hours=3)),
+    ]
+    run("import-sms", "--input", str(write_backup(tmp_path / "x.xml", rows)))
+    for argv in (("recompute",), ("reparse",), ("recompute",)):
+        run(*argv)
+        with sessionmaker(db_engine)() as s:
+            active = s.scalar(
+                select(func.count()).select_from(Transaction).where(Transaction.status == "active")
+            )
+            roles = s.scalars(select(TxnDerived.role)).all()
+        assert active == 4 and len(roles) == 4 and "duplicate" not in roles, argv
