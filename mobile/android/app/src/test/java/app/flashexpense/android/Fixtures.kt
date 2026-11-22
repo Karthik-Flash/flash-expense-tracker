@@ -23,6 +23,29 @@ object Fixtures {
         }.toList()
     }
 
-    private fun unescape(s: String): String =
-        s.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\")
+    /** JSON string escapes: \n \t \r \" \\ and \uXXXX (5B-2: body_normalise.json). */
+    private fun unescape(s: String): String {
+        val out = StringBuilder()
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            if (c != '\\' || i + 1 >= s.length) {
+                out.append(c)
+                i++
+                continue
+            }
+            when (val e = s[i + 1]) {
+                'n' -> out.append('\n')
+                't' -> out.append('\t')
+                'r' -> out.append('\r')
+                'u' -> {
+                    out.append(s.substring(i + 2, i + 6).toInt(16).toChar())
+                    i += 4
+                }
+                else -> out.append(e)
+            }
+            i += 2
+        }
+        return out.toString()
+    }
 }
