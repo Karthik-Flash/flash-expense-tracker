@@ -115,3 +115,28 @@ test('no session: no request, and the owner goes to login', async () => {
   await assert.rejects(api.snapshot(null, signal), (e: ApiError) => e.status === 401)
   assert.deepEqual([calls.length, lost], [0, [401]])
 })
+
+test('5B-2: a 401 gets one token refresh and one more try; only a second 401 is a lost login', async () => {
+  let answers = [401, 200]
+  const calls: string[] = []
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    calls.push((init.headers as Record<string, string>).Authorization)
+    const status = answers.shift() ?? 401
+    return new Response(status === 200 ? '{"schema_version":1}' : '{"detail":"x"}', { status, headers: { ETag: '"e"' } })
+  }) as typeof fetch
+  let tokens = ['OLD', 'NEW']
+  const lost: number[] = []
+  let renewed = 0
+  const api = new HttpApi('https://api.test', async () => tokens[0], (s) => lost.push(s), async () => {
+    renewed++
+    tokens = tokens.slice(1)
+    return true
+  })
+  assert.equal((await api.snapshot(null, signal)).status, 200)
+  assert.deepEqual(calls, ['Bearer OLD', 'Bearer NEW'])
+  assert.deepEqual([renewed, lost], [1, []])
+  answers = [401, 401]
+  tokens = ['A', 'B']
+  await assert.rejects(api.snapshot(null, signal), (e: ApiError) => e.status === 401)
+  assert.deepEqual(lost, [401]) // the banner: "Sign in again"
+})

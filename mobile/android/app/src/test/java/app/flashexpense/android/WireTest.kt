@@ -18,7 +18,7 @@ class WireTest {
         val json = Wire.batchJson(listOf(InboxRow("42", "VM-HDFCBK-S", "Sent \"Rs.33\"\nTo TEST\\X\t\u0001", 1_773_122_400_123L)))
         assertEquals(
             "{\"messages\":[{\"sender\":\"VM-HDFCBK-S\",\"body\":\"Sent \\\"Rs.33\\\"\\nTo TEST\\\\X\\t\\u0001\"," +
-                "\"received_at_utc\":\"2026-03-10T06:00:00.123Z\",\"device_msg_id\":\"42\"}]}",
+                "\"received_at_utc\":\"2026-03-10T06:00:00.123Z\",\"device_msg_id\":\"42\",\"origin\":\"inbox\"}]}",
             json,
         )
         assertEquals("\"₹ 33\"", Wire.quote("₹ 33")) // non-ASCII stays as it is (UTF-8)
@@ -61,7 +61,8 @@ class WireTest {
         assertEquals(Wire.Outcome.SIGNED_OUT, Wire.outcome(403, null))
         assertEquals(Wire.Outcome.OFFLINE, Wire.outcome(0, null))
         for (status in listOf(500, 502, 503, 408, 429)) assertEquals(Wire.Outcome.SERVER, Wire.outcome(status, null))
-        assertEquals(Wire.Outcome.REJECTED, Wire.outcome(422, null))
+        assertEquals(Wire.Outcome.INVALID, Wire.outcome(422, null)) // 5B-2: split, then drop that one
+        assertEquals(Wire.Outcome.REJECTED, Wire.outcome(404, null))
         assertEquals("revoked", Wire.Outcome.REVOKED.code)
     }
 

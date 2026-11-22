@@ -14,6 +14,8 @@
 """
 
 import hashlib
+import re
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
@@ -42,6 +44,18 @@ def epoch_ms(moment: datetime) -> int:
 
 def content_hash(sender_core: str, body: str, received_at: datetime) -> str:
     return _sha(sender_core, body, epoch_ms(received_at))
+
+
+# Whitespace as Python's str.isspace() knows it, written out so the phone's copy of this rule
+# (Wire.kt) is the same character for character (5B-2, D-139; tests/fixtures/body_normalise.json).
+WHITESPACE = " \t\n\r\x0b\x0c\x1c\x1d\x1e\x1f\x85\xa0                　"
+_RUNS = re.compile(f"[{re.escape(WHITESPACE)}]+")
+
+
+def normal_body(body: str) -> str:
+    """A body for comparing two copies of one SMS (the inbox row and the live broadcast): NFC,
+    every run of whitespace one space, no space at the ends. Never what is stored or hashed."""
+    return _RUNS.sub(" ", unicodedata.normalize("NFC", body)).strip(" ")
 
 
 def transaction_key(parsed: ParsedMessage, raw_hash: str) -> str | None:

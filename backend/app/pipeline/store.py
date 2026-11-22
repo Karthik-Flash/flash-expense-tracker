@@ -21,6 +21,7 @@ from app.pipeline.dedupe import (
     CANDIDATE_WINDOW,
     content_hash,
     is_candidate,
+    normal_body,
     transaction_key,
 )
 
@@ -41,6 +42,8 @@ class Counts:
     is_money: int = 0
     transactions: Counter = field(default_factory=Counter)  # new, merged, updated, ...
     candidates: int = 0
+    # Ids of the transactions this run created (5B-2: the ingest answer, D-141). Not printed.
+    new_ids: list = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -129,14 +132,20 @@ def ingest(
     body: str,
     received_at: datetime,
     counts: Counts,
+    origin: str | None = None,
 ) -> None:
-    """Raw insert (skip if duplicate) -> parse -> parse result -> transaction -> candidates."""
+    """Raw insert (skip if duplicate) -> parse -> parse result -> transaction -> candidates.
+
+    `origin`: for a phone upload, "inbox" or "live" (D-139); stored on the raw message."""
     raw_hash = content_hash(sender_core, body, received_at)
     exists = select(RawMessage.id).where(
         RawMessage.owner_id == owner_id, RawMessage.content_hash == raw_hash
     )
     if session.scalar(exists) is not None:
         counts.raw_duplicate += 1
+        return
+    if source in TWIN_SOURCES and twin(session, owner_id, sender_core, body, received_at, origin):
+        counts.raw_duplicate += 1  # the other copy of this SMS is stored (D-139)
         return
     raw = RawMessage(
         owner_id=owner_id,
@@ -147,6 +156,7 @@ def ingest(
         received_at=received_at,
         content_hash=raw_hash,
         first_batch_id=batch_id,
+        origin=origin,
     )
     session.add(raw)
     session.flush()
@@ -157,6 +167,41 @@ def ingest(
     session.flush()
     if isinstance(result, ParsedMessage):
         link_new(session, owner_id, raw, row, result, counts)
+
+
+TWIN_SOURCES = ("sms_backup", "live_sms")  # SMS: a phone's two ways in, and a laptop export
+TWIN_WINDOW = timedelta(minutes=10)
+
+
+def twin(
+    session: Session,
+    owner_id: uuid.UUID,
+    core: str,
+    body: str,
+    received_at: datetime,
+    origin: str | None,
+) -> bool:
+    """The other copy of this SMS is already stored (5B-2, D-139). A phone sends the inbox
+    row, and the live SMS_RECEIVED copy only when no inbox row came, but both can arrive,
+    with a slightly different body (line breaks, spaces) or time. A copy is a twin when stored
+    messages of the same sender within 10 minutes, with the same body after normal_body(),
+    from the other way in ("live" against "inbox"; a laptop import or a phone from before
+    5B-2 counts as inbox) outnumber the ones from its own way in: then one of them still has
+    no partner. Two real messages each keep one, so a second real payment is never swallowed
+    (tests/test_phone_ingest.py)."""
+    mine = origin or "inbox"
+    rows = session.execute(
+        select(RawMessage.body, RawMessage.origin).where(
+            RawMessage.owner_id == owner_id,
+            RawMessage.sender_core == core,
+            RawMessage.source.in_(TWIN_SOURCES),
+            RawMessage.received_at.between(received_at - TWIN_WINDOW, received_at + TWIN_WINDOW),
+        )
+    ).all()
+    want = normal_body(body)
+    ways = [(o or "inbox") == mine for b, o in rows if normal_body(b) == want]
+    same = sum(ways)
+    return len(ways) - same > same
 
 
 def find_by_key(session: Session, owner_id: uuid.UUID, key: str) -> Transaction | None:
@@ -193,6 +238,7 @@ def link_new(
         session.add(txn)
         session.flush()
         counts.transactions["new"] += 1
+        counts.new_ids.append(txn.id)
         counts.candidates += record_candidates(session, txn)
     session.add(
         TransactionSource(transaction_id=txn.id, raw_message_id=raw.id, parse_result_id=row.id)

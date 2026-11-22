@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 5B-2 (D-142): "Payments" notifications, asked in Bank SMS (Android 13+). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- No backup: the queue holds bank messages, and the sealed token needs this phone's key. -->
     <application

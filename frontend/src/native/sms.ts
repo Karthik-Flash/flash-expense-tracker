@@ -1,4 +1,4 @@
-// Bank SMS on this phone (5A, D-122, D-124): the Android plugin "FlashSms"
+// Bank SMS on this phone (5A, D-122, D-124; 5B-2, D-142, D-143): the Android plugin "FlashSms"
 // (mobile/android .../FlashSmsPlugin.kt). In a browser there is no plugin and the status says
 // so. The device token passes through here once (connectPhone) and is never stored here.
 
@@ -8,15 +8,27 @@ import { useSyncExternalStore } from 'react'
 import type { Api } from '../api/client.ts'
 import { NOT_NATIVE, periodStart, type Period, type SmsStatus } from './smsState.ts'
 
+/** A notification tap (5B-2, D-142): open this payment's sheet, or its category list. */
+export interface OpenAt {
+  txnId: number
+  act: 'sheet' | 'category'
+}
+
 export interface FlashSms {
   status(): Promise<SmsStatus>
   requestSms(): Promise<SmsStatus>
+  requestNotifications(): Promise<SmsStatus>
   openAppInfo(): Promise<void>
+  openSleepingApps(): Promise<{ opened: boolean }>
   connect(options: { token: string; apiUrl: string; user: string }): Promise<SmsStatus>
-  disconnect(): Promise<SmsStatus>
+  /** keep: sign-out (the cursor, the queue and the login stay); else everything goes. */
+  disconnect(options?: { keep?: boolean }): Promise<SmsStatus>
   startHistory(options: { sinceMs: number }): Promise<SmsStatus>
   syncNow(): Promise<SmsStatus>
+  takeOpen(): Promise<{ open: OpenAt | null }>
+  diagnostics(): Promise<{ text: string }>
   addListener(event: 'uploaded', listener: (e: { stored: number }) => void): Promise<PluginListenerHandle>
+  addListener(event: 'open', listener: (e: OpenAt) => void): Promise<PluginListenerHandle>
 }
 
 let plugin: FlashSms | null = Capacitor.isNativePlatform() ? registerPlugin<FlashSms>('FlashSms') : null
@@ -53,23 +65,44 @@ export async function loadSms(): Promise<SmsStatus> {
 
 /** After login: an upload that stored something refreshes the snapshot, so new payments show
  *  within seconds while the app is open (3.6). A phone connected by another login is
- *  disconnected first: its SMS never go to someone else's account. */
-export async function startSms(refresh: () => Promise<void>, user: string): Promise<void> {
+ *  disconnected first: its SMS never go to someone else's account. The same login after a
+ *  sign-out reconnects by itself and keeps its place (5B-2, D-143): no new Bank SMS setup.
+ *  `open`: a notification tap, at a cold start (now) or a warm one (later). */
+export async function startSms(
+  refresh: () => Promise<void>,
+  user: string,
+  reconnect?: () => Promise<unknown>,
+  open?: (at: OpenAt) => void,
+): Promise<void> {
   if (!plugin) return
   const s = await loadSms()
-  if (s.connected && s.user && s.user !== user) set(await plugin.disconnect())
+  if (s.user && s.user !== user) set(await plugin.disconnect())
+  else if (s.user === user && !s.connected && s.cursorMs !== undefined && s.permission === 'granted' && reconnect) {
+    await reconnect().catch(() => {}) // offline: the next start tries again; the queue waits
+  }
+  if (open) {
+    const first = await plugin.takeOpen().catch(() => ({ open: null }))
+    if (first.open) open(first.open)
+  }
   if (wired) return
   wired = await plugin.addListener('uploaded', (e) => {
     void loadSms()
     if (e.stored > 0) void refresh()
   })
+  if (open) await plugin.addListener('open', (e) => open(e))
 }
 
 export async function allowSms(): Promise<SmsStatus> {
   return plugin ? set(await plugin.requestSms()) : status
 }
 
-/** Registers this phone (online, the login token) and hands its device token to the plugin. */
+/** Android 13+: the "Payments" notifications (D-142). Denied: everything else still works. */
+export async function allowNotifications(): Promise<SmsStatus> {
+  return plugin ? set(await plugin.requestNotifications()) : status
+}
+
+/** Registers this phone (online, the login token) and hands its device token to the plugin.
+ *  Also Reconnect: the cursor and the queue stay, nothing is read twice (D-143). */
 export async function connectPhone(api: Api, apiUrl: string, user: string): Promise<SmsStatus> {
   if (!plugin) return status
   const s = await loadSms()
@@ -82,6 +115,7 @@ export async function startReading(period: Period, newestUtc: string | null | un
   return plugin ? set(await plugin.startHistory({ sinceMs: periodStart(period, newestUtc) })) : status
 }
 
+/** Sync now: the inbox from where it was read up to, and an upload, at once (never history). */
 export async function syncNow(): Promise<SmsStatus> {
   return plugin ? set(await plugin.syncNow()) : status
 }
@@ -90,8 +124,20 @@ export async function openAppInfo(): Promise<void> {
   await plugin?.openAppInfo()
 }
 
-/** Sign-out (D-122): revoke this phone on the server (best effort, 5 s), then wipe its token,
- *  queue and status. Direct, not through the outbox: sign-out deletes the outbox. */
+/** Samsung "Never auto sleeping apps", else Android's battery list (opened, never requested). */
+export async function openSleepingApps(): Promise<void> {
+  await plugin?.openSleepingApps()
+}
+
+/** "Copy diagnostics": the status and the last 100 events, codes and counts only (D-142). */
+export async function diagnostics(): Promise<string> {
+  return plugin ? (await plugin.diagnostics()).text : ''
+}
+
+/** Sign-out (D-122; 5B-2, D-143): revoke this phone on the server (best effort, 5 s), then
+ *  drop its token. The cursor and the queue stay for the same login, which reconnects by
+ *  itself at its next sign-in; another login wipes them first. Direct, not through the outbox:
+ *  sign-out deletes the outbox. */
 export async function signOutPhone(api: Api): Promise<void> {
   if (!plugin) return
   const s = await loadSms()
@@ -99,13 +145,13 @@ export async function signOutPhone(api: Api): Promise<void> {
     try {
       await api.send({ op_id: crypto.randomUUID(), method: 'DELETE', path: `/devices/${s.deviceId}`, body: null, defer: false }, AbortSignal.timeout(5000))
     } catch {
-      // Offline: the token is wiped here anyway; revoke the phone from another device.
+      // Offline: the token is dropped here anyway; revoke the phone from another device.
     }
   }
   try {
-    set(await plugin.disconnect())
+    set(await plugin.disconnect({ keep: true }))
   } catch {
-    // nothing to wipe
+    // nothing to drop
   }
 }
 

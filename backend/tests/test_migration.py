@@ -41,6 +41,7 @@ NAME_TABLES = {"owner_names"}  # 0013: "Your name as banks show it" (D-117)
 DEVICE_TABLES = {"devices"}  # 0014: phones that upload bank SMS (D-122)
 USER_TABLES = {"app_users", "invites", "auth_deletions"}  # 0015: several users (D-128, D-129)
 SETTING_TABLES = {"owner_settings"}  # 0016: "Count investments in Spent" (D-136)
+VERSION_TABLES = {"data_versions"}  # 0017: the snapshot's data version (D-140)
 NEW_TABLES = (
     PIPELINE_TABLES
     | OWNER_TABLES
@@ -53,8 +54,10 @@ NEW_TABLES = (
     | DEVICE_TABLES
     | USER_TABLES
     | SETTING_TABLES
+    | VERSION_TABLES
 )  # every app table but heartbeat
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+NEWER_COLUMNS = {"origin"}  # Phase 2 tables' columns added later (0017: raw_messages.origin)
 BACKEND = Path(__file__).resolve().parent.parent
 
 
@@ -99,7 +102,14 @@ def test_upgrade_check_downgrade_upgrade(url: str) -> None:
     assert NEW_TABLES | {"heartbeat"} <= tables(url)
     command.check(cfg)  # models and migrations agree
 
-    command.downgrade(cfg, "0015")  # one step at a time: each downgrade works alone
+    command.downgrade(cfg, "0016")  # one step at a time: each downgrade works alone
+    assert not VERSION_TABLES & tables(url) and tables(url) >= SETTING_TABLES
+    assert "origin" not in {
+        c["name"] for c in inspect(create_engine(url)).get_columns("raw_messages")
+    }
+    command.upgrade(cfg, "head")
+    assert tables(url) >= VERSION_TABLES
+    command.downgrade(cfg, "0015")
     assert not SETTING_TABLES & tables(url) and tables(url) >= USER_TABLES
     command.upgrade(cfg, "head")
     assert tables(url) >= SETTING_TABLES
@@ -136,18 +146,29 @@ def test_upgrade_check_downgrade_upgrade(url: str) -> None:
 
 
 def test_up_and_down_on_a_database_holding_data(url: str, backup: Path) -> None:
-    """0004 and 0005 are additive: Phase 2 data is untouched by upgrade and downgrade."""
+    """Every migration since 0003 is additive: Phase 2 data is untouched by downgrade and
+    upgrade. (Imported at head: the importer writes 5B-2's raw_messages.origin, D-139.)"""
     cfg = alembic_config()
-    command.upgrade(cfg, "0003")
+    command.upgrade(cfg, "head")
     engine = create_engine(url)
     factory = sessionmaker(engine, expire_on_commit=False)
     with factory() as s:
         import_sms(s, backup, settings.owner_id)
+    with engine.begin() as conn:  # an import ends with a recompute: back to Phase 2 data only
+        for table in ("txn_links", "txn_derived", "derive_runs", "data_versions"):
+            conn.execute(text(f"DELETE FROM {table}"))
+    command.downgrade(cfg, "0003")
 
     def old_data() -> list:
+        """The Phase 2 columns (0002) of the Phase 2 tables."""
         with factory() as s:
             return [
-                sorted(tuple(r) for r in s.execute(select(model.__table__)))
+                sorted(
+                    tuple(r)
+                    for r in s.execute(
+                        select(*(col for col in model.__table__.c if col.name not in NEWER_COLUMNS))
+                    )
+                )  # fmt: skip
                 for model in (RawMessage, Transaction, TransactionSource)
             ]
 

@@ -5,6 +5,7 @@ import { actions, discard, enqueue, isStuck, markFor, markText, personMark, retr
 import { OpSheet } from './Sync.tsx'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { currentMonth, dayKey, dayLabel, fullLabel } from '../lib/dates.ts'
+import { takeCategoryOpen } from '../opener.ts'
 import { useNav } from '../state.tsx'
 import { Button, CategoryTile, Empty, Freshness, Icon, Loaded, Money, MonthSwitcher, RowButton, Section, Sheet } from '../ui.tsx'
 import { asksPaidBack, countsInSpent, inCategory, investmentTag, labelName, matches, monthTxns, paybackLines, personKey, senderOfCredit } from './derive.ts'
@@ -166,7 +167,8 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
 type Step = { kind: 'detail' } | { kind: 'category' } | { kind: 'scope'; slug: string } | { kind: 'label' }
 
 function TxnSheet({ txn, onClose }: { txn: Txn; onClose: () => void }) {
-  const [step, setStep] = useState<Step>({ kind: 'detail' })
+  // "Change category" on a payment notification opens at the category list (5B-2, D-142).
+  const [step, setStep] = useState<Step>(() => (takeCategoryOpen(txn.id) && countsInSpent(txn) ? { kind: 'category' } : { kind: 'detail' }))
   const [newLabel, setNewLabel] = useState('')
   const [load] = useSnapshot()
   const { ops } = useOutbox()
@@ -409,8 +411,16 @@ function PaidBack({ s }: { s: Sender }) {
   const mark = senderMark(ops, [s.id])
   const waiting = mark && mark.state !== 'failed' ? (mark.body as { answer?: string } | null)?.answer : undefined
   const now = waiting ?? (s.status === 'to_confirm' ? null : s.role === 'payback' ? 'friend' : s.role === 'ignored' ? 'ignore' : s.role)
-  const answer = (a: 'friend' | 'ignore') => void enqueue(actions.answerSender(s, { answer: a }))
+  // 5B-1.5 (D-144): an answer covers every credit of this sender; changing one asks first.
+  const [asking, setAsking] = useState<'friend' | 'ignore' | null>(null)
+  const send = (a: 'friend' | 'ignore') => {
+    setAsking(null)
+    void enqueue(actions.answerSender(s, { answer: a }))
+  }
+  const answer = (a: 'friend' | 'ignore') => (now !== null && now !== a ? setAsking(a) : send(a))
   const pressed = 'aria-pressed:border-accent aria-pressed:font-medium'
+  const who = s.display_name ?? 'this sender'
+  const all = s.count === 1 ? `the 1 credit from ${who}` : `all ${s.count} credits from ${who}`
   return (
     <div className="mt-4 text-sm">
       <p className="text-muted">Is this money paid back to you?</p>
@@ -418,8 +428,17 @@ function PaidBack({ s }: { s: Sender }) {
         <button type="button" aria-pressed={now === 'friend'} className={`min-h-11 rounded-lg border border-line bg-surface px-3 ${pressed}`} onClick={() => answer('friend')}>Paid back</button>
         <button type="button" aria-pressed={now === 'ignore'} className={`min-h-11 rounded-lg border border-line bg-surface px-3 ${pressed}`} onClick={() => answer('ignore')}>Not paid back</button>
       </div>
+      <p className="mt-1 text-xs text-muted">The answer is for {all}, as in To-do, not only this one.</p>
       {now === 'income' && <p className="mt-1 text-xs text-muted">Answered as income ({s.income_label ?? 'no label'}).</p>}
-      {s.count > 1 && <p className="mt-1 text-xs text-muted">For all {s.count} credits from {s.display_name ?? 'this sender'}, as in To-do.</p>}
+      {asking && (
+        <div className="mt-2 rounded-lg border border-line px-3 py-2" role="alert">
+          <p>Change the answer for {all} to {asking === 'friend' ? 'Paid back' : 'Not paid back'}?</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button kind="primary" onClick={() => send(asking)}>Change</Button>
+            <Button onClick={() => setAsking(null)}>Keep it</Button>
+          </div>
+        </div>
+      )}
       {mark && <Pending op={mark} />}
     </div>
   )

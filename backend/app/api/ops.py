@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.api.auth import current_owner
 from app.db import get_session
 from app.models import ClientOp, DeriveRun, RecomputeMark
+from app.pipeline import version
 from app.pipeline.owner_actions import ActionError
 from app.pipeline.recompute import VERSIONS, OwnerDataError, owner_lock, recompute
 
@@ -142,6 +143,7 @@ def _plain(session: Session, owner: uuid.UUID, action, recomputes: bool) -> dict
             result = action()
             if recomputes:
                 mark(session, owner)
+            version.bump(session, owner)  # the snapshot changes (D-140)
             session.commit()
         except (ActionError, OwnerDataError) as exc:
             session.rollback()
@@ -176,6 +178,7 @@ def _keyed(session, owner, op: Op, action, request_hash: str, recomputes: bool, 
         finish(status, response, pending=recomputes)
         if recomputes:
             mark(session, owner)
+        version.bump(session, owner)  # the snapshot changes (D-140)
         session.commit()
         return JSONResponse(response, status_code=status)
     except (ActionError, OwnerDataError) as exc:
@@ -236,6 +239,7 @@ def ensure_fresh(session: Session, owner: uuid.UUID) -> None:
     )
     row.failed_at, row.failure = datetime.now(UTC), reason[:40]
     session.add(row)
+    version.bump(session, owner)  # "being updated" now shows
     session.commit()
     log.warning("recompute on read failed (%s); serving stored rows", reason)
 

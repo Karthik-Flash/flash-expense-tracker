@@ -6,8 +6,8 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 
 import type { Api, SendRequest } from '../api/client.ts'
-import { connectPhone, isNativeApp, loadSms, setPluginForTests, signOutPhone, startSms, type FlashSms } from './sms.ts'
-import { needsBatteryHint, NOT_NATIVE, periodStart, smsStep, statusRows, type SmsStatus } from './smsState.ts'
+import { connectPhone, isNativeApp, loadSms, setPluginForTests, signOutPhone, startSms, type FlashSms, type OpenAt } from './sms.ts'
+import { bucketText, eventText, needsBatteryHint, NOT_NATIVE, periodStart, phoneText, smsStep, statusRows, type SmsStatus } from './smsState.ts'
 
 const ON: SmsStatus = {
   ...NOT_NATIVE,
@@ -47,8 +47,9 @@ test('the status rows: codes, counts and times only (the Speed sheet shows them 
   assert.equal(rows['This phone'], 'connected')
   assert.equal(rows['Waiting on phone'], '3')
   assert.equal(rows['Last upload'], 'Sat 21 Nov, 14:30, 3 new')
-  assert.equal(rows['Last attempt'], 'Sat 21 Nov, 14:35, server_error')
-  assert.equal(rows['Last error'], 'server_error')
+  // 5B-2 (D-142): the last problem in plain words; the code is in the diagnostics.
+  assert.equal(rows['Last problem'], "the server didn't answer (it may be waking up)")
+  assert.equal(rows['Last bank SMS seen'], '–')
   assert.equal(rows['Reading since'], 'Sat 1 Aug, 05:30')
   assert.equal(rows.Battery, 'optimised')
   assert.deepEqual(statusRows(NOT_NATIVE), [['Bank SMS', 'Android app only']])
@@ -71,30 +72,42 @@ test('the first scan: from the newest message on the server less a day, or 3, 6,
   assert.equal(periodStart(12, null, now), Date.UTC(2025, 10, 22, 10, 0))
 })
 
-function fakePlugin(start: SmsStatus) {
+function fakePlugin(start: SmsStatus, firstOpen: OpenAt | null = null) {
   let status = { ...start }
   let listener: ((e: { stored: number }) => void) | null = null
+  let opener: ((e: OpenAt) => void) | null = null
+  let pending = firstOpen
   const calls: string[] = []
   const plugin: FlashSms = {
     status: async () => status,
     requestSms: async () => status,
+    requestNotifications: async () => (status = { ...status, notifications: 'granted' }),
     openAppInfo: async () => {},
+    openSleepingApps: async () => ({ opened: true }),
     connect: async (o) => {
       calls.push(`connect ${o.token} ${o.apiUrl} ${o.user}`)
-      return (status = { ...status, connected: true, revoked: false })
+      return (status = { ...status, connected: true, revoked: false, signedOut: false })
     },
-    disconnect: async () => {
-      calls.push('disconnect')
-      return (status = { ...status, connected: false, queued: 0, cursorMs: undefined })
+    disconnect: async (o) => {
+      calls.push(o?.keep ? 'disconnect keep' : 'disconnect')
+      if (o?.keep) return (status = { ...status, connected: false, signedOut: true })
+      return (status = { ...status, connected: false, queued: 0, cursorMs: undefined, user: undefined })
     },
     startHistory: async () => status,
     syncNow: async () => status,
-    addListener: async (_event, f) => {
-      listener = f
-      return { remove: async () => {} }
+    takeOpen: async () => {
+      const open = pending
+      pending = null
+      return { open }
     },
+    diagnostics: async () => ({ text: 'Flash diagnostics' }),
+    addListener: (async (event: string, f: (e: never) => void) => {
+      if (event === 'open') opener = f as (e: OpenAt) => void
+      else listener = f as (e: { stored: number }) => void
+      return { remove: async () => {} }
+    }) as FlashSms['addListener'],
   }
-  return { plugin, calls, emit: (stored: number) => listener?.({ stored }) }
+  return { plugin, calls, emit: (stored: number) => listener?.({ stored }), tap: (at: OpenAt) => opener?.(at) }
 }
 
 function api(sendFails = false) {
@@ -152,7 +165,7 @@ test('sign-out revokes this phone on the server, then wipes it; offline it still
     const a = api(offline)
     await signOutPhone(a.api)
     assert.deepEqual(a.sent.map((r) => `${r.method} ${r.path}`), [`DELETE /devices/${ON.deviceId}`])
-    assert.deepEqual(fake.calls, ['disconnect'])
+    assert.deepEqual(fake.calls, ['disconnect keep']) // 5B-2: the cursor and queue stay (D-143)
   }
   // Not connected: nothing to revoke.
   const fake = fakePlugin({ ...ON, connected: false })
@@ -171,4 +184,39 @@ test('another login on this phone disconnects it first: its SMS never go to the 
   setPluginForTests(same.plugin)
   await startSms(async () => {}, 'user-a')
   assert.deepEqual(same.calls, [])
+})
+test('5B-2: the same login after a sign-out reconnects by itself and keeps its place', async () => {
+  const fake = fakePlugin({ ...ON, user: 'user-a', connected: false, signedOut: true, cursorMs: 5 })
+  setPluginForTests(fake.plugin)
+  const a = api()
+  await startSms(async () => {}, 'user-a', () => connectPhone(a.api, 'https://api.example.invalid', 'user-a'))
+  assert.deepEqual(fake.calls, ['connect test-device-token https://api.example.invalid user-a'])
+  assert.equal((await loadSms()).cursorMs, 5) // no new scan, no new setup
+  // Never set up (no cursor): nothing happens by itself.
+  const fresh = fakePlugin({ ...ON, connected: false, cursorMs: undefined, user: undefined })
+  setPluginForTests(fresh.plugin)
+  await startSms(async () => {}, 'user-a', () => connectPhone(a.api, 'https://api.example.invalid', 'user-a'))
+  assert.deepEqual(fresh.calls, [])
+})
+
+test('5B-2: a notification tap opens its payment, at a cold start and a warm one', async () => {
+  const fake = fakePlugin(ON, { txnId: 42, act: 'category' })
+  setPluginForTests(fake.plugin)
+  const opened: OpenAt[] = []
+  await startSms(async () => {}, 'user-a', undefined, (at) => opened.push(at))
+  fake.tap({ txnId: 7, act: 'sheet' })
+  assert.deepEqual(opened, [{ txnId: 42, act: 'category' }, { txnId: 7, act: 'sheet' }])
+})
+
+test('5B-2: the status in plain words, events and the standby bucket', () => {
+  const rows = Object.fromEntries(statusRows({ ...ON, notifications: 'denied', standbyBucket: 40, lastError: 'server_error', signedOut: false }))
+  assert.equal(rows['Notifications'], 'off')
+  assert.match(rows['Battery'], /rarely used: Android delays uploads/)
+  assert.match(rows['Last problem'], /didn't answer/)
+  assert.equal(rows['This phone'], 'connected')
+  assert.equal(bucketText(10), 'in use')
+  assert.match(bucketText(45), /restricted/)
+  assert.equal(bucketText(undefined), '')
+  assert.equal(phoneText({ ...ON, connected: false, signedOut: true }), 'signed out (reconnects at sign-in)')
+  assert.match(eventText({ at: Date.UTC(2026, 10, 22, 8, 35), type: 'sms_live', detail: 'HDFCBK' }), /14:05 · sms live · HDFCBK$/)
 })

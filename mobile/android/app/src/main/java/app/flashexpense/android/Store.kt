@@ -47,6 +47,25 @@ class Store(context: Context) {
         get() = if (prefs.contains(HISTORY)) prefs.getLong(HISTORY, 0) else null
         set(value) = prefs.edit().apply { if (value == null) remove(HISTORY) else putLong(HISTORY, value) }.apply()
 
+    /** 5B-2 (D-142): the highest inbox _id queued. A new inbox row always gets a higher _id, so
+     *  a row stored late with an older date is still found; null until the first scan. */
+    var lastId: Long?
+        get() = if (prefs.contains(LAST_ID)) prefs.getLong(LAST_ID, 0) else null
+        set(value) = prefs.edit().apply { if (value == null) remove(LAST_ID) else putLong(LAST_ID, value) }.apply()
+
+    /** A history scan or a reconnect is reading old messages: none of them notifies. */
+    var quietScan: Boolean
+        get() = prefs.getBoolean(QUIET, false)
+        set(value) = prefs.edit().putBoolean(QUIET, value).apply()
+
+    /** When the newest bank SMS was seen on this phone (live, or in a scan). */
+    var lastSmsSeenMs: Long?
+        get() = if (prefs.contains(SMS_SEEN)) prefs.getLong(SMS_SEEN, 0) else null
+        set(value) = prefs.edit().apply { if (value == null) remove(SMS_SEEN) else putLong(SMS_SEEN, value) }.apply()
+
+    /** Signed out with the cursor kept (5B-2): the same login signs in and carries on. */
+    val signedOut: Boolean get() = prefs.getBoolean(SIGNED_OUT, false)
+
     fun token(): String? = prefs.getString(TOKEN, null)?.let {
         try {
             String(Gcm.open(key(), Base64.decode(it, Base64.NO_WRAP)), Charsets.UTF_8)
@@ -58,10 +77,16 @@ class Store(context: Context) {
     fun saveToken(token: String, url: String, user: String) {
         val sealed = Base64.encodeToString(Gcm.seal(key(), token.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
         prefs.edit().putString(TOKEN, sealed).putString(API_URL, url).putString(USER, user)
-            .putBoolean(REVOKED, false).apply()
+            .putBoolean(REVOKED, false).putBoolean(SIGNED_OUT, false).apply()
     }
 
-    /** Sign-out: everything but the device id. The Keystore key goes too. */
+    /** Sign-out (5B-2, D-143): the token goes, the login, the cursor and the queue stay, so the
+     *  same login signing in again reconnects without a new scan. Another login wipes all. */
+    fun signOut() {
+        prefs.edit().remove(TOKEN).putBoolean(SIGNED_OUT, true).putBoolean(REVOKED, false).apply()
+    }
+
+    /** Another login (or a full reset): everything but the device id. The Keystore key goes too. */
     fun wipe() {
         val id = deviceId
         prefs.edit().clear().putString(DEVICE_ID, id).apply()
@@ -126,5 +151,9 @@ class Store(context: Context) {
         const val UPLOAD_AT = "upload_at"
         const val UPLOAD_STORED = "upload_stored"
         const val DROPPED = "dropped_not_in_inbox"
+        const val LAST_ID = "last_inbox_id"
+        const val QUIET = "quiet_scan"
+        const val SMS_SEEN = "last_sms_seen_ms"
+        const val SIGNED_OUT = "signed_out"
     }
 }

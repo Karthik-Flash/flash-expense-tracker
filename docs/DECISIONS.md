@@ -1805,3 +1805,77 @@ and `GET /senders` are ordered by the newest transaction's time, newest first,
 then the higher transaction id; on the server and again in the app (an older
 phone copy shows the same order). Before, senders and merchants were largest
 total first and suggestions by kind and count.
+
+## D-139 Two ways in for one SMS: the inbox row and the live copy (2026-11-23)
+
+5B-2 (docs/design/phase-5b2-phone.md). The phone uploads the inbox row (its `date` is what
+SMS Backup & Restore exports, so hashes agree with laptop imports, D-124) and, when that row
+has not come 2 minutes after the SMS_RECEIVED broadcast, the live copy itself, marked
+`origin: "live"` (an additive ingest field; absent means "inbox", so the installed APK works
+as before). Both may arrive, with a slightly different body or time. The server stores
+`raw_messages.origin` (migration `0017`) and treats a copy as a twin, not stored, when stored
+SMS of the same sender within 10 minutes with the same body after `normal_body()` (NFC,
+every whitespace run one space, trimmed; the phone's `Wire.normalBody` is the same, both
+tested on `tests/fixtures/body_normalise.json`) from the other way in outnumber those from
+its own way in. A laptop import counts as inbox. Two real messages each keep a partner, so a
+second real payment is never swallowed (tested in both orders); references still make the
+transaction key (D-046), so two payments with two references are two.
+
+## D-140 A per-owner data version; a 304 without building the snapshot (2026-11-23)
+
+Changes D-088's ETag. `data_versions` (migration `0017`, RLS on, deleted with the account)
+holds one counter per owner, raised in the same transaction as every owner write
+(`ops.write`), device registration, phone upload, recompute that wrote rows, failed
+recompute (the "being updated" notice) and CLI command that may write. The snapshot's ETag
+is the SHA-256 of that version, the IST day (last month's comparison is cut at today), the
+engine and schema versions, and the login's account block (the admin's member list changes
+with other people's use), worked out before the document: a match is a 304 in 9 small
+statements, with no snapshot built. An edit outside every write path (a manual database
+change) is not seen until something raises the version. A test runs every write route and
+checks that whenever the document changed, the ETag did.
+
+## D-141 The ingest answer lists the payments it created (2026-11-23)
+
+`POST /api/v1/ingest/sms` answers, additively, `new_transactions`: for each transaction this
+request created, `device_msg_id`, `id`, `direction`, `amount_paise`, `display_name`,
+`category`, `category_name`, `role` and `paid_back_question` (a credit from a person waiting
+for an answer). Nothing for a duplicate, a twin, a notice or a refused message. The recompute
+runs at once for them (as a read would); if it fails, the engine's name alone is sent. A
+device token still reaches only its own owner's new payments (tested with two owners).
+
+## D-142 The phone uploads at once, keeps everything, and notifies (2026-11-23)
+
+A new SMS, the app's start and resume, and Sync now start an upload at once: expedited on
+Android 12+ (normal work when out of quota), replacing a run that waits out a backoff (a run
+in progress finishes first). The catch-up is hourly (network required), moved from 6 hours by
+`ExistingPeriodicWorkPolicy.UPDATE`. Connect 15 s, read 90 s. Retry on no network, timeouts,
+5xx, 408, 429 and other 4xx; 413 and 422 send one by one and drop only the refused row;
+401 and 403 keep the queue and show "Phone disconnected". The cursor also keeps the highest
+inbox `_id`, and a 3-day `seen` table stops re-sending; the cursor never passes a row that is
+not in the queue. Notifications ("Payments" channel, POST_NOTIFICATIONS asked in Bank SMS on
+Android 13+): only for a payment from a live SMS or an inbox row queued within 2 hours, never
+in a history scan or a reconnect; "Paid ₹1,234 to <name> · <category>", "Received ₹1,234 from
+<name>" plus " · Paid back?"; grouped at 3 or more; "New payment" on the lock screen; a tap or
+"Change category" opens the app at that payment, and the app makes any change through its
+outbox. The status screen shows the permissions, battery and standby bucket, the last SMS
+seen, the last upload and problem in plain words, the queue, Reconnect, Sync now, Scan history
+again, Samsung's battery and sleeping-apps screens (opened, never requested), and a log of
+the last 100 events (codes, counts, HTTP codes, exception classes, bank sender codes; never
+message text, amounts or numbers) with Copy diagnostics.
+
+## D-143 Sign-out keeps the phone's place; Reconnect keeps the cursor (2026-11-23)
+
+Changes D-122's sign-out. Signing out still revokes the device on the server and drops the
+token, but the cursor, the queue (the phone's own bank SMS) and the login stay; the same login
+signing in again reconnects the phone by itself (a new device token) and carries on, with no
+new Bank SMS setup and no new scan. Another login on the phone still wipes everything first.
+While disconnected or signed out the receiver keeps queueing; Reconnect sends what came
+meanwhile, without notifications. "Scan history again" asks first.
+
+## D-144 A 401 is refreshed once; "Paid back" says it covers every credit (2026-11-23)
+
+The app refreshes the token once after a 401 and tries again; only a second 401 is a lost
+session, and then a banner says so and offers Sign in again, instead of showing stale data
+quietly. On a credit's sheet, Paid back / Not paid back says the answer is for every credit
+from that person (it is the To-do sender answer, D-134) and asks before changing an earlier
+answer. Answers per credit stay an open item.
