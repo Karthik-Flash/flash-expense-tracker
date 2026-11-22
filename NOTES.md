@@ -1054,6 +1054,17 @@ Also on record (NOTES only):
 
 ## Log
 
+### 2026-11-22: 5C fix, CI red on 97aa4e2
+
+- Cause: the tests read the local `backend/.env`; its `PING_TOKEN` made
+  `/health/db` answer 401 here and 503 on CI, and the isolation test expected
+  below 500. Fix: tests never read a `.env` (`FLASH_IGNORE_ENV_FILE`, set in
+  `conftest.py`, which also drops app settings from the shell; checked by
+  `test_config.py`); the isolation test treats the health routes as unscoped
+  but still checks they reveal nothing of the other user.
+- Reproduced and verified from a clean clone with CI's env: SQLite 1057
+  passed 6 skipped; Postgres 17 1060 passed 3 skipped.
+
 ### 2026-11-22: Phase 5C, several users
 
 - Migration `0015`: `app_users`, `invites`, `auth_deletions` (RLS on).
