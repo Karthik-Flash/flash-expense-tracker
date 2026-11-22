@@ -5,8 +5,8 @@ import { useAuth } from '../auth.ts'
 import { enqueue, useOutbox } from '../data/outbox.ts'
 import { useSnapshot } from '../data/store.ts'
 import { dayLabel } from '../lib/dates.ts'
-import { allowSms, connectPhone, loadSms, openAppInfo, startReading, syncNow, useSms } from '../native/sms.ts'
-import { errorText, needsBatteryHint, PERIODS, smsStep, statusRows, type Period, type SmsStatus } from '../native/smsState.ts'
+import { allowNotifications, allowSms, connectPhone, diagnostics, loadSms, openAppInfo, openSleepingApps, startReading, syncNow, useSms } from '../native/sms.ts'
+import { errorText, eventText, needsBatteryHint, PERIODS, smsStep, statusRows, type Period, type SmsStatus } from '../native/smsState.ts'
 import { useApp } from '../state.tsx'
 import { Button, Sheet } from '../ui.tsx'
 import { Pending } from './Transactions.tsx'
@@ -58,6 +58,9 @@ export function BankSmsSheet({ onClose }: { onClose: () => void }) {
   const period: Period = picked ?? (newest ? 'server' : 3)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [rescan, setRescan] = useState(false) // "Scan history again" asks first (D-143)
+  const [months, setMonths] = useState<(typeof PERIODS)[number]>(3)
+  const [copied, setCopied] = useState(false)
   useEffect(() => {
     void loadSms()
     const timer = window.setInterval(() => void loadSms(), 3000)
@@ -111,12 +114,15 @@ export function BankSmsSheet({ onClose }: { onClose: () => void }) {
         )}
         {(step === 'connect' || step === 'revoked') && (
           <>
+            {step === 'revoked' && <p className="font-medium">Phone disconnected</p>}
             <p>
               {step === 'revoked'
-                ? 'This phone was disconnected from your account, so it stopped uploading. Connect it again to carry on.'
-                : 'Connect this phone to your account. This needs a connection.'}
+                ? 'The server no longer accepts this phone, so uploads stopped. Bank SMS that came meanwhile wait on this phone; Reconnect sends them. Nothing is read twice.'
+                : sms.cursorMs !== undefined
+                  ? 'Connect this phone again. It carries on from where it was; nothing is read twice.'
+                  : 'Connect this phone to your account. This needs a connection.'}
             </p>
-            <Button kind="primary" disabled={busy} onClick={() => void connect()}>{step === 'revoked' ? 'Connect again' : 'Connect this phone'}</Button>
+            <Button kind="primary" disabled={busy} onClick={() => void connect()}>{step === 'revoked' || sms.cursorMs !== undefined ? 'Reconnect' : 'Connect this phone'}</Button>
           </>
         )}
         {step === 'period' && (
@@ -127,7 +133,7 @@ export function BankSmsSheet({ onClose }: { onClose: () => void }) {
               <PeriodChoice key={months} value={months} current={period} pick={setPeriod} label={`The last ${months} months`} />
             ))}
             <div className="pt-2">
-              <Button kind="primary" disabled={busy} onClick={() => void act(() => startReading(period, newest))()}>Start reading</Button>
+              <Button kind="primary" disabled={busy} onClick={() => void act(async () => { await startReading(period, newest); await allowNotifications() })()}>Start reading</Button>
             </div>
             <p className="text-xs text-muted">Messages the server already has are not counted twice.</p>
           </fieldset>
@@ -135,20 +141,53 @@ export function BankSmsSheet({ onClose }: { onClose: () => void }) {
         {step === 'on' && (
           <>
             <p>
-              On. New bank SMS are sent within a minute when the phone is online; a check runs every 6 hours too.
+              On. A new bank SMS is sent as it comes, when the phone is online; a check also runs every hour and each time you open Flash.
               {sms.queued + sms.awaiting > 0 && ` ${sms.queued + sms.awaiting} waiting on this phone.`}
             </p>
-            {sms.lastError && <p className="text-danger">Last try: {errorText(sms.lastError)}.</p>}
-            <Button disabled={busy} onClick={() => void act(syncNow)()}>Sync now</Button>
+            {sms.lastError && <p className="text-danger">Last problem: {errorText(sms.lastError)}.</p>}
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={busy} onClick={() => void act(syncNow)()}>Sync now</Button>
+              <Button disabled={busy} onClick={() => setRescan(true)}>Scan history again</Button>
+            </div>
+            {rescan && (
+              <div className="rounded-lg border border-line px-3 py-2" role="group" aria-label="Scan history again">
+                <p>Read the last {months} months of bank SMS again? Messages the server already has are not counted twice. Nothing is announced.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {PERIODS.map((m) => (
+                    <Button key={m} kind={m === months ? 'primary' : 'plain'} onClick={() => setMonths(m)}>{m} months</Button>
+                  ))}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button kind="primary" disabled={busy} onClick={() => void act(async () => { await startReading(months, null); setRescan(false) })()}>Scan again</Button>
+                  <Button onClick={() => setRescan(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
           </>
         )}
-        {needsBatteryHint(sms) && (
+        {sms.available && sms.notifications && sms.notifications !== 'granted' && step !== 'browser' && step !== 'permission' && step !== 'blocked' && (
           <div className="rounded-lg border border-line px-3 py-2">
-            <p>
-              For uploads in the background, set Flash's battery use to Unrestricted. On Samsung: App info, Battery, Unrestricted.
-            </p>
-            <div className="mt-2">
-              <Button onClick={() => void openAppInfo()}>Open App info</Button>
+            <p>Notifications for new payments: "Paid ₹1,234 to …". Tap one to set its category.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button onClick={() => void act(allowNotifications)()}>Turn on notifications</Button>
+              {sms.notifications === 'denied' && <Button onClick={() => void openAppInfo()}>Open App info</Button>}
+            </div>
+          </div>
+        )}
+        {(needsBatteryHint(sms) || (sms.available && sms.manufacturer === 'samsung' && step === 'on')) && (
+          <div className="rounded-lg border border-line px-3 py-2">
+            <p>For uploads in the background, let Flash run freely.</p>
+            {sms.manufacturer === 'samsung' ? (
+              <ol className="mt-1 list-decimal space-y-1 pl-5">
+                <li>App battery: Battery, then Unrestricted.</li>
+                <li>Never auto sleeping apps: add Flash, so Samsung never puts it to sleep.</li>
+              </ol>
+            ) : (
+              <p className="mt-1">App info, Battery, Unrestricted.</p>
+            )}
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button onClick={() => void openAppInfo()}>App battery</Button>
+              {sms.manufacturer === 'samsung' && <Button onClick={() => void openSleepingApps()}>Never auto sleeping apps</Button>}
             </div>
           </div>
         )}
@@ -158,6 +197,22 @@ export function BankSmsSheet({ onClose }: { onClose: () => void }) {
             <h3 className="text-xs font-medium text-muted">Status</h3>
             <SmsRows status={sms} />
           </section>
+        )}
+        {sms.available && (
+          <details className="rounded-lg border border-line px-3 py-2">
+            <summary className="min-h-11 cursor-pointer content-center text-muted">Events on this phone</summary>
+            {(sms.events ?? []).length === 0 ? (
+              <p className="text-xs text-muted">Nothing yet.</p>
+            ) : (
+              <ul className="mt-1 space-y-0.5 text-xs tabular-nums">
+                {(sms.events ?? []).map((e, i) => <li key={`${e.at}:${i}`} className="wrap-anywhere">{eventText(e)}</li>)}
+              </ul>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button onClick={() => void act(async () => { await navigator.clipboard.writeText(await diagnostics()); setCopied(true) })()}>Copy diagnostics</Button>
+              {copied && <span className="text-xs text-muted" role="status">Copied: codes and counts only, no message text.</span>}
+            </div>
+          </details>
         )}
         <Phones devices={snapshot?.devices ?? []} mine={sms.deviceId} />
       </div>

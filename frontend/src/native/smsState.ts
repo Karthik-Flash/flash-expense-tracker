@@ -33,6 +33,16 @@ export interface SmsStatus {
   manufacturer: string
   /** The permission dialog was just shown (requestSms). */
   asked?: boolean
+  /** 5B-2 (D-142): "Payments" notifications; absent from an app before 5B-2. */
+  notifications?: 'granted' | 'denied' | 'prompt'
+  /** Signed out with the cursor kept: the same login reconnects by itself (D-143). */
+  signedOut?: boolean
+  /** When the newest bank SMS was seen on this phone (ms). */
+  lastSmsSeenMs?: number
+  /** Android's app standby bucket (UsageStatsManager), Android 9+. */
+  standbyBucket?: number
+  /** The newest events on the phone: codes and counts, never a message. */
+  events?: { at: number; type: string; detail: string }[]
 }
 
 export const NOT_NATIVE: SmsStatus = {
@@ -80,11 +90,22 @@ export function periodStart(period: Period, newestUtc: string | null | undefined
 }
 
 const ERRORS: Record<string, string> = {
-  offline: 'no connection',
-  server_error: "the server didn't answer",
+  offline: 'no connection, or the server took too long',
+  server_error: "the server didn't answer (it may be waking up)",
   rejected: 'the server refused the upload',
+  invalid: 'one message was refused and left out',
   revoked: 'this phone was disconnected on the server',
   unauthorised: 'the server does not know this phone',
+}
+
+/** Android's app standby bucket in plain words (developer.android.com, App Standby Buckets). */
+export function bucketText(bucket: number | undefined): string {
+  if (bucket === undefined) return ''
+  if (bucket <= 10) return 'in use'
+  if (bucket <= 20) return 'used often'
+  if (bucket <= 30) return 'used now and then: uploads may wait a little'
+  if (bucket <= 40) return 'rarely used: Android delays uploads'
+  return 'restricted: Android blocks uploads in the background'
 }
 
 /** A short code in plain words, for the sheet. */
@@ -92,25 +113,40 @@ export function errorText(code: string): string {
   return code ? (ERRORS[code] ?? code) : ''
 }
 
-/** The status block of the Bank SMS and Speed sheets. Codes stay codes: safe to paste. */
+/** The phone, in one word: connected, disconnected (Reconnect), signed out, not connected. */
+export function phoneText(s: SmsStatus): string {
+  if (s.revoked) return 'disconnected'
+  if (s.connected) return 'connected'
+  return s.signedOut ? 'signed out (reconnects at sign-in)' : 'not connected'
+}
+
+/** The status block of the Bank SMS and Speed sheets (5B-2, D-142). Plain words, times in
+ *  IST, codes and counts only: safe to paste. */
 export function statusRows(s: SmsStatus): [string, string][] {
   if (!s.available) return [['Bank SMS', 'Android app only']]
   const permission = { granted: 'allowed', denied: 'not allowed', prompt: 'not asked yet' }[s.permission]
-  const phone = s.revoked ? 'disconnected' : s.connected ? 'connected' : 'not connected'
+  const notify = s.notifications ? { granted: 'on', denied: 'off', prompt: 'not asked yet' }[s.notifications] : '–'
   const upload = s.lastUpload ? `${istTime(s.lastUpload.at)}, ${s.lastUpload.stored} new` : '–'
-  const attempt = s.lastAttempt ? `${istTime(s.lastAttempt.at)}, ${s.lastAttempt.result}` : '–'
+  const bucket = bucketText(s.standbyBucket)
+  const battery = (s.batteryUnrestricted ? 'unrestricted' : 'optimised') + (bucket ? `; ${bucket}` : '')
   const rows: [string, string][] = [
     ['SMS permission', permission],
-    ['This phone', phone],
-    ['Waiting on phone', String(s.queued + s.awaiting)],
+    ['Notifications', notify],
+    ['Battery', battery],
+    ['Last bank SMS seen', s.lastSmsSeenMs ? istTime(s.lastSmsSeenMs) : '–'],
     ['Last upload', upload],
-    ['Last attempt', attempt],
-    ['Last error', s.lastError || '–'],
+    ['Waiting on phone', String(s.queued + s.awaiting)],
+    ['Last problem', errorText(s.lastError) || 'none'],
+    ['This phone', phoneText(s)],
   ]
   if (s.historyFromMs) rows.push(['Reading since', istTime(s.historyFromMs)])
   if (s.dropped) rows.push(['Not in inbox, dropped', String(s.dropped)])
-  rows.push(['Battery', s.batteryUnrestricted ? 'unrestricted' : 'optimised'])
   return rows
+}
+
+/** One event line for the on-phone log: time (IST), type, detail. */
+export function eventText(e: { at: number; type: string; detail: string }): string {
+  return [istTime(e.at), e.type.replaceAll('_', ' '), e.detail].filter(Boolean).join(' · ')
 }
 
 /** Show the battery hint: connected, and Android may stop background work. */

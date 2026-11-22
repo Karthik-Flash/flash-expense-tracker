@@ -48,15 +48,18 @@ export class HttpApi implements Api {
   private readonly base: string
   private readonly token: () => Promise<string | null>
   private readonly lost: Lost
+  private readonly renew: () => Promise<boolean>
 
-  constructor(base: string, token: () => Promise<string | null>, lost: Lost) {
+  /** `renew`: one token refresh after a 401 (5B-2): only when that fails is the login lost. */
+  constructor(base: string, token: () => Promise<string | null>, lost: Lost, renew: () => Promise<boolean> = async () => false) {
     this.base = base.replace(/\/+$/, '') + '/api/v1'
     this.token = token
     this.lost = lost
+    this.renew = renew
   }
 
-  /** The snapshot's response, or an ApiError. */
-  private async request(method: string, path: string, init: { headers?: Record<string, string>; signal?: AbortSignal; body?: string } = {}) {
+  /** The snapshot's response, or an ApiError. A 401 gets one token refresh and one more try. */
+  private async request(method: string, path: string, init: { headers?: Record<string, string>; signal?: AbortSignal; body?: string } = {}, again = true): Promise<Response> {
     const unreachable = new ApiError(0, errorText(0, null))
     let token: string | null
     try {
@@ -86,6 +89,7 @@ export class HttpApi implements Api {
       throw unreachable
     }
     if (response.ok || response.status === 304) return response
+    if (response.status === 401 && again && (await this.renew().catch(() => false))) return this.request(method, path, init, false)
     if (response.status === 401 || response.status === 403) this.lost(response.status)
     const detail = await response.json().then((b: unknown) => (b as { detail?: unknown } | null)?.detail, () => null)
     throw new ApiError(response.status, errorText(response.status, detail))

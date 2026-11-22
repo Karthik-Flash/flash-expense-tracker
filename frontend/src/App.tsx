@@ -5,11 +5,11 @@ import { api, API_URL, DEMO, demoApi } from './api/index.ts'
 import { signUp } from './api/http.ts'
 import { DEMO_STATES, type DemoState } from './api/fake.ts'
 import { markPainted, type BootPath } from './boot.ts'
-import { beforeSignOut, refreshToken, signIn, signOut, useAuth } from './auth.ts'
+import { beforeSignOut, expire, refreshToken, signIn, signOut, useAuth } from './auth.ts'
 import { checksView, startOutbox, syncState, todoView, unsynced, useOutbox } from './data/outbox.ts'
 import { clearData, refresh, startData, useData, useSnapshot } from './data/store.ts'
 import { AppContext, navigate, useNav, useScrollMemory, useView, type AppState } from './state.tsx'
-import { isNativeApp, signOutPhone, startSms } from './native/sms.ts'
+import { connectPhone, isNativeApp, signOutPhone, startSms } from './native/sms.ts'
 import { DeleteSheet, MembersSheet, PrivacySheet, SettingsSheet, WelcomeSheet } from './screens/Account.tsx'
 import { BankSmsSheet } from './screens/BankSms.tsx'
 import { CategoryDetail, Home } from './screens/Home.tsx'
@@ -22,6 +22,7 @@ import { PersonSheet } from './screens/People.tsx'
 import { Logos } from './screens/Logos.tsx'
 import { TodoScreen } from './screens/Todo.tsx'
 import { Transactions } from './screens/Transactions.tsx'
+import { openFromNotification } from './opener.ts'
 import { Button, Icon, PullToRefresh, Sheet } from './ui.tsx'
 import { UpdateBar } from './update.ts'
 import { HOME, type Tab, type View } from './view.ts'
@@ -80,7 +81,9 @@ export default function App() {
   useEffect(() => {
     if (status === 'in' && user) void startData(api, user)
         .then(() => startOutbox(api, refreshToken))
-        .then(() => startSms(refresh, user)) // the Android app: an upload refreshes the snapshot
+        // The Android app: an upload refreshes the snapshot; the same login reconnects the
+        // phone by itself after a sign-out (D-143); a notification opens its payment (D-142).
+        .then(() => startSms(refresh, user, () => connectPhone(api, API_URL, user), openFromNotification))
   }, [status, user])
   if (DEMO && view.tab === 'dev') return <Logos />
   // Not reached: startAuth decides from the device before the first render (D-095).
@@ -172,6 +175,13 @@ function Shell({ view }: { view: View }) {
   const path: BootPath | null = load.status === 'ready' ? (local ? 'local copy' : 'online') : load.status === 'error' ? 'error screen' : null
   return (
     <div className="mx-auto w-full max-w-[480px] flex-1 pb-[calc(5rem+env(safe-area-inset-bottom))]">
+      {/* 5B-2: the session ended and could not be renewed. Never stale data without saying so. */}
+      {auth.status === 'in' && auth.signIn && (
+        <div className="mx-4 mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm" role="alert">
+          <span className="min-w-0 flex-1">Your session ended, so new payments are not loading. Your changes wait on this phone.</span>
+          <Button kind="primary" onClick={() => void expire('Sign in again to see new payments.')}>Sign in again</Button>
+        </div>
+      )}
       <main>
         <Screen view={view} />
       </main>
