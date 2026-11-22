@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from uuid import UUID
 
@@ -16,8 +17,13 @@ def normalize_database_url(url: str) -> str:
     return url
 
 
+def env_file() -> Path | None:
+    """backend/.env, unless FLASH_IGNORE_ENV_FILE=1 (the tests: never a local file, as on CI)."""
+    return None if os.environ.get("FLASH_IGNORE_ENV_FILE") == "1" else BACKEND_DIR / ".env"
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=BACKEND_DIR / ".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=env_file(), extra="ignore")
 
     # Local default is a SQLite file; production uses Supabase Postgres via env.
     database_url: str = f"sqlite:///{(BACKEND_DIR / 'flash.db').as_posix()}"
