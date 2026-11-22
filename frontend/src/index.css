@@ -98,6 +98,8 @@ body {
   background: var(--color-bg);
   color: var(--color-ink);
   -webkit-tap-highlight-color: transparent;
+  /* The app's own pull-to-refresh (5B-1): the browser's would reload the page. */
+  overscroll-behavior-y: contain;
 }
 
 body {

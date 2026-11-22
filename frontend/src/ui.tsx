@@ -5,7 +5,8 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { rupees } from './lib/money.ts'
 import { monthLabel, shiftMonth } from './lib/dates.ts'
 import { catColor, categoryIcon } from './screens/common.ts'
-import { freshnessLine, useData, type Load } from './data/store.ts'
+import { freshnessLine, refresh, useData, type Load } from './data/store.ts'
+import { canStart, pullDistance, pullState, type PullState } from './pull.ts'
 import { syncLine, useOutbox } from './data/outbox.ts'
 import { expire, useAuth } from './auth.ts'
 import type { Category } from './api/types.ts'
@@ -30,6 +31,15 @@ export function Freshness() {
   return (
     <p className="min-h-5 px-4 text-center text-xs text-muted" role="status">
       {text}
+      {/* A mouse and no touch: a Refresh link; touch screens pull down instead (5B-1). */}
+      {data.snapshot && !data.refreshing && (
+        <>
+          {text && <span className="hidden [@media(pointer:fine)]:inline"> · </span>}
+          <button type="button" className={`${link} hidden [@media(pointer:fine)]:inline-flex`} onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </>
+      )}
       {sync.failed && (
         <>
           {text && ' · '}
@@ -42,6 +52,58 @@ export function Freshness() {
           <button type="button" className={link} onClick={() => void expire('Sign in again to sync your changes.')}>Sign in to sync</button>
         </>
       )}
+    </p>
+  )
+}
+
+/** Pull down from the top of the page to refresh (touch screens, 5B-1). A quiet line at the
+ *  top follows the finger; letting go past the trigger refreshes the snapshot. */
+export function PullToRefresh() {
+  const [dy, setDy] = useState(0)
+  const [busy, setBusy] = useState(false) // a pull let go: "Updating…" until it ends
+  useEffect(() => {
+    let start: number | null = null
+    let moved = 0
+    const down = (e: TouchEvent) => {
+      const inside = e.target instanceof Element && Boolean(e.target.closest('[role="dialog"], input, select, textarea'))
+      start = e.touches.length === 1 && canStart(window.scrollY, inside) ? e.touches[0].clientY : null
+      moved = 0
+    }
+    const move = (e: TouchEvent) => {
+      if (start === null) return
+      moved = e.touches[0].clientY - start
+      setDy(moved > 0 ? moved : 0)
+    }
+    const up = () => {
+      if (start !== null && pullState(moved) === 'ready') {
+        setBusy(true)
+        void refresh().finally(() => setBusy(false))
+      }
+      start = null
+      moved = 0
+      setDy(0)
+    }
+    window.addEventListener('touchstart', down, { passive: true })
+    window.addEventListener('touchmove', move, { passive: true })
+    window.addEventListener('touchend', up)
+    window.addEventListener('touchcancel', up)
+    return () => {
+      window.removeEventListener('touchstart', down)
+      window.removeEventListener('touchmove', move)
+      window.removeEventListener('touchend', up)
+      window.removeEventListener('touchcancel', up)
+    }
+  }, [])
+  const state: PullState = pullState(dy)
+  if (state === 'idle' && !busy) return null
+  const words = busy ? 'Updating…' : state === 'ready' ? 'Release to refresh' : 'Pull to refresh'
+  return (
+    <p
+      className="pointer-events-none fixed inset-x-0 top-0 z-20 text-center text-xs text-muted"
+      style={{ transform: `translateY(${busy ? 8 : pullDistance(dy) / 2}px)` }}
+      aria-hidden="true"
+    >
+      <span className="inline-block rounded-lg border border-line bg-surface px-3 py-1">{words}</span>
     </p>
   )
 }

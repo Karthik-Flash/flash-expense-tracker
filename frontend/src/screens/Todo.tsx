@@ -4,7 +4,7 @@ import type { Category, PartyKind, Sender, Snapshot, Suggestion, Transfer, Txn }
 import { actions, checksView, enqueue, personMark, senderMark, shownName, todoView, useOutbox, type Op } from '../data/outbox.ts'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { dayLabel, istTime, timeLabel } from '../lib/dates.ts'
-import { Button, CategoryChips, Empty, Header, Loaded, Money, Section } from '../ui.tsx'
+import { Button, CategoryChips, Empty, Freshness, Header, Loaded, Money, Section } from '../ui.tsx'
 import { seePayments, useNav } from '../state.tsx'
 import { isCredit, nameOf } from './common.ts'
 import { identifiersText, labelName, paymentsText, topCategories } from './derive.ts'
@@ -17,6 +17,7 @@ export function TodoScreen() {
   return (
     <>
       <Header title="To-do" />
+      <Freshness />
       <Loaded load={load} retry={retry}>
         {({ todo, categories, transactions }) => {
           // An item with an answer in the outbox leaves its list at once (D-093).

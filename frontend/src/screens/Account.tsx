@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import { deleteProblem, welcomeDone } from '../account.ts'
-import type { InviteItem, Member } from '../api/types.ts'
+import type { InviteItem, Member, Settings } from '../api/types.ts'
 import { reauthenticate, signOut, useAuth } from '../auth.ts'
-import { enqueue, useOutbox } from '../data/outbox.ts'
+import { actions, enqueue, settingsMark, shownSettings, useOutbox } from '../data/outbox.ts'
 import { useSnapshot } from '../data/store.ts'
 import { dayLabel } from '../lib/dates.ts'
 import { isNativeApp } from '../native/sms.ts'
@@ -30,7 +30,32 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         <li><button type="button" className={LINK} onClick={go('speed')}>Speed and sync</button></li>
         <li><button type="button" className={LINK} onClick={go('delete')}>Delete my account</button></li>
       </ul>
+      <InvestmentsSetting server={load.status === 'ready' ? load.data.profile?.settings : undefined} />
     </Sheet>
+  )
+}
+
+/** "Count investments in Spent" (D-136), off by default; saved through the outbox. Only
+ *  investments you confirmed move; ones still to confirm are in Spent either way. */
+function InvestmentsSetting({ server }: { server: Settings | undefined }) {
+  const { ops } = useOutbox()
+  const on = shownSettings(ops, server).count_investments_in_spent
+  const mark = settingsMark(ops)
+  return (
+    <div className="border-t border-line px-4 py-3 text-sm">
+      <label className="flex min-h-11 items-center justify-between gap-3">
+        <span>Count investments in Spent</span>
+        <input
+          type="checkbox"
+          role="switch"
+          className="size-5 accent-accent"
+          checked={on}
+          onChange={(e) => void enqueue(actions.setSettings({ count_investments_in_spent: e.target.checked }))}
+        />
+      </label>
+      <p className="text-xs text-muted">Off: money you marked as invested is shown as Invested, apart from Spent.</p>
+      {mark && <Pending op={mark} />}
+    </div>
   )
 }
 

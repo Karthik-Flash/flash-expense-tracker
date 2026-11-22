@@ -10,7 +10,8 @@ import { SCHEMA_VERSION, type Person, type Snapshot } from '../api/types.ts'
 import { istTime, timeLabel, today } from '../lib/dates.ts'
 import { addTiming, dropSnapshot, readLocal, saveLocal, touchLocal, wipeLocal, type Meta, type Timing } from './local.ts'
 
-const REFRESH_EVERY_MS = 5 * 60_000
+// 5B-1: every 60 s while the app is on screen, never while hidden (D-135).
+export const REFRESH_EVERY_MS = 60_000
 const TIMEOUT_MS = 90_000
 const SLOW_MS = 3000 // no phone copy yet: "Starting up" after this long
 const COLD_MS = 10_000
@@ -87,19 +88,28 @@ async function safe<T>(work: () => Promise<T>): Promise<T | null> {
   }
 }
 
-/** Refresh on return to the app, when the network comes back, and every 5 min while visible. */
+/** Refresh at once on return to the app (visibilitychange to visible, window focus), when the
+ *  network comes back, and every 60 s while visible; nothing while hidden (D-135). Each of these
+ *  is skipped while a refresh runs, so two fetches never run at once and none queue up. */
 function watch(): () => void {
   if (typeof document === 'undefined') return () => {}
-  const visible = () => document.visibilityState === 'visible' && void refresh()
-  const online = () => void refresh()
+  const visible = () => document.visibilityState === 'visible' && void refreshIfIdle()
+  const online = () => void refreshIfIdle()
   document.addEventListener('visibilitychange', visible)
+  window.addEventListener('focus', visible)
   window.addEventListener('online', online)
   const timer = setInterval(visible, REFRESH_EVERY_MS)
   return () => {
     document.removeEventListener('visibilitychange', visible)
+    window.removeEventListener('focus', visible)
     window.removeEventListener('online', online)
     clearInterval(timer)
   }
+}
+
+/** A refresh, unless one is running: then that one is the answer (focus, return, the tick). */
+export function refreshIfIdle(): Promise<void> {
+  return session?.running ?? refresh()
 }
 
 /** After login: show the phone copy of this login at once, then refresh. */
@@ -286,13 +296,13 @@ export function agoPhrase(then: number, now = Date.now()): string {
   return istTime(then)
 }
 
-/** The muted line under the month: how fresh the numbers are. `signIn`: the failure is a
- *  session to renew, not the network (D-095). */
+/** The muted line under the month: how fresh the numbers are, "Updated 14:05" (IST; with the
+ *  day when not today). `signIn`: the failure is a session to renew, not the network (D-095). */
 export function freshnessLine(d: Pick<DataState, 'fetchedAt' | 'refreshing' | 'failed'>, now = Date.now(), signIn = false): string {
   if (d.refreshing) return 'Updating…'
   if (d.fetchedAt === null) return ''
-  const when = agoPhrase(d.fetchedAt, now)
-  return d.failed ? `${signIn ? 'Not synced' : 'Offline'} · showing data from ${when}` : `Updated ${when}`
+  if (d.failed) return `${signIn ? 'Not synced' : 'Offline'} · showing data from ${agoPhrase(d.fetchedAt, now)}`
+  return `Updated ${today(d.fetchedAt) === today(now) ? timeLabel(new Date(d.fetchedAt).toISOString()) : istTime(d.fetchedAt)}`
 }
 
 /** The Speed sheet's table: time (IST), boot path, phone copy in ms, fresh data in s, result. */

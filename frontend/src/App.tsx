@@ -22,7 +22,7 @@ import { PersonSheet } from './screens/People.tsx'
 import { Logos } from './screens/Logos.tsx'
 import { TodoScreen } from './screens/Todo.tsx'
 import { Transactions } from './screens/Transactions.tsx'
-import { Button, Icon, Sheet } from './ui.tsx'
+import { Button, Icon, PullToRefresh, Sheet } from './ui.tsx'
 import { UpdateBar } from './update.ts'
 import { HOME, type Tab, type View } from './view.ts'
 
@@ -176,6 +176,7 @@ function Shell({ view }: { view: View }) {
         <Screen view={view} />
       </main>
       <Nav view={view} />
+      <PullToRefresh />
       {path && <Painted path={path} />}
       {view.sheet === 'speed' && <SpeedSheet onClose={back} />}
       {view.sheet === 'profile' && <ProfileSheet onClose={back} />}
