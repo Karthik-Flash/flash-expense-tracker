@@ -372,3 +372,13 @@ import or the phone; the Bank SMS sheet starts a first scan a day before it).
 - **Snapshot** gains `paybacks`: `[{"debit", "credit", "status"}]`, which
   payment each payback pays back (D-134), `linked` or `candidate`; display
   only. `profile` gains `settings`: `{"count_investments_in_spent": false}`.
+## 5B-2 additions (D-139 to D-144)
+
+- **Ingest** (`POST /api/v1/ingest/sms`, device token): each message may carry `origin`
+  (`"inbox"`, the default, or `"live"`). The answer adds `new_transactions`: one item per
+  transaction this request created, `{"device_msg_id", "id", "direction", "amount_paise",
+  "display_name", "category", "category_name", "role", "paid_back_question"}`; empty for
+  duplicates, twins, notices and refused messages. Older phones ignore it.
+- **Snapshot ETag**: `"v-<sha256>"` from the owner's data version (D-140), the IST day, the
+  engine versions and the login's account block; a 304 builds nothing. Same data, same ETag;
+  any write, upload or recompute gives a new one.

@@ -45,7 +45,11 @@ clearly personal (`categorise-1.3.0`), payback guesses need an earlier
 payment and payback links (`reconcile-1.7.0`), Invested totals and "Count
 investments in Spent" (migration `0016`), `category-diff` and
 `payback-review` (D-133 to D-138). Owner steps: cheat sheet, "After the 5B-1
-deploy". Next: 5B-2 (the phone, Kotlin).
+deploy". **Phase 5B-2 done 23 Nov** (not pushed): the phone uploads a new bank SMS
+at once, keeps its place across sign-out, notifies new payments, and shows a status
+screen with an event log; a 304 snapshot without building it (D-139 to D-144;
+[docs/design/phase-5b2-phone.md](docs/design/phase-5b2-phone.md)). Owner steps and
+the phone test plan: cheat sheet, "After the 5B-2 deploy".
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -579,6 +583,31 @@ After the planner's review, in this order:
 Owner commands now work on one owner's data: `--owner <owner_id>` before the
 command, else the admin, else `OWNER_ID`. For your own data nothing changes.
 
+### After the 5B-2 deploy: the phone test plan (D-139 to D-144)
+
+1. **Backup**, then **push** (Render runs migration `0017`: `raw_messages.origin`,
+   `data_versions`).
+2. **Build and install the APK** (from `frontend\`, with the real Supabase values in
+   `frontend\.env` as for 5A): `npm run android:apk`, then
+   `adb install -r D:\Projects\FinancesApp\mobile\android\app\build\outputs\apk\debug\app-debug.apk`.
+   The queue and the cursor of the installed app are kept (the queue moves to version 2).
+3. **Open Flash once** (it reschedules the hourly check). Settings > Bank SMS: allow
+   notifications when asked. On Samsung: "App battery" > Unrestricted, and "Never auto
+   sleeping apps" > add Flash. Never Force stop Flash (Android 15 then blocks it until you
+   open it again).
+4. **App open**: pay Rs 1 by UPI. Pass: a notification "Paid ₹1 to …" within a minute, and
+   the payment in Transactions without touching anything. Tap the notification: its sheet
+   opens.
+5. **App closed** (swipe it away, screen off for 5 minutes): pay Rs 1 again. Pass: the
+   notification comes, and the payment is on the web (laptop) within a few minutes.
+6. **Same payee twice**: pay the same person Rs 1 twice. Pass: two payments.
+7. **Sign out and in** on the phone with the same login. Pass: no Bank SMS setup; Bank SMS
+   says "connected" after a moment; a new payment still arrives.
+8. **Airplane mode**: pay nothing, turn airplane mode on for 2 minutes, off again; then
+   Sync now. Pass: "Last problem: none" after it, "Waiting on phone 0".
+9. If anything fails: Bank SMS > Events on this phone > **Copy diagnostics** and paste it to
+   the planner (codes and counts only, no message text).
+
 ### After the 5B-1 deploy (D-133 to D-138), in this order
 
 1. **Backup** (from the repo root, Docker running): `powershell -ExecutionPolicy
@@ -1095,6 +1124,19 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-23: Phase 5B-2, the phone just works
+
+- Diagnosis with file:line evidence: docs/design/phase-5b2-phone.md. Main cause: a new SMS
+  waited behind a retry in backoff (KEEP), and opening the app or reconnecting never
+  started an upload.
+- Phone: uploads at once (expedited, REPLACE), hourly catch-up, `_id` cursor, live copy
+  after 2 minutes, drop only what the server refused, queue kept while disconnected,
+  notifications, status screen, event log, Copy diagnostics (D-142, D-143).
+- Server: migration `0017`; the twin rule for the two copies of one SMS (D-139); the data
+  version and a 304 in 9 statements (D-140); `new_transactions` in the ingest answer (D-141).
+- App: reconnect by itself at sign-in, notification taps open the payment, 401 refreshed
+  once then a "Sign in again" banner, Paid back covers every credit and asks first (D-144).
 
 ### 2026-11-22: Phase 5B-1, daily-use correctness
 

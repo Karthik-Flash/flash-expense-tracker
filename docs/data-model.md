@@ -167,6 +167,7 @@ policies, as on every table.
 | `own_accounts` | `label`, `kind` (bank_account, credit_card, wallet, fd), `bank`, `source` | UNIQUE (`owner_id`, `label`) |
 | `own_identifiers` | `own_account_id`, `kind` (last4, text), `value`, `source` | UNIQUE (`owner_id`, `kind`, `value`, `own_account_id`) |
 | `owner_names` | `name`, `source` (`0013`, D-117: "Your name as banks show it"; RLS on) | UNIQUE (`owner_id`, `name`) |
+| `data_versions` | `version` (`0017`, D-140: raised by every write, upload and recompute; the snapshot's ETag; RLS on; deleted with the account) | PRIMARY KEY (`owner_id`) |
 | `owner_settings` | `count_investments_in_spent` (default false), `updated_at`, `source` (`0016`, D-136: the owner's settings; no row: every default; RLS on; deleted with the account) | PRIMARY KEY (`owner_id`) |
 | `parties` | `label`, `kind` (person, business; unsure since `0008`; self and investment since `0013`), `dismissed` (`0013`: suggestions answered No, and the kind before It's me or Investments), `income_label` (null: not an income source), `display_name` (`0008`), `source`, `answered_at` (`0010`), `name_source` (`0012`: who gave `display_name`: app, terminal, file or statement; null before 4A) | UNIQUE (`owner_id`, `label`) |
 | `party_texts` | `party_id`, `text`, `source`; `created_at`, `ended_at` since `0008` | one active row per (`owner_id`, `text`) since `0008` |
@@ -429,3 +430,6 @@ comma-separated). API writes are owner rows with source `app`
 (`app/pipeline/owner_actions.py`), committed in one transaction with their
 recompute. `recompute()` takes `owner_lock()`: a per-owner lock in the
 process, and `pg_advisory_xact_lock` on Postgres. Routes: `docs/api.md`.
+
+
+5B-2: `raw_messages.origin` (`0017`, D-139), nullable: `inbox` or `live` for a phone upload, null for every other source and every older row.

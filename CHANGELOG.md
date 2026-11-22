@@ -4,6 +4,20 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 5B-2: the phone just works (23 Nov 2026)
+
+- A new bank SMS is sent at once, also when an earlier try is waiting; every app start and
+  resume and an hourly check catch up (D-142).
+- Nothing is lost: the queue is kept while the phone is disconnected or signed out, and the
+  same login reconnects by itself without a new setup (D-143).
+- Payment notifications, with "Paid back?" for money from a person; a tap opens the payment
+  (D-141, D-142).
+- A Bank SMS status screen in plain words, with Samsung battery help, an event log and Copy
+  diagnostics (D-142).
+- The two copies of one SMS are one payment; two real payments stay two (D-139).
+- An unchanged snapshot answers 304 without being built (D-140); a lost session says so
+  (D-144).
+
 ## Phase 5B-1: daily-use correctness (22 Nov 2026)
 
 - To-do lists are newest first (D-138).

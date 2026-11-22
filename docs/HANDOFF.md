@@ -5,8 +5,16 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
 [PLAN.md](PLAN.md).
 
-## Current state (Phase 5B-1 done, 22 Nov 2026)
+## Current state (Phase 5B-2 done, 23 Nov 2026)
 
+- **Phase 5B-2 is done, not pushed** (D-139 to D-144,
+  [design/phase-5b2-phone.md](design/phase-5b2-phone.md)): the phone uploads a new bank
+  SMS at once (expedited, replacing a backoff), hourly catch-up, an inbox `_id` cursor, a live
+  copy after 2 minutes joined to its inbox copy on the server (`raw_messages.origin`), the
+  queue kept while disconnected and across sign-out (same login reconnects by itself),
+  payment notifications from the ingest answer's `new_transactions`, a status screen with an
+  event log; the snapshot's ETag from a per-owner data version (`data_versions`), so a 304
+  never builds it. Alembic head `0017`. Owner steps: NOTES, "After the 5B-2 deploy".
 - **Phase 5B-1 is done, not pushed** (D-133 to D-138): To-do newest first;
   refresh on focus, after the outbox, every 60 s while visible, pull-to-refresh
   (`src/pull.ts`); People only when clearly personal (`categorise-1.3.0`); a
@@ -66,8 +74,8 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 - Engine versions: parsers `hdfc-1.2.0`, `sbi-1.0.0` and `generic-1.0.0`
   (other banks), `merchant-1.1.1`, `reconcile-1.7.0`, `categorise-1.3.0`;
   statement reader `stmt-hdfc-1.1.0`.
-- Alembic head: `0016` (owner_settings; `0011` was not used).
-- Decisions: D-001 to D-138 ([DECISIONS.md](DECISIONS.md)).
+- Alembic head: `0017` (raw_messages.origin, data_versions; `0011` was not used).
+- Decisions: D-001 to D-144 ([DECISIONS.md](DECISIONS.md)).
 - Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
   lint/typecheck/tests/build, the cross-origin check
   (`node scripts/cross-origin-check.mjs` from `frontend\`, which covers the
