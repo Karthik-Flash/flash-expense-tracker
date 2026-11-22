@@ -70,6 +70,11 @@ CASES: dict[tuple[str, str], tuple[object, bool]] = {
 }
 
 
+# Public routes that hold no one's data: their status depends on the server's settings (the
+# ping token), not on the caller; they are still checked to reveal nothing of A.
+UNSCOPED = {("GET", "/health"), ("HEAD", "/health"), ("GET", "/health/db")}
+
+
 def routes() -> set[tuple[str, str]]:
     return {(m.upper(), p) for p, ops in app.openapi()["paths"].items() for m in ops}
 
@@ -140,8 +145,9 @@ def test_b_reaches_nothing_of_a_on_any_route(client, db_engine, two_users) -> No
             method, path, headers=b | key(), json=body_for(body, ids), params=params
         )  # noqa: E501
         where = (method, template, answer.status_code)
-        assert answer.status_code < 500, where
-        if not own:
+        if (method, template) not in UNSCOPED:
+            assert answer.status_code < 500, where
+        if not own and (method, template) not in UNSCOPED:
             assert answer.status_code >= 400, where  # refused: 401, 403, 404, 409, 422
         for marker in ids["markers"]:
             assert marker not in answer.text, (*where, "leaks A")

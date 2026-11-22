@@ -11,6 +11,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(tempfile.gettempdir(), 'flash-never.db').as_posix()}"
+# Hermetic settings, the same here as on CI: no backend/.env, and no app setting from the shell
+# (a local PING_TOKEN once made a test pass here and fail on CI).
+os.environ["FLASH_IGNORE_ENV_FILE"] = "1"
+for name in ("PING_TOKEN", "CORS_ORIGINS", "OWNER_ID", "SUPABASE_URL", "AUTH_USERS",
+             "SUPABASE_SECRET_KEY"):  # fmt: skip
+    os.environ.pop(name, None)
 
 import pytest  # noqa: E402
 from sqlalchemy import Engine, create_engine  # noqa: E402
