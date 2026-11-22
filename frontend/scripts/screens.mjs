@@ -88,12 +88,16 @@ await cdp('Runtime.enable')
 
 // Problems a reviewer should see: sideways scroll, and text cut off or past the screen edge.
 const AUDIT = `(() => {
-  const out = { sideways: document.documentElement.scrollWidth > innerWidth + 1, clipped: [], outside: [] }
+  const out = { sideways: document.documentElement.scrollWidth > innerWidth + 1, clipped: [], outside: [], small: [] }
   const name = (el) => (el.getAttribute('aria-label') || el.textContent || el.tagName).trim().replace(/\\s+/g, ' ').slice(0, 40)
   for (const el of document.querySelectorAll('body *')) {
     const r = el.getBoundingClientRect()
     if (!r.width || !r.height || el.closest('.sr-only')) continue
-    if (r.right > innerWidth + 1 || r.left < -1) out.outside.push(name(el))
+    // Inside a box that scrolls sideways on purpose (a wide table at large text): not a finding.
+    const boxed = () => { for (let p = el.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p).overflowX; if (o === 'auto' || o === 'scroll') return true } return false }
+    if ((r.right > innerWidth + 1 || r.left < -1) && !boxed()) out.outside.push(name(el))
+    // Premium E: touch targets at least 44 px each way (SVG chart bars are wider groups).
+    if (el.matches('button, a[href], select, input:not([type=checkbox]):not([type=radio]), [role=button]') && !el.closest('svg, [data-demo]') && (r.height < 43.5 || r.width < 43.5)) out.small.push(name(el))
     const style = getComputedStyle(el)
     const cut = style.overflowX === 'hidden' || style.overflowX === 'clip' || style.textOverflow === 'ellipsis'
     // Cut to less than half: a name squeezed away, not a long name with an ellipsis.
@@ -101,6 +105,7 @@ const AUDIT = `(() => {
   }
   out.outside = [...new Set(out.outside)].slice(0, 12)
   out.clipped = [...new Set(out.clipped)].slice(0, 12)
+  out.small = [...new Set(out.small)].slice(0, 12)
   return out
 })()`
 
@@ -151,6 +156,9 @@ await js(`sessionStorage.removeItem('flash-demo-signed-in'); localStorage.clear(
 await cdp('Page.reload', {})
 await sleep(2500)
 await shot('login')
+await click('Have an invite code?')
+await sleep(500)
+await shot('login-invite')
 
 await js(`sessionStorage.setItem('flash-demo-signed-in', '1')`)
 await cdp('Page.navigate', { url: `${APP}/#/home${M}` })
@@ -251,6 +259,12 @@ await shot('label-detail')
 await go('/insights')
 await sleep(2500)
 await shot('insights')
+// A transaction sheet on a credit: Paid back, Just this one / Always (D-149).
+await go(`/transactions${M}`)
+await sleep(800)
+await js(`(() => { const b = [...document.querySelectorAll('main section button')].find((x) => x.textContent.includes('+')); if (b) b.click(); return !!b })()`)
+await sleep(800)
+await shot('sheet-transaction-credit', true)
 
 // States: no data, an error, waking, stale totals.
 for (const state of ['empty', 'error', 'waking', 'stale']) {
@@ -269,8 +283,8 @@ for (const state of ['empty', 'error', 'waking', 'stale']) {
 await demoState('normal')
 
 writeFileSync(join(OUT, 'report.json'), JSON.stringify(report, null, 2))
-const problems = Object.entries(report).filter(([, r]) => r.sideways || r.outside.length || r.clipped.length)
+const problems = Object.entries(report).filter(([, r]) => r.sideways || r.outside.length || r.clipped.length || r.small.length)
 console.log(`shots: ${Object.keys(report).length}; with a finding: ${problems.length}`)
-for (const [name, r] of problems) console.log(`  ${name}: ${r.sideways ? 'scrolls sideways; ' : ''}outside [${r.outside.join(' | ')}] clipped [${r.clipped.join(' | ')}]`)
+for (const [name, r] of problems) console.log(`  ${name}: ${r.sideways ? 'scrolls sideways; ' : ''}outside [${r.outside.join(' | ')}] clipped [${r.clipped.join(' | ')}] small [${r.small.join(' | ')}]`)
 ws.close()
 done(0)

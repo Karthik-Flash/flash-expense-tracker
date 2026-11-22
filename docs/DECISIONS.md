@@ -1995,3 +1995,19 @@ other tabs. The snapshot read each month's rows, the month before's rows, its cr
 its not-counted messages one query each (4 statements per month, 53 + 4 per month); they
 are now read once (`v1.preload`) and the account block once per request: 47 statements
 whatever the number of months, the same document (all snapshot tests unchanged).
+
+## D-151 Visual audit at 360 and 1280 px (2026-11-23)
+
+Premium run, part E. `scripts/screens.mjs --widths 360,1280` shot every screen and sheet of
+the demo (FAKE data: Home, Transactions, Insights with Profile and Admin, To-do, Labels, Bank
+SMS in each phone state, sign-in and invite, first run, the empty, error, waking and stale
+states) in light, dark and 200 % text: 240 shots. Its audit now also lists touch targets under
+44 px (outside the demo-only bar and chart marks) and no longer counts what scrolls inside a
+deliberately scrolling box (the Speed and monthly tables at 200 % text). At normal text it
+found nothing at either width; at 200 % text row subtitles, identifier lines and Insights
+link details were cut to under half (they now wrap), and the Bank SMS and Speed status lists
+pushed their values off screen (their columns now shrink and wrap). Too-narrow targets: the
+To-do "Person" and "Name" text buttons (now at least 44 px wide). Contrast, computed: every
+text token is AA on every surface in both themes (lowest 5.44:1, muted on banner, light);
+faint is used only for a disabled icon. No US spellings in the UI text. Screenshots stay
+outside the repository.

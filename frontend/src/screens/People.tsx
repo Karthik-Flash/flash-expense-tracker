@@ -156,7 +156,7 @@ export function PersonSheet({ personKey, act, onClose }: { personKey: string; ac
                   <button type="button" className={choice} onClick={() => pick(o)}>
                     <span className="min-w-[min(6rem,35vw)] flex-1">
                       <span className="block truncate">{shownName(ops, o)}</span>
-                      {o.named && <span className="block truncate text-xs text-muted">{o.identifiers.map((i) => i.name).filter(Boolean).join(' · ')}</span>}
+                      {o.named && <span className="block text-xs wrap-break-word text-muted">{o.identifiers.map((i) => i.name).filter(Boolean).join(' · ')}</span>}
                     </span>
                     {o.role && <span className="shrink-0 text-xs text-muted">{ROLE_NAME[o.role]}</span>}
                   </button>
@@ -330,7 +330,7 @@ function PersonActions({ p, title, snapshot }: { p: Person; title: string; snaps
                 <>
                   <span className="min-w-[min(6rem,35vw)] flex-1">
                     <span className="block truncate">{dayLabel(t.time_utc)}</span>
-                    <span className="block truncate text-xs text-muted">{subtitle(shown)}</span>
+                    <span className="block text-xs wrap-break-word text-muted">{subtitle(shown)}</span>
                   </span>
                   <Money paise={t.amount_paise} credit={isCredit(t)} exact />
                 </>

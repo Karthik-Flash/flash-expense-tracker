@@ -198,7 +198,7 @@ function Link({ onClick, title, detail }: { onClick: () => void; title: string; 
     <RowButton onClick={onClick}>
       <span className="min-w-[min(6rem,35vw)] flex-1">
         <span className="block">{title}</span>
-        {detail && <span className="block truncate text-xs text-muted">{detail}</span>}
+        {detail && <span className="block text-xs wrap-break-word text-muted">{detail}</span>}
       </span>
       <Icon name="chevron-right" className="text-muted" />
     </RowButton>
