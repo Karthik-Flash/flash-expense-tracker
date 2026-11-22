@@ -108,6 +108,8 @@ function api(sendFails = false) {
       if (sendFails) throw new Error('offline')
       return { status: 200, detail: null, message: '' }
     },
+    createInvite: async () => ({ code: 'TEST-CODE-0001' }),
+    deleteAccount: async () => ({ status: 200, detail: null, message: '' }),
     async registerDevice(id, name) {
       registered.push([id, name])
       return { token: 'test-device-token' }

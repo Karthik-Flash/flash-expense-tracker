@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { api, DEMO, demoApi } from './api/index.ts'
+import { welcomeDue } from './account.ts'
+import { api, API_URL, DEMO, demoApi } from './api/index.ts'
+import { signUp } from './api/http.ts'
 import { DEMO_STATES, type DemoState } from './api/fake.ts'
 import { markPainted, type BootPath } from './boot.ts'
 import { beforeSignOut, refreshToken, signIn, signOut, useAuth } from './auth.ts'
@@ -8,6 +10,7 @@ import { checksView, startOutbox, syncState, todoView, unsynced, useOutbox } fro
 import { clearData, refresh, startData, useData, useSnapshot } from './data/store.ts'
 import { AppContext, navigate, useNav, useScrollMemory, useView, type AppState } from './state.tsx'
 import { isNativeApp, signOutPhone, startSms } from './native/sms.ts'
+import { DeleteSheet, MembersSheet, PrivacySheet, SettingsSheet, WelcomeSheet } from './screens/Account.tsx'
 import { BankSmsSheet } from './screens/BankSms.tsx'
 import { CategoryDetail, Home } from './screens/Home.tsx'
 import { LabelDetail, Labels } from './screens/Labels.tsx'
@@ -52,6 +55,7 @@ function setDemoSignedIn(on: boolean): void {
 
 export default function App() {
   const view = useView()
+  const { back } = useNav()
   const auth = useAuth()
   const [demoIn, setDemoIn] = useState(demoSignedIn)
   const [asking, setAsking] = useState(0)
@@ -97,10 +101,20 @@ export default function App() {
               setDemoIn(true)
               return ''
             }}
+            join={async (email, password, code) => {
+              if (DEMO) {
+                setDemoSignedIn(true)
+                setDemoIn(true)
+                return ''
+              }
+              // 5C (D-128): the account first, then the usual sign-in.
+              return (await signUp(API_URL, email, password, code)) || signIn(email, password)
+            }}
           />
         )}
         {/* The Android app updates by a new APK: no service worker there (D-125). */}
         {!isNativeApp() && <UpdateBar aboveNav={status === 'in'} />}
+        {status !== 'in' && view.sheet === 'privacy' && <PrivacySheet onClose={back} />}
         {asking > 0 && <SignOutSheet count={asking} stay={() => setAsking(0)} leave={leaveNow} />}
       </div>
     </AppContext.Provider>
@@ -148,6 +162,13 @@ function Shell({ view }: { view: View }) {
   const { back } = useNav()
   const [load] = useSnapshot()
   const { local } = useData()
+  const auth = useAuth()
+  const user = auth.status === 'in' ? auth.user : null
+  // The first run (5C, D-132): an account with no data, once per login on this device.
+  const due = !DEMO && load.status === 'ready' && welcomeDue(load.data, user)
+  useEffect(() => {
+    if (due && !view.sheet) navigate({ ...view, sheet: 'welcome' }, 'open')
+  }, [due, view])
   const path: BootPath | null = load.status === 'ready' ? (local ? 'local copy' : 'online') : load.status === 'error' ? 'error screen' : null
   return (
     <div className="mx-auto w-full max-w-[480px] flex-1 pb-[calc(5rem+env(safe-area-inset-bottom))]">
@@ -160,6 +181,11 @@ function Shell({ view }: { view: View }) {
       {view.sheet === 'profile' && <ProfileSheet onClose={back} />}
       {view.sheet === 'unsaved' && <UnsavedSheet onClose={back} />}
       {view.sheet === 'sms' && <BankSmsSheet onClose={back} />}
+      {view.sheet === 'settings' && <SettingsSheet onClose={back} />}
+      {view.sheet === 'members' && <MembersSheet onClose={back} />}
+      {view.sheet === 'delete' && <DeleteSheet onClose={back} />}
+      {view.sheet === 'privacy' && <PrivacySheet onClose={back} />}
+      {view.sheet === 'welcome' && <WelcomeSheet onClose={back} />}
       {view.person && !view.sheet && <PersonSheet key={`${view.person}:${view.act}`} personKey={view.person} act={view.act} onClose={back} />}
     </div>
   )

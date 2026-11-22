@@ -29,6 +29,9 @@ export function Home() {
           <button type="button" onClick={() => open({ sheet: 'speed' })} aria-label={`${__VERSION_LINE__}: speed and sync details`} className="min-h-11 min-w-0 text-right text-xs text-muted">
             {__VERSION_LINE__}
           </button>
+          <button type="button" onClick={() => open({ sheet: 'settings' })} className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted" aria-label="Settings">
+            <Icon name="ellipsis" />
+          </button>
           <button type="button" onClick={signOut} className="-mr-3 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted" aria-label="Sign out">
             <Icon name="log-out" />
           </button>

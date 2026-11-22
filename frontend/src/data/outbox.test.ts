@@ -66,6 +66,8 @@ function server(snapshot: () => Promise<SnapshotAnswer> = async () => ({ status:
   const api: Api = {
     demo: false,
     registerDevice: async () => ({ token: 'test-token' }),
+    createInvite: async () => ({ code: 'TEST-CODE-0001' }),
+    deleteAccount: async () => ({ status: 200, detail: null, message: '' }),
     snapshot: () => snapshot(),
     async send(req: SendRequest) {
       const mode = modes.shift() ?? 'ok'

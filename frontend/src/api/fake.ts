@@ -10,6 +10,7 @@ import {
   type CategoryAmount,
   type ChartSlice,
   type Device,
+  type InviteItem,
   type LabelView,
   type Merchant,
   type MonthData,
@@ -209,6 +210,8 @@ export class FakeApi implements Api {
   private kinds = new Map<string, PartyKind>()
   private dismissed = new Set<string>()
   private ownerNames: string[] = []
+  // Invites the demo admin made (5C).
+  private invites: InviteItem[] = []
   // Phones that upload bank SMS (5A): one demo phone, so the list has a row.
   private devices: Device[] = [
     { device_id: '00000000-0000-4000-8000-000000000001', name: 'Demo phone', created_utc: '2026-11-20T04:30:00.000Z', last_seen_utc: '2026-11-21T15:10:00.000Z', revoked_utc: null },
@@ -464,6 +467,14 @@ export class FakeApi implements Api {
         profile: { names: [...this.ownerNames] },
         devices: this.devices.map((d) => ({ ...d })),
         sms: { newest_utc: transactions[0]?.time_utc ?? null },
+        account: { role: 'admin', email: 'demo@example.invalid' },
+        admin: {
+          invites: this.invites.map((i) => ({ ...i })),
+          members: [
+            { email: 'demo@example.invalid', role: 'admin', joined_utc: '2026-11-13T04:30:00.000Z', last_seen_utc: '2026-11-21T15:10:00.000Z', transactions: transactions.length, phones: 1 },
+            { email: 'tester@example.invalid', role: 'member', joined_utc: '2026-11-22T04:30:00.000Z', last_seen_utc: null, transactions: 0, phones: 0 },
+          ],
+        },
         labels,
         categories: CATEGORIES,
         people: this.peopleOf(transactions),
@@ -593,6 +604,14 @@ export class FakeApi implements Api {
     }
     if (txn?.[2] === 'label' && method === 'DELETE') return this.clearLabel(Number(txn[1]))
     const device = /^\/devices\/([^/]+)$/.exec(path)
+    const invite = /^\/invites\/(\d+)$/.exec(path)
+    if (invite && method === 'DELETE') {
+      const i = this.invites.find((x) => x.id === Number(invite[1]))
+      if (!i) throw new ApiError(404, 'No such invite.')
+      if (i.used_utc) throw new ApiError(409, 'This invite was used.')
+      i.revoked_utc ??= new Date().toISOString()
+      return
+    }
     if (device && method === 'DELETE') {
       const d = this.devices.find((x) => x.device_id === device[1])
       if (!d) throw new ApiError(404, 'No such device.')
@@ -600,6 +619,20 @@ export class FakeApi implements Api {
       return
     }
     throw new ApiError(404, 'Not found.')
+  }
+
+  /** As POST /invites (5C): a demo code, shown once. */
+  createInvite(): Promise<{ code: string }> {
+    return this.respond(() => {
+      const now = Date.now()
+      this.invites.push({ id: this.invites.length + 1, created_utc: new Date(now).toISOString(), expires_utc: new Date(now + 7 * 86_400_000).toISOString(), used_utc: null, revoked_utc: null })
+      return { code: 'DEMO-CODE-' + String(this.invites.length).padStart(4, '0') }
+    })
+  }
+
+  /** As POST /account/delete (5C): the demo owner is the admin, who cannot. */
+  deleteAccount(): Promise<SendAnswer> {
+    return this.respond(() => ({ status: 409, detail: 'admin_cannot_delete', message: 'The admin account cannot be deleted from the app.' }))
   }
 
   /** As POST /devices (5A): this phone and a demo token; the same id again replaces it. */

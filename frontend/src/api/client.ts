@@ -32,6 +32,11 @@ export interface Api {
   /** POST /devices (5A, D-122): this phone, and its device token, shown only in this answer.
    *  Online only, never through the outbox: a stored replay would have to keep the token. */
   registerDevice(deviceId: string, name: string): Promise<{ token: string }>
+  /** POST /invites (5C, the admin): a new code, shown only in this answer. Online only. */
+  createInvite(): Promise<{ code: string }>
+  /** POST /account/delete (5C, D-131): needs a sign-in from the last 10 minutes. The
+   *  server's answer as it is: 200, or 409 fresh_login_required / admin_cannot_delete. */
+  deleteAccount(): Promise<SendAnswer>
 }
 
 export class ApiError extends Error {
