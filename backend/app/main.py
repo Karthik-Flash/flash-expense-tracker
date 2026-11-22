@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api import analytics, devices, export, health, snapshot, users, v1
@@ -44,7 +45,27 @@ def cors_options(origins: list[str]) -> dict:
     }
 
 
-app = FastAPI(title="Flash Expense Tracker", version=__version__)
+MAX_REQUEST_BYTES = 8 * 1024 * 1024  # the largest phone upload is about 1 MB (D-150)
+
+
+class BodyLimit:
+    """413 for a request that says its body is over MAX_REQUEST_BYTES, before reading it. Pure
+    ASGI, inside CORS so the answer carries its headers."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        length = dict(scope.get("headers") or ()).get(b"content-length", b"0")
+        if scope["type"] == "http" and (not length.isdigit() or int(length) > MAX_REQUEST_BYTES):
+            response = JSONResponse({"detail": "request_too_large"}, status_code=413)
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+app = FastAPI(title="Flash Expense Tracker", version=__version__, debug=False)
+app.add_middleware(BodyLimit)  # innermost of these: CORS still wraps its 413
 app.add_middleware(CORSMiddleware, **cors_options(settings.cors_origin_list))
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(RequestLog, router_app=app)  # outermost: sees CORS answers too

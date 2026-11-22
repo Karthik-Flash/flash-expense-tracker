@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api import ops, supabase_admin
+from app.api import ops, supabase_admin, v1
 from app.api.auth import Caller, current_user, fresh_login, require_admin
 from app.db import get_session
 from app.models import AppUser, Device, Invite, Transaction
@@ -96,9 +96,13 @@ _signup_lock = threading.Lock()
 
 
 def client_ip(request: Request) -> str:
-    """The first X-Forwarded-For hop (Render's proxy sets it), else the socket's address."""
-    forwarded = request.headers.get("x-forwarded-for", "")
-    return forwarded.split(",")[0].strip() or (request.client.host if request.client else "?")
+    """The address Render's proxy saw (D-150): the LAST X-Forwarded-For hop, the one the proxy
+    in front of the app added. Earlier hops come from the client and can be anything, so a
+    tester could dodge the per-IP limit by sending a new first hop each time. Render's docs do
+    not say whether it appends or replaces the header; the last hop is right either way with
+    one proxy. No header (local runs): the socket's address."""
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",")]
+    return hops[-1] or (request.client.host if request.client else "?")
 
 
 class SignUp(BaseModel):
@@ -221,7 +225,7 @@ def list_invites(caller: Admin, session: Db) -> dict:
 
 
 @router.delete("/invites/{invite_id}")
-def revoke_invite(caller: Admin, session: Db, op: ops.OpDep, invite_id: int):
+def revoke_invite(caller: Admin, session: Db, op: ops.OpDep, invite_id: v1.Id):
     """Revoke an unused invite (an outbox write). A used one: 409."""
 
     def action() -> dict:
@@ -248,7 +252,7 @@ def list_members(caller: Admin, session: Db) -> dict:
 class DeleteAccount(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    confirm: str
+    confirm: str = Field(max_length=20)
 
 
 @router.post("/account/delete")

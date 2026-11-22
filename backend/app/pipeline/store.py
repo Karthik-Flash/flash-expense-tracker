@@ -5,6 +5,7 @@ transaction, so a commit always holds complete messages: a crash loses only
 uncommitted messages, and a re-run picks them up as new.
 """
 
+import re
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
@@ -147,6 +148,9 @@ def ingest(
     if source in TWIN_SOURCES and twin(session, owner_id, sender_core, body, received_at, origin):
         counts.raw_duplicate += 1  # the other copy of this SMS is stored (D-139)
         return
+    if source in TWIN_SOURCES and emoji_twin(session, owner_id, sender_core, body, received_at):
+        counts.raw_duplicate += 1  # the same SMS with its emoji written another way (D-150)
+        return
     raw = RawMessage(
         owner_id=owner_id,
         source=source,
@@ -202,6 +206,35 @@ def twin(
     ways = [(o or "inbox") == mine for b, o in rows if normal_body(b) == want]
     same = sum(ways)
     return len(ways) - same > same
+
+
+_ASTRAL = re.compile("[\U00010000-\U0010ffff]")
+
+
+def folded(body: str) -> str:
+    """normal_body() with each character outside the basic plane (an emoji) as two U+FFFD,
+    the way SMS Backup & Restore writes one."""
+    return _ASTRAL.sub("��", normal_body(body))
+
+
+def emoji_twin(
+    session: Session, owner_id: uuid.UUID, core: str, body: str, received_at: datetime
+) -> bool:
+    """Open item 5c (D-150): a laptop export writes an emoji as two U+FFFD, the phone sends
+    the emoji, so one SMS got two hashes. The same sender at the same millisecond with the same
+    text once folded is that one SMS. Only a body with an emoji or U+FFFD is checked."""
+    if "�" not in body and not _ASTRAL.search(body):
+        return False
+    rows = session.scalars(
+        select(RawMessage.body).where(
+            RawMessage.owner_id == owner_id,
+            RawMessage.sender_core == core,
+            RawMessage.source.in_(TWIN_SOURCES),
+            RawMessage.received_at == received_at,
+        )
+    )
+    want = folded(body)
+    return any(b != body and folded(b) == want for b in rows)
 
 
 def find_by_key(session: Session, owner_id: uuid.UUID, key: str) -> Transaction | None:

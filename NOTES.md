@@ -55,7 +55,8 @@ Analytics and "Learn from the owner" still to come.
 **Premium run, 23 Nov** (not pushed): part A pre-push safety (admin privacy test, Profile
 facts, duplicate checks, export range tests, a cross-origin check that waits for the page;
 D-147); part B Analytics at the top of Insights (D-148); part C rules and per-credit
-Paid back answers (migration 0018, D-149).
+Paid back answers (migration 0018, D-149); part D robustness (last X-Forwarded-For hop,
+input limits, `doctor`, emoji copies of one SMS, snapshot reads once; D-150).
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -1096,11 +1097,8 @@ From 5A (Android):
     restricted settings, receiver, WorkManager, Keystore, battery); the
     on-device tests (`connectedDebugAndroidTest`). Checked: JVM unit tests,
     the server end to end, the cross-origin replay of the WebView's requests.
-5c. A bank SMS with an emoji outside the basic plane: SMS Backup & Restore
-    writes it as two U+FFFD, the phone sends the emoji, so a laptop import of
-    that message after a phone upload would be a second raw message (none in
-    the sample). The reference still merges the transaction when there is
-    one.
+5c. Done (D-150): a bank SMS with an emoji outside the basic plane, which SMS
+    Backup & Restore writes as two U+FFFD, is now one SMS whichever copy comes first.
 
 Ongoing:
 

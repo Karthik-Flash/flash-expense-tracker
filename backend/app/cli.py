@@ -1634,6 +1634,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="categorise-1.2.0 vs 1.3.0 (counts; changed rows to a PRIVATE CSV, read-only)",
     )
     cd.add_argument("--out", type=Path, required=True, help="the CSV, outside the repository")
+    sub.add_parser("doctor", help="read-only health checks of the owner's data (counts only)")
     pr = sub.add_parser(
         "payback-review",
         help="paybacks confirmed, suggested and unanswered (counts; rows to a PRIVATE CSV)",
@@ -1642,7 +1643,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def cmd_doctor(session: Session, args: argparse.Namespace) -> int:
+    """Read-only health checks of one owner's data (D-150): counts only. Exit 1 on a problem."""
+    from app.pipeline import doctor
+
+    try:
+        lines = doctor.checks(session, settings.owner_id)
+    finally:
+        session.rollback()  # nothing is ever written
+    print("doctor (read-only; counts only)")
+    for name, value, _ in lines:
+        line(name, value)
+    problems = sum(value for _, value, problem in lines if problem)
+    line("problems", problems)
+    print("doctor: healthy" if problems == 0 else "doctor: PROBLEMS FOUND", file=sys.stderr)
+    return 0 if problems == 0 else 1
+
+
 COMMANDS = {
+    "doctor": cmd_doctor,
     "import-sms": cmd_import,
     "reparse": cmd_reparse,
     "stats": cmd_stats,

@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ from app.engine.categorise import (
     breakdown,
     label_view,
 )
-from app.engine.credits import sender_id
+from app.engine.credits import credit_senders, sender_id
 from app.engine.merchant import channel_for, normalise_merchant
 from app.engine.parsers.generic import HINT as GENERIC
 from app.engine.reconcile import IST, ist_month, totals
@@ -54,6 +54,8 @@ router = APIRouter(prefix="/api/v1", dependencies=[Depends(current_owner)])
 Owner = Annotated[uuid.UUID, Depends(current_owner)]
 Db = Annotated[Session, Depends(get_session)]
 Month = Annotated[str, Query(pattern=r"^\d{4}-\d{2}$", description="IST month, YYYY-MM")]
+MAX_ID = 2**63 - 1  # a BIGINT: a larger id is a 422, not a database error (D-150)
+Id = Annotated[int, Path(ge=1, le=MAX_ID)]
 Fresh = [Depends(ops.fresh_reads)]  # every read: a deferred recompute runs first
 NOT_COUNTED = ("foreign_currency_deferred", "no_parser_for_bank", "generic_unsure")
 
@@ -68,7 +70,7 @@ class SenderAnswer(Body):
 
 
 class CategoryAnswer(Body):
-    category: str
+    category: str = Field(max_length=40)
     scope: Literal["merchant", "transaction"]
 
 
@@ -87,7 +89,9 @@ class PersonName(Body):
 
 
 class OwnerNames(Body):
-    names: list[str] = Field(max_length=6)  # the rules: owner_actions.set_owner_names
+    names: list[Annotated[str, Field(max_length=200)]] = Field(
+        max_length=6
+    )  # the rules: owner_actions.set_owner_names
 
 
 class PartyKind(Body):
@@ -98,14 +102,14 @@ class PersonJoin(Body):
     """Same as: `into` is a transaction of the person to join; `role` the answer the person
     keeps when the two have different ones (D-096)."""
 
-    into: int
+    into: int = Field(ge=1, le=MAX_ID)
     role: Literal["friend", "income", "ignore", "none"] | None = None
 
 
 class LabelAnswer(Body):
     """An existing label, or a new one made and attached in the same write (4B-2)."""
 
-    label_id: int | None = None
+    label_id: int | None = Field(None, ge=1, le=MAX_ID)
     new_label: str | None = Field(None, max_length=200)
 
     @model_validator(mode="after")
@@ -258,7 +262,49 @@ def _items(owner: uuid.UUID):
     )
 
 
-def _previous(session: Session, owner: uuid.UUID, month: str, in_spent: bool = False) -> dict:
+@dataclass(frozen=True)
+class Preload:
+    """The snapshot's rows read once (D-150), so each month's summary costs no query:
+    stored rows, credits with a sender role, and the times of messages not counted yet."""
+
+    rows: list
+    credits: list
+    not_counted: list
+
+    def between(self, items: list, start: datetime, end: datetime, time) -> list:
+        return [x for x in items if start <= time(x) < end]
+
+
+def preload(session: Session, owner: uuid.UUID) -> Preload:
+    times = session.scalars(
+        select(RawMessage.received_at)
+        .join(ParseResult, ParseResult.raw_message_id == RawMessage.id)
+        .where(
+            RawMessage.owner_id == owner,
+            ParseResult.is_current,
+            ParseResult.unknown_reason.in_(NOT_COUNTED),
+        )
+    )
+    return Preload(
+        _stored(session, owner), owner_actions.stored_credit_rows(session, owner), list(times)
+    )
+
+
+def _rows(session: Session, owner: uuid.UUID, start, end, pre: Preload | None) -> list:
+    if pre is not None:
+        return pre.between(pre.rows, start, end, lambda r: r[0].txn_time_utc)
+    return _stored(
+        session, owner, Transaction.txn_time_utc >= start, Transaction.txn_time_utc < end
+    )
+
+
+def _previous(
+    session: Session,
+    owner: uuid.UUID,
+    month: str,
+    in_spent: bool = False,
+    pre: Preload | None = None,
+) -> dict:
     """The month before, to compare with: up to the same IST day when `month` is the current
     IST month, else the whole month. Same rules as Spent."""
     year, number = map(int, month.split("-"))
@@ -268,9 +314,7 @@ def _previous(session: Session, owner: uuid.UUID, month: str, in_spent: bool = F
     whole = today.strftime("%Y-%m") != month
     if not whole:
         end = min(end, start + timedelta(days=today.day))
-    rows = _stored(
-        session, owner, Transaction.txn_time_utc >= start, Transaction.txn_time_utc < end
-    )
+    rows = _rows(session, owner, start, end, pre)
     txns, roles, categories = _engine_view(rows)
     return {
         "month": before,
@@ -314,13 +358,13 @@ def month_summary(
     stale: bool,
     last_recompute: str | None,
     inv: Investments | None = None,
+    pre: Preload | None = None,
 ) -> dict:
-    """The /summary answer for one IST month; the snapshot reuses it (D-088)."""
+    """The /summary answer for one IST month; the snapshot reuses it (D-088), with its rows
+    read once (`pre`, D-150)."""
     inv = investments(session, owner) if inv is None else inv
     start, end = _month(month)
-    rows = _stored(
-        session, owner, Transaction.txn_time_utc >= start, Transaction.txn_time_utc < end
-    )
+    rows = _rows(session, owner, start, end, pre)
     txns, roles, categories = _engine_view(rows)
     t = totals(txns, roles, start, end, inv.in_spent)
     parts = breakdown(txns, roles, categories, start, end, inv.in_spent)
@@ -330,19 +374,26 @@ def month_summary(
         for x, d in rows
         if x.id in inv.suggested and x.direction == "debit" and d.role in SPENDING_ROLES
     )
-    open_senders = [
-        s for s in owner_actions.senders(session, owner, start, end) if s.status == "to_confirm"
-    ]
-    not_counted = session.scalar(
-        select(func.count())
-        .select_from(ParseResult)
-        .join(RawMessage, RawMessage.id == ParseResult.raw_message_id)
-        .where(
-            RawMessage.owner_id == owner,
-            ParseResult.is_current,
-            ParseResult.unknown_reason.in_(NOT_COUNTED),
-            RawMessage.received_at >= start,
-            RawMessage.received_at < end,
+    if pre is not None:
+        credits = pre.between(pre.credits, start, end, lambda c: c.txn_time_utc)
+        everyone = credit_senders(credits, str(owner))
+    else:
+        everyone = owner_actions.senders(session, owner, start, end)
+    open_senders = [s for s in everyone if s.status == "to_confirm"]
+    not_counted = (
+        len(pre.between(pre.not_counted, start, end, lambda t: t))
+        if pre
+        else session.scalar(
+            select(func.count())
+            .select_from(ParseResult)
+            .join(RawMessage, RawMessage.id == ParseResult.raw_message_id)
+            .where(
+                RawMessage.owner_id == owner,
+                ParseResult.is_current,
+                ParseResult.unknown_reason.in_(NOT_COUNTED),
+                RawMessage.received_at >= start,
+                RawMessage.received_at < end,
+            )
         )
     )
     return {
@@ -367,7 +418,7 @@ def month_summary(
         },
         "stale": stale,
         "last_recompute_utc": last_recompute,
-        "previous": _previous(session, owner, month, inv.in_spent),
+        "previous": _previous(session, owner, month, inv.in_spent, pre),
     }
 
 
@@ -377,7 +428,7 @@ def transactions(
     session: Db,
     month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
     category: str | None = None,
-    label: int | None = None,
+    label: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
     cursor: Annotated[str | None, Query(pattern=r"^\d+_\d+$")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> dict:
@@ -412,7 +463,7 @@ def transactions(
 
 
 @router.get("/transactions/{txn_id}", dependencies=Fresh)
-def transaction(owner: Owner, session: Db, txn_id: int) -> dict:
+def transaction(owner: Owner, session: Db, txn_id: Id) -> dict:
     row = session.execute(_items(owner).where(Transaction.id == txn_id)).first()
     if row is None:
         raise HTTPException(404, "no such transaction")
@@ -447,7 +498,7 @@ def labels(owner: Owner, session: Db) -> list[dict]:
 
 
 @router.get("/labels/{label_id}", dependencies=Fresh)
-def label_detail(owner: Owner, session: Db, label_id: int) -> dict:
+def label_detail(owner: Owner, session: Db, label_id: Id) -> dict:
     found = session.get(Label, label_id)
     if found is None or found.owner_id != owner:
         raise HTTPException(404, "no such label")
@@ -518,7 +569,7 @@ def reset_sender(owner: Owner, session: Db, op: ops.OpDep, sender_id: str):
 
 
 @router.put("/transactions/{txn_id}/category")
-def set_category(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: CategoryAnswer):
+def set_category(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id, body: CategoryAnswer):
     def action() -> dict:
         owner_actions.set_category(session, owner, txn_id, body.category, body.scope, "app")
         return {"id": txn_id, "category": body.category, "scope": body.scope}
@@ -527,7 +578,7 @@ def set_category(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: Ca
 
 
 @router.put("/transactions/{txn_id}/payback")
-def answer_credit(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: CreditAnswer):
+def answer_credit(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id, body: CreditAnswer):
     """Just this one (D-149): beats the person-level answer; Net moves only on this answer."""
 
     def action() -> dict:
@@ -538,7 +589,7 @@ def answer_credit(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: C
 
 
 @router.delete("/transactions/{txn_id}/payback")
-def forget_credit_answer(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+def forget_credit_answer(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id):
     """Undo a per-credit answer: the person-level answer or the engine decides again."""
 
     def action() -> dict:
@@ -549,7 +600,7 @@ def forget_credit_answer(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
 
 
 @router.delete("/rules/{party_id}")
-def undo_rule(owner: Owner, session: Db, op: ops.OpDep, party_id: int):
+def undo_rule(owner: Owner, session: Db, op: ops.OpDep, party_id: Id):
     """Undo "All payments to <name>" (D-149): the engine's category again."""
 
     def action() -> dict:
@@ -560,7 +611,7 @@ def undo_rule(owner: Owner, session: Db, op: ops.OpDep, party_id: int):
 
 
 @router.put("/transactions/{txn_id}/check")
-def looks_right(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+def looks_right(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id):
     """Looks right: clears the check flag of a payment read automatically (D-101)."""
 
     def action() -> dict:
@@ -576,7 +627,7 @@ class TransferAnswer(Body):
 
 @router.put("/transfers/{txn_a}/{txn_b}")
 def answer_transfer(
-    owner: Owner, session: Db, op: ops.OpDep, txn_a: int, txn_b: int, body: TransferAnswer
+    owner: Owner, session: Db, op: ops.OpDep, txn_a: Id, txn_b: Id, body: TransferAnswer
 ):
     """Moved between your accounts? same: both legs self_transfer; different: not (D-115)."""
 
@@ -588,7 +639,7 @@ def answer_transfer(
 
 
 @router.put("/transactions/{txn_id}/ignore")
-def not_a_payment(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+def not_a_payment(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id):
     """Not a payment: the owner role ignored, in no total (D-103)."""
 
     def action() -> dict:
@@ -599,7 +650,7 @@ def not_a_payment(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
 
 
 @router.delete("/transactions/{txn_id}/ignore")
-def count_again(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+def count_again(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id):
     """Count it again: undoes Not a payment (D-103)."""
 
     def action() -> dict:
@@ -621,7 +672,7 @@ def create_label(owner: Owner, session: Db, op: ops.OpDep, body: NewLabel):
 
 
 @router.put("/transactions/{txn_id}/label")
-def set_label(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: LabelAnswer):
+def set_label(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id, body: LabelAnswer):
     def action() -> dict:
         label_id = body.label_id
         if body.new_label is not None:
@@ -636,7 +687,7 @@ def set_label(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: Label
 
 
 @router.delete("/transactions/{txn_id}/label")
-def clear_label(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+def clear_label(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id):
     def action() -> dict:
         owner_actions.clear_label(session, owner, txn_id)
         return {"id": txn_id, "label_id": None}
@@ -712,7 +763,7 @@ def set_owner_names(owner: Owner, session: Db, op: ops.OpDep, body: OwnerNames):
 
 
 @router.put("/people/{txn_id}/kind")
-def set_party_kind(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: PartyKind):
+def set_party_kind(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id, body: PartyKind):
     """It's me (self) or Investments (D-117, D-118): every payment of the person, both ways,
     is a transfer between the owner's accounts, or an investment. In no total."""
 
@@ -724,7 +775,7 @@ def set_party_kind(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: 
 
 
 @router.delete("/people/{txn_id}/kind")
-def clear_party_kind(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+def clear_party_kind(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id):
     """Undo It's me or Investments: the kind the person had before comes back."""
 
     def action() -> dict:
@@ -735,7 +786,7 @@ def clear_party_kind(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
 
 
 @router.put("/people/{txn_id}/suggestion")
-def dismiss_suggestion(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: PartyKind):
+def dismiss_suggestion(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id, body: PartyKind):
     """No to "Is this you?" or "Is this an investment?": not asked again. No total moves."""
 
     def action() -> dict:
@@ -816,7 +867,7 @@ def set_settings(owner: Owner, session: Db, op: ops.OpDep, body: Settings):
 
 
 @router.put("/people/{txn_id}/name")
-def name_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: PersonName):
+def name_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id, body: PersonName):
     """Name the person of this transaction (D-096)."""
 
     def action() -> dict:
@@ -827,7 +878,7 @@ def name_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: Per
 
 
 @router.delete("/people/{txn_id}/name")
-def clear_person_name(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+def clear_person_name(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id):
     def action() -> dict:
         owner_actions.clear_name(session, owner, txn_id)
         return {"id": txn_id, "name": None}
@@ -836,7 +887,7 @@ def clear_person_name(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
 
 
 @router.put("/people/{txn_id}/join")
-def join_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: PersonJoin):
+def join_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id, body: PersonJoin):
     """Same as: this transaction's person joins the person of `into`. Different answers
     without `role`: 409, nothing written."""
 
@@ -848,7 +899,7 @@ def join_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: int, body: Per
 
 
 @router.delete("/people/{txn_id}/join")
-def separate_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: int):
+def separate_person(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id):
     """Separate: this transaction's identifier leaves its person (the row keeps its end)."""
 
     def action() -> dict:

@@ -157,3 +157,26 @@ def test_recompute_and_reparse_never_join_stored_payments(run, db_engine, tmp_pa
             )
             roles = s.scalars(select(TxnDerived.role)).all()
         assert active == 4 and len(roles) == 4 and "duplicate" not in roles, argv
+
+
+def test_an_emoji_written_as_two_replacement_characters_is_one_sms(
+    client, db_engine, run, tmp_path, token
+) -> None:
+    """Open item 5c (D-150): the phone sends the emoji; SMS Backup & Restore writes it as two
+    U+FFFD. The laptop import afterwards adds nothing; a different text is still stored."""
+    from tests.smsdata import write_backup
+
+    phone = CARD.replace("TEST KIOSK", "TEST KIOSK \U0001f6a8")
+    laptop = CARD.replace("TEST KIOSK", "TEST KIOSK ��")
+    upload(client, token, sms(phone, n=1))
+    assert counts(db_engine) == (1, 1)
+    backup = write_backup(tmp_path / "x.xml", [("VM-HDFCBK-S", laptop, WHEN)])
+    run("import-sms", "--input", str(backup))
+    assert counts(db_engine) == (1, 1)
+    other = laptop.replace("Rs.33.00", "Rs.34.00")
+    run(
+        "import-sms",
+        "--input",
+        str(write_backup(tmp_path / "y.xml", [("VM-HDFCBK-S", other, WHEN)])),
+    )
+    assert counts(db_engine) == (2, 2)

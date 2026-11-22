@@ -325,3 +325,33 @@ def test_profile_shows_member_since_and_the_payments_it_spans(client, data) -> N
     info = s["profile"]["data"]
     times = sorted(t["time_utc"] for t in s["transactions"])
     assert info == {"payments": len(times), "first_utc": times[0], "last_utc": times[-1]}
+
+
+def test_the_snapshot_reads_do_not_grow_with_months(client, db_engine) -> None:
+    """D-150: every month's summary comes from rows read once, so one month and a year of them cost
+    the same number of statements (47 when measured)."""
+    from sqlalchemy import event
+
+    from tests.test_devices import UPI_SENT, WHEN, register, sms, upload
+
+    phone = register(client).json()["token"]
+
+    def statements() -> int:
+        body(client)  # fresh first
+        seen: list[str] = []
+
+        def listen(conn, cursor, statement, *args) -> None:
+            seen.append(statement)
+
+        event.listen(db_engine, "before_cursor_execute", listen)
+        body(client)
+        event.remove(db_engine, "before_cursor_execute", listen)
+        return len(seen)
+
+    upload(client, phone, sms(n=1))
+    one = statements()
+    for n in range(1, 12):
+        ref = UPI_SENT.replace("612300000002", f"61230000{n:04d}")
+        upload(client, phone, sms(ref, when=WHEN - timedelta(days=31 * n), n=n + 1))
+    assert len(body(client)["months"]) >= 10
+    assert statements() == one <= 55
