@@ -31,6 +31,7 @@ test('an answer is one write, waits offline, and takes the pair out of To-do at 
     demo: false,
     registerDevice: async () => ({ token: 'test-token' }),
     createInvite: async () => ({ code: 'TEST-CODE-0001' }),
+    exportFile: async () => new Blob(),
     deleteAccount: async () => ({ status: 200, detail: null, message: '' }),
     snapshot: async () => ({ status: 304 }),
     async send(req) {

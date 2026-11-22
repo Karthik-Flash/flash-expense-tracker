@@ -382,3 +382,10 @@ import or the phone; the Bank SMS sheet starts a first scan a day before it).
 - **Snapshot ETag**: `"v-<sha256>"` from the owner's data version (D-140), the IST day, the
   engine versions and the login's account block; a 304 builds nothing. Same data, same ETag;
   any write, upload or recompute gives a new one.
+## 5F additions (D-146)
+
+- `GET /api/v1/export?start=YYYY-MM-DD&end=YYYY-MM-DD&format=csv|xlsx`: the owner's
+  transactions of those IST days (both included; 422 for a reversed range or more than about
+  3 years) as a file built on the server, with `Content-Disposition: attachment`. CSV: the
+  Transactions columns; xlsx: a Transactions and a Summary sheet. Never SMS text or a
+  reference; formula-like text cells start with `'`.

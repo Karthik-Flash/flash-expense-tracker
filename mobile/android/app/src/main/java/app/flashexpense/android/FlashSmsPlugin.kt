@@ -198,6 +198,29 @@ class FlashSmsPlugin : Plugin() {
         call.resolve(statusObject())
     }
 
+    /** 5F (D-146): an export the app downloaded, written to the cache and offered through the
+     *  share sheet (a FileProvider content URI, read permission only). Older exports go. */
+    @PluginMethod
+    fun shareFile(call: PluginCall) {
+        val name = call.getString("name")?.takeIf { Regex("[A-Za-z0-9._-]{1,80}").matches(it) }
+            ?: return call.reject("a plain file name is needed")
+        val mime = call.getString("mime") ?: "application/octet-stream"
+        val data = call.getString("base64") ?: return call.reject("base64 is needed")
+        try {
+            val folder = java.io.File(context.cacheDir, "exports").apply { mkdirs() }
+            folder.listFiles()?.forEach { it.delete() } // only the newest export stays
+            val file = java.io.File(folder, name)
+            file.writeBytes(android.util.Base64.decode(data, android.util.Base64.DEFAULT))
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val send = Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            activity.startActivity(Intent.createChooser(send, name).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            call.resolve(JSObject().put("shared", true))
+        } catch (e: Exception) {
+            call.reject("could not share the file (${e.javaClass.simpleName})")
+        }
+    }
+
     /** "Copy diagnostics": the status and the last 100 events. Codes and counts only. */
     @PluginMethod
     fun diagnostics(call: PluginCall) {

@@ -49,7 +49,9 @@ deploy". **Phase 5B-2 done 23 Nov** (not pushed): the phone uploads a new bank S
 at once, keeps its place across sign-out, notifies new payments, and shows a status
 screen with an event log; a 304 snapshot without building it (D-139 to D-144;
 [docs/design/phase-5b2-phone.md](docs/design/phase-5b2-phone.md)). Owner steps and
-the phone test plan: cheat sheet, "After the 5B-2 deploy".
+the phone test plan: cheat sheet, "After the 5B-2 deploy". **5F part 1 done 23 Nov**
+(not pushed): an Insights tab with Export (CSV and Excel), Profile and Admin (D-146);
+Analytics and "Learn from the owner" still to come.
 History was rewritten on 21 Nov to drop AI attribution lines (D-109):
 `main` before 4H is `c216442` (was `076ee9f`); old SHAs in older notes map
 through [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md).
@@ -1136,6 +1138,13 @@ Also on record (NOTES only):
   Render deploying only after CI passes is the gate (D-050).
 
 ## Log
+
+### 2026-11-23: 5F part 1, Insights: Profile, Admin, Export
+
+- A fifth tab, Insights. Profile and Admin gather the existing settings and the member list.
+- Export: CSV or Excel (stdlib zipfile and XML) from `GET /api/v1/export`, download on the
+  web, the share sheet in the Android app (FileProvider) (D-146).
+- Not done yet: Analytics, and "Learn from the owner" (its spec was not in the prompt).
 
 ### 2026-11-23: 5B-2 paybacks, masked senders (reconcile-1.7.1)
 

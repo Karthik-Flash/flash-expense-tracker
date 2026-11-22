@@ -630,6 +630,16 @@ export class FakeApi implements Api {
     throw new ApiError(404, 'Not found.')
   }
 
+  /** As GET /export (5F): the demo's rows of the range as CSV (Excel is the server's). */
+  exportFile(start: string, end: string, format: 'csv' | 'xlsx'): Promise<Blob> {
+    return this.respond(() => {
+      const rows = this.visible().filter((r) => dayKey(r.time) >= start && dayKey(r.time) <= end)
+      const lines = ['Date,Name,Money,Amount', ...rows.map((r) => `${dayKey(r.time)},"${(r.name ?? '').replaceAll('"', '""')}",${r.direction === 'credit' ? 'in' : 'out'},${(r.amount / 100).toFixed(2)}`)]
+      const type = format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      return new Blob([lines.join('\r\n')], { type })
+    })
+  }
+
   /** As POST /invites (5C): a demo code, shown once. */
   createInvite(): Promise<{ code: string }> {
     return this.respond(() => {

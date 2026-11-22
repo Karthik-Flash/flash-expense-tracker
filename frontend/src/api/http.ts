@@ -116,6 +116,12 @@ export class HttpApi implements Api {
     return { token: answer.token }
   }
 
+  async exportFile(start: string, end: string, format: 'csv' | 'xlsx'): Promise<Blob> {
+    const query = new URLSearchParams({ start, end, format }).toString()
+    const response = await this.request('GET', `/export?${query}`, { headers: { [HEADER.accept]: '*/*' }, signal: AbortSignal.timeout(90_000) })
+    return response.blob()
+  }
+
   async createInvite(): Promise<{ code: string }> {
     const response = await this.request('POST', '/invites', { signal: AbortSignal.timeout(90_000) })
     const answer = (await response.json().catch(() => null)) as { code?: unknown } | null

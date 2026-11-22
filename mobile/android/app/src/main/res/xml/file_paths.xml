@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 5F (D-146): the only folder the FileProvider shares: exports in the app's cache. -->
+<paths>
+    <cache-path name="exports" path="exports/" />
+</paths>

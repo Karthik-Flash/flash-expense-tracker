@@ -68,6 +68,7 @@ CASES: dict[tuple[str, str], tuple[object, bool]] = {
     ("DELETE", "/api/v1/invites/{invite_id}"): (None, False),
     ("GET", "/api/v1/members"): (None, False),
     ("POST", "/api/v1/account/delete"): ({"confirm": "DELETE"}, False),  # not a fresh sign-in
+    ("GET", "/api/v1/export"): (None, True),  # 5F: B's own rows only (markers checked)
 }
 
 
@@ -136,12 +137,14 @@ def test_b_reaches_nothing_of_a_on_any_route(client, db_engine, two_users) -> No
     ids = two_users
     found = routes()
     assert found == set(CASES), f"routes without a case: {sorted(found - set(CASES))}"
-    assert len(found) == 40
+    assert len(found) == 41
     before = a_view(client)
     b = bearer(token(SUB_B))
     for (method, template), (body, own) in sorted(CASES.items()):
         path = fill(template, ids)
         params = {"month": "2026-01"} if template.endswith("/summary") else None
+        if template.endswith("/export"):
+            params = {"start": "2025-01-01", "end": "2027-12-31", "format": "csv"}  # plain text
         answer = client.request(
             method, path, headers=b | key(), json=body_for(body, ids), params=params
         )  # noqa: E501

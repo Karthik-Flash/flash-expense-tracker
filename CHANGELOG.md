@@ -4,6 +4,12 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 5F, part 1: Insights (23 Nov 2026)
+
+- A new Insights tab. Export a month or any dates as Excel or CSV, built on the server;
+  on the phone it opens the share sheet (D-146).
+- Profile and Admin gather your settings and People who use Flash in one place.
+
 ## Phase 5B-2: the phone just works (23 Nov 2026)
 
 - A new bank SMS is sent at once, also when an earlier try is waiting; every app start and
