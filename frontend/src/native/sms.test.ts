@@ -7,7 +7,7 @@ import { afterEach, test } from 'node:test'
 
 import type { Api, SendRequest } from '../api/client.ts'
 import { connectPhone, isNativeApp, loadSms, setPluginForTests, signOutPhone, startSms, type FlashSms, type OpenAt } from './sms.ts'
-import { bucketText, eventText, needsBatteryHint, NOT_NATIVE, periodStart, phoneText, smsStep, statusRows, type SmsStatus } from './smsState.ts'
+import { bucketText, eventText, firstRun, needsBatteryHint, NOT_NATIVE, periodStart, phoneText, smsStep, statusRows, type SmsStatus } from './smsState.ts'
 
 const ON: SmsStatus = {
   ...NOT_NATIVE,
@@ -222,4 +222,16 @@ test('5B-2: the status in plain words, events and the standby bucket', () => {
   assert.equal(bucketText(undefined), '')
   assert.equal(phoneText({ ...ON, connected: false, signedOut: true }), 'signed out (reconnects at sign-in)')
   assert.match(eventText({ at: Date.UTC(2026, 10, 22, 8, 35), type: 'sms_live', detail: 'HDFCBK' }), /14:05 · sms live · HDFCBK$/)
+})
+test('premium F: the first-run checklist ticks itself and knows a browser from the app', () => {
+  const none = { devices: [], sms: { newest_utc: null } }
+  assert.deepEqual(firstRun(NOT_NATIVE, none).map((i) => [i.key, i.done]), [['sms', false], ['sync', false]])
+  const web = { devices: [{ revoked_utc: null }], sms: { newest_utc: '2026-11-20T10:00:00Z' } }
+  assert.ok(firstRun(NOT_NATIVE, web).every((i) => i.done))
+  const fresh = { ...ON, cursorMs: undefined, notifications: 'prompt' as const, batteryUnrestricted: false, lastUpload: undefined }
+  assert.deepEqual(firstRun(fresh, none).map((i) => [i.key, i.done]), [['sms', false], ['notifications', false], ['battery', false], ['sync', false]])
+  const done = { ...ON, notifications: 'granted' as const, batteryUnrestricted: true, lastUpload: { at: 1, stored: 1 } }
+  assert.ok(firstRun(done, none).every((i) => i.done))
+  // An app from before 5B-2 reports no notification state: that item is not asked.
+  assert.deepEqual(firstRun({ ...done, notifications: undefined }, none).map((i) => i.key), ['sms', 'battery', 'sync'])
 })

@@ -1,8 +1,9 @@
 // Insights (5F): Analytics (D-148), Export, Profile, and for the admin People who use Flash. Every figure and
 // every file comes from the server (D-088, D-146); this screen only lays it out.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
+import { DEMO } from '../api/index.ts'
 import { freshnessLine, useData, useSnapshot } from '../data/store.ts'
 import { fileName, MIME, PRESETS, rangeOf, type Preset } from '../exportRange.ts'
 import { dayLabel, fullLabel, today } from '../lib/dates.ts'
@@ -47,6 +48,7 @@ export function Insights() {
                 <Link onClick={go('delete')} title="Delete my account" detail="Everything of yours, for good" />
                 <Link onClick={signOut} title="Sign out" detail={s.account?.email ?? ''} />
               </Section>
+              <About go={go} />
               {admin && (
                 <Section title="Admin">
                   <Link
@@ -190,6 +192,50 @@ function Rules({ rules }: { rules: Rule[] }) {
       )}
       {failed && <p className="mt-1 text-xs text-danger" role="alert">Could not undo {failed.item}: {failed.message ?? 'try again from Speed and sync'}.</p>}
     </div>
+  )
+}
+
+const API_URL: string = import.meta.env.VITE_API_URL ?? ''
+
+/** About (premium F): this app's version and versionCode, the server's version (GET /health,
+ *  public), and what Flash keeps, in plain words. */
+function About({ go }: { go: (sheet: SheetName) => () => void }) {
+  const demo = DEMO
+  const [server, setServer] = useState(demo ? 'demo' : '–')
+  useEffect(() => {
+    if (!API_URL || demo) return
+    let live = true
+    fetch(`${API_URL.replace(/\/+$/, '')}/health`, { signal: AbortSignal.timeout(90_000) })
+      .then((r) => r.json())
+      .then((b: { version?: unknown }) => live && typeof b.version === 'string' && setServer(b.version))
+      .catch(() => live && setServer('not reachable'))
+    return () => {
+      live = false
+    }
+  }, [demo])
+  const rows: [string, string][] = [
+    ['App', __VERSION_LINE__],
+    ['Android versionCode', __VERSION_CODE__ || 'web app'],
+    ['Server', server],
+  ]
+  return (
+    <Section title="About">
+      <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-1 px-4 pt-3 text-sm">
+        {rows.map(([term, value]) => (
+          <div key={term} className="contents">
+            <dt className="text-muted wrap-break-word">{term}</dt>
+            <dd className="min-w-0 wrap-break-word tabular-nums">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="space-y-2 px-4 py-3 text-sm text-muted">
+        <p>Flash keeps your banks' payment SMS, what it reads from them and your answers, on a server only you can reach. Every other SMS stays on your phone and is never read or sent.</p>
+        <p>
+          Delete my account removes all of it for good.{' '}
+          <button type="button" className="inline-flex min-h-11 min-w-11 items-center text-accent" onClick={go('privacy')}>What Flash stores</button>
+        </p>
+      </div>
+    </Section>
   )
 }
 

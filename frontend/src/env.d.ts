@@ -15,3 +15,5 @@ interface ImportMeta {
 
 /** "Version 0.1.0 · build 1a2b3c4", set in vite.config.ts (D-087). */
 declare const __VERSION_LINE__: string
+/** The Android versionCode ("214"), empty on the web (premium F). */
+declare const __VERSION_CODE__: string

@@ -153,3 +153,27 @@ export function eventText(e: { at: number; type: string; detail: string }): stri
 export function needsBatteryHint(s: SmsStatus): boolean {
   return s.available && s.connected && !s.revoked && !s.batteryUnrestricted
 }
+
+/** Premium F: the first-run checklist on Home. In the Android app: Bank SMS on, payment
+ *  notifications allowed, battery Unrestricted, a first sync; in a browser only what it can
+ *  know (a phone set up, a first sync). Each item ticks itself from the status and the
+ *  snapshot; Home hides the list once every item is done. */
+export type CheckKey = 'sms' | 'notifications' | 'battery' | 'sync'
+
+export function firstRun(
+  s: SmsStatus,
+  data: { devices?: { revoked_utc: string | null }[]; sms?: { newest_utc: string | null } } | null,
+): { key: CheckKey; label: string; done: boolean }[] {
+  const synced = Boolean(data?.sms?.newest_utc) || Boolean(s.lastUpload)
+  if (!s.available) {
+    return [
+      { key: 'sms', label: 'Set up Bank SMS in the Android app', done: (data?.devices ?? []).some((d) => !d.revoked_utc) },
+      { key: 'sync', label: 'First bank SMS synced', done: synced },
+    ]
+  }
+  const items: { key: CheckKey; label: string; done: boolean }[] = [{ key: 'sms', label: 'Set up Bank SMS', done: smsStep(s) === 'on' }]
+  if (s.notifications !== undefined) items.push({ key: 'notifications', label: 'Allow payment notifications', done: s.notifications === 'granted' })
+  items.push({ key: 'battery', label: 'Battery: Unrestricted', done: s.batteryUnrestricted })
+  items.push({ key: 'sync', label: 'First bank SMS synced', done: synced })
+  return items
+}
