@@ -22,6 +22,11 @@
   statement-check --file <path> [--file <path> ...] [--details]
   statement-names --file <path> [--file <path> ...] [--show | --apply]
   statement-import --file <path> [--file <path> ...] [--apply]
+  sender-survey --contains <text> [--input <file|folder>]
+  auth-cleanup
+
+Every command works on one owner's data: --owner <owner_id> (before the command), else the
+admin in app_users (5C, D-130), else OWNER_ID.
 
 Uses DATABASE_URL (backend/.env or the environment). Prints counts, ids,
 versions and timings only: never bodies, names, amounts, references or
@@ -37,14 +42,17 @@ import json
 import random
 import sys
 import time
+import uuid
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.api import supabase_admin
 from app.config import settings
 from app.engine import statement_check, statement_hdfc
 from app.engine.categorise import CATEGORIES, CATEGORISE_VERSION, SPENDING_ROLES, UNCATEGORISED
@@ -61,8 +69,11 @@ from app.engine.reconcile import (
     inferred_accounts,
     ist_month,
 )
-from app.importers.sms_backup import import_sms
+from app.engine.senders import SENDER_BANKS
+from app.importers.sms_backup import import_sms, input_files
 from app.models import (
+    AppUser,
+    AuthDeletion,
     DeriveRun,
     DuplicateCandidate,
     ImportBatch,
@@ -82,7 +93,7 @@ from app.models import (
     TxnLabel,
     TxnLink,
 )
-from app.pipeline import payback_audit, sample_export, statement, survey
+from app.pipeline import account, payback_audit, sample_export, statement, survey
 from app.pipeline.owner_actions import ActionError, answer_sender, senders
 from app.pipeline.owner_load import (
     OwnerFileError,
@@ -1313,6 +1324,56 @@ def cmd_bank_survey(session: Session, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sender_survey(session: Session, args: argparse.Namespace) -> int:
+    """5C. Sender codes holding a text, stored and skipped as unregistered: counts only."""
+    paths = input_files(args.input) if args.input else []
+    found = survey.sender_survey(session, settings.owner_id, args.contains, paths)
+    registered = set(SENDER_BANKS)
+    print(f"sender-survey (counts only): sender codes containing {args.contains.upper()}")
+    if not args.input:
+        print("  (stored messages only: --input <backup> adds the ones import-sms skips)")
+    print(f"  {'code':<20}{'registered':>11}{'stored':>8}{'skipped':>9}"
+          f"{'debit':>7}{'credit':>8}{'other':>7}")  # fmt: skip
+    for code in sorted(found, key=lambda c: (c == survey.NOT_A_CODE, c)):
+        c = found[code]
+        reg = "-" if code == survey.NOT_A_CODE else "yes" if code in registered else "NO"
+        print(f"  {code:<20}{reg:>11}{c['stored']:>8}{c['skipped']:>9}"
+              f"{c['debit']:>7}{c['credit']:>8}{c['other']:>7}")  # fmt: skip
+    if not found:
+        print("  none")
+    return 0
+
+
+def cmd_auth_cleanup(session: Session, args: argparse.Namespace) -> int:
+    """5C (D-131). Retry deleting the logins of deleted accounts. Counts and error types."""
+    pending = list(session.scalars(select(AuthDeletion.auth_uid).order_by(AuthDeletion.auth_uid)))
+    done, errors = 0, Counter()
+    for uid in pending:
+        if account.finish_auth(session, uid, supabase_admin.delete_user):
+            done += 1
+        else:
+            errors[session.get(AuthDeletion, uid).last_error or "?"] += 1
+    left = len(pending) - done
+    print(f"auth-cleanup: pending {len(pending)}, deleted {done}, still pending {left}")
+    for code, n in sorted(errors.items()):
+        print(f"  {code}: {n}")
+    return 0 if done == len(pending) else 1
+
+
+def admin_owner(session: Session) -> uuid.UUID | None:
+    """The admin's owner_id (D-129), the default for owner commands; None before 0015."""
+    try:
+        return session.scalar(
+            select(AppUser.owner_id)
+            .where(AppUser.role == "admin")
+            .order_by(AppUser.created_at, AppUser.auth_uid)
+            .limit(1)
+        )
+    except SQLAlchemyError:
+        session.rollback()
+        return None
+
+
 def cmd_generic_preview(session: Session, args: argparse.Namespace) -> int:
     """D-101. What the generic parser would accept and refuse. Counts only, writes nothing."""
     found = survey.generic_preview(session, settings.owner_id)
@@ -1379,7 +1440,15 @@ def cmd_redact_sample(session: Session, args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description=__doc__.split("\n")[0])
+    parser.add_argument(
+        "--owner", type=uuid.UUID, metavar="OWNER_ID",
+        help="whose data (before the command); default: the admin, else OWNER_ID",
+    )  # fmt: skip
     sub = parser.add_subparsers(dest="command", required=True)
+    ss = sub.add_parser("sender-survey", help="sender codes holding a text (counts only)")
+    ss.add_argument("--contains", required=True, help="text in the sender code, e.g. HDFC")
+    ss.add_argument("--input", type=Path, help="the SMS backup: adds the skipped messages")
+    sub.add_parser("auth-cleanup", help="retry deleting the logins of deleted accounts")
     imp = sub.add_parser("import-sms", help="import an SMS Backup & Restore file or folder")
     imp.add_argument("--input", type=Path, required=True)
     imp.add_argument("--dry-run", action="store_true", help="run everything, save nothing")
@@ -1501,6 +1570,8 @@ COMMANDS = {
     "statement-check": cmd_statement_check,
     "statement-import": cmd_statement_import,
     "statement-names": cmd_statement_names,
+    "sender-survey": cmd_sender_survey,
+    "auth-cleanup": cmd_auth_cleanup,
 }
 
 
@@ -1512,7 +1583,13 @@ def main(argv: list[str] | None = None, session_factory=None) -> int:
     if session_factory is None:
         from app.db import SessionLocal as session_factory
     with session_factory() as session:
-        return COMMANDS[args.command](session, args) or 0
+        # Whose data (5C, D-130): --owner, else the admin in app_users, else OWNER_ID.
+        saved = settings.owner_id
+        settings.owner_id = args.owner or admin_owner(session) or saved
+        try:
+            return COMMANDS[args.command](session, args) or 0
+        finally:
+            settings.owner_id = saved
 
 
 if __name__ == "__main__":

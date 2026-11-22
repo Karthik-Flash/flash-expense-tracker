@@ -589,8 +589,9 @@ def test_recompute_uses_a_fixed_number_of_statements(loaded: str, run, db_engine
             event.remove(db_engine, "before_cursor_execute", record)
         return list(statements)
 
+    # One more SELECT than the recompute itself: the CLI finds the admin to work for (5C).
     quiet = run_counted()  # nothing to change: reads only
-    assert not {"INSERT", "UPDATE", "DELETE"} & set(quiet) and len(quiet) <= 14
+    assert not {"INSERT", "UPDATE", "DELETE"} & set(quiet) and len(quiet) <= 15
     with sessionmaker(db_engine)() as s:  # every kind of change at once
         ids = list(s.scalars(select(TxnDerived.transaction_id).order_by(TxnDerived.transaction_id)))
         s.execute(delete(TxnDerived).where(TxnDerived.transaction_id.in_(ids[:10])))
@@ -605,6 +606,6 @@ def test_recompute_uses_a_fixed_number_of_statements(loaded: str, run, db_engine
     busy = run_counted()
     writes = [s for s in busy if s in ("INSERT", "UPDATE", "DELETE")]
     lock = db_engine.dialect.name == "postgresql"  # the advisory lock is one more statement
-    assert len(busy) == 17 + lock and sorted(writes) == ["DELETE", "DELETE"] + ["INSERT"] * 3, (
+    assert len(busy) == 18 + lock and sorted(writes) == ["DELETE", "DELETE"] + ["INSERT"] * 3, (
         " ".join(busy)
     )

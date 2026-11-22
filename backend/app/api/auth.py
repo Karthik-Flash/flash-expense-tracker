@@ -5,8 +5,10 @@ Tokens are ES256 only, checked against the project's public keys
 <SUPABASE_URL>/auth/v1 and audience "authenticated". The keys are cached and fetched
 again when a token names an unknown key id (at most once a minute).
 
-AUTH_USERS maps the token's sub to an owner_id. Missing settings: 503. Missing or bad
-token: 401. A valid token whose user is not in the map: 403.
+Since 5C (D-129) the token's sub is looked up in app_users (owner_id, role admin or member);
+an AUTH_USERS entry ("<sub>:<owner_id>") with no row yet is added as admin on its first
+request. Missing settings (or a malformed AUTH_USERS): 503. Missing or bad token: 401. A
+valid token whose user is in neither: 403.
 """
 
 import json
@@ -14,12 +16,18 @@ import threading
 import time
 import urllib.request
 import uuid
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import jwt
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.db import get_session
+from app.models import AppUser
 
 ALGORITHM = "ES256"
 AUDIENCE = "authenticated"
@@ -86,16 +94,84 @@ def verify(token: str, base_url: str) -> dict:
         raise _unauthorised("invalid token") from None
 
 
-def current_owner(authorization: Annotated[str | None, Header()] = None) -> uuid.UUID:
-    """FastAPI dependency: the owner_id of the logged-in user."""
-    base_url, users = settings.supabase_url.rstrip("/"), settings.auth_user_map
-    if not base_url or not users:
+@dataclass(frozen=True)
+class Caller:
+    """Who is asking: the login, the owner_id its data belongs to, its role, its claims."""
+
+    auth_uid: str
+    owner_id: uuid.UUID
+    role: str
+    claims: dict = field(compare=False, repr=False)
+
+    @property
+    def admin(self) -> bool:
+        return self.role == "admin"
+
+
+SEEN_EVERY = timedelta(minutes=10)  # app_users.last_seen_at ("last sync") moves in these steps
+
+
+def _app_user(session: Session, sub: str, claims: dict) -> AppUser | None:
+    """The login's app_users row. An AUTH_USERS entry with no row yet becomes one, as admin
+    (D-129): the seed on the first request, and a fallback until the owner removes it."""
+    row = session.get(AppUser, sub)
+    if row is not None:
+        return row
+    owner = (settings.auth_user_map or {}).get(sub)
+    if owner is None:
+        return None
+    email = claims.get("email") if isinstance(claims.get("email"), str) else None
+    session.add(AppUser(auth_uid=sub, owner_id=owner, role="admin", email=email))
+    try:
+        session.commit()
+    except IntegrityError:  # a parallel first request added it
+        session.rollback()
+    return session.get(AppUser, sub)
+
+
+def current_user(
+    session: Annotated[Session, Depends(get_session)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> Caller:
+    """FastAPI dependency: the logged-in user, from app_users (D-129)."""
+    base_url = settings.supabase_url.rstrip("/")
+    if not base_url or settings.auth_user_map is None:
         raise HTTPException(503, "login is not configured")
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise _unauthorised("missing bearer token")
     claims = verify(token.strip(), base_url)
-    owner = users.get(str(claims["sub"]))
-    if owner is None:
+    row = _app_user(session, str(claims["sub"]), claims)
+    if row is None:
         raise HTTPException(403, "this user has no access")
-    return owner
+    now = datetime.now(UTC)
+    if row.last_seen_at is None or now - row.last_seen_at >= SEEN_EVERY:
+        row.last_seen_at = now
+        session.commit()
+    return Caller(row.auth_uid, row.owner_id, row.role, claims)
+
+
+def current_owner(caller: Annotated[Caller, Depends(current_user)]) -> uuid.UUID:
+    """FastAPI dependency: the owner_id of the logged-in user."""
+    return caller.owner_id
+
+
+def require_admin(caller: Annotated[Caller, Depends(current_user)]) -> Caller:
+    if not caller.admin:
+        raise HTTPException(403, "only the admin can do this")
+    return caller
+
+
+FRESH = timedelta(minutes=10)
+
+
+def fresh_login(claims: dict, now: datetime | None = None) -> bool:
+    """The password was entered in the last 10 minutes: the token's `amr` holds a password
+    entry with that timestamp (a refreshed token keeps the sign-in time; D-131)."""
+    now = now or datetime.now(UTC)
+    for entry in claims.get("amr") or ():
+        if isinstance(entry, dict) and entry.get("method") == "password":
+            at = entry.get("timestamp")
+            if isinstance(at, int | float) and now - datetime.fromtimestamp(at, UTC) <= FRESH:
+                return True
+    return False

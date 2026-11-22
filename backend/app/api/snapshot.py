@@ -15,8 +15,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Response
 from sqlalchemy import select
 
-from app.api import devices, v1
-from app.api.auth import current_owner
+from app.api import devices, users, v1
+from app.api.auth import Caller, current_owner, current_user
 from app.engine.categorise import UNCATEGORISED
 from app.engine.reconcile import COUNTED, IST
 from app.models import Label, OwnerLinkDecision, Transaction, TxnLink
@@ -187,8 +187,8 @@ def transfers(session, owner) -> list[dict]:
     return sorted(out, key=lambda x: (x["debit_time_utc"], x["debit"]), reverse=True)
 
 
-def build(session, owner) -> dict:
-    """The snapshot document, without `generated_at`."""
+def build(session, owner, caller: Caller | None = None) -> dict:
+    """The snapshot document, without `generated_at`. `caller`: whose login asks (5C)."""
     stale, last = v1.freshness(session, owner)
     query = v1._items(owner).order_by(Transaction.txn_time_utc.desc(), Transaction.id.desc())
     items = [v1._item(owner, *row) for row in session.execute(query)]
@@ -234,7 +234,20 @@ def build(session, owner) -> dict:
         "labels": [v1.label_detail(owner, session, i) for i in label_ids],
         "people": v1.people_directory(session, owner),
         "categories": v1.categories(owner),
-    }
+    } | account(session, caller)
+
+
+def account(session, caller: Caller | None) -> dict:
+    """5C (D-128, D-129): the login's role; for the admin, the invites and the members."""
+    if caller is None:
+        return {}
+    out: dict = {"account": {"role": caller.role, "email": caller.claims.get("email")}}
+    if caller.admin:
+        out["admin"] = {
+            "invites": users.invites_of(session, caller.owner_id),
+            "members": users.members(session),
+        }
+    return out
 
 
 def canonical(document: dict) -> bytes:
@@ -248,10 +261,11 @@ def etag_of(document: dict) -> str:
 @router.get("/sync/snapshot", dependencies=v1.Fresh)
 def snapshot(
     owner: v1.Owner,
+    caller: Annotated[Caller, Depends(current_user)],
     session: v1.Db,
     if_none_match: Annotated[str | None, Header()] = None,
 ) -> Response:
-    document = build(session, owner)
+    document = build(session, owner, caller)
     etag = etag_of(document)
     headers = {"ETag": etag, "Cache-Control": "no-cache"}
     if if_none_match and etag in (t.strip().removeprefix("W/") for t in if_none_match.split(",")):

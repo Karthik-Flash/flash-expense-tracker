@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.engine import ParsedMessage
 from app.engine.parsers import GENERIC_BANKS, generic
-from app.engine.senders import SENDER_BANKS, bank_for
+from app.engine.senders import SENDER_BANKS, bank_for, parse_sender
 from app.models import ParseResult, RawMessage
 
 MONEY_KINDS = frozenset({"debit", "credit", "card", "atm"})
@@ -77,6 +77,50 @@ def bank_survey(session: Session, owner_id: uuid.UUID) -> dict:
             for kind, counts in kinds.items():
                 folded[OTHER][kind] += counts
     return {"table": folded, "foreign": foreign}
+
+
+def _kind3(body: str) -> str:
+    """debit, credit or other: the bank survey's keyword kinds, folded (never for totals)."""
+    kind = generic.kind_of(body)
+    if kind in ("debit", "card", "atm"):
+        return "debit"
+    return "credit" if kind == "credit" else "other"
+
+
+def sender_code(core: str) -> bool:
+    """A sender ID (letters in it), not a phone number: only those are printed (D-100)."""
+    return sum(c.isalpha() for c in core) >= 3
+
+
+NOT_A_CODE = "(not a sender code)"
+
+
+def sender_survey(
+    session: Session, owner_id: uuid.UUID, contains: str, paths: list | None = None
+) -> dict[str, Counter]:
+    """5C: sender codes holding `contains`, over the stored messages and, with `paths` (the
+    SMS backup), the messages import-sms skips as unregistered_sender. Per code: registered,
+    stored, skipped, and debit / credit / other by keywords. Bodies are read, never kept."""
+    from app.importers.sms_backup import iter_sms, skip_reason  # the importer's own rules
+
+    text = contains.upper()
+    out: dict[str, Counter] = defaultdict(Counter)
+
+    def count(core: str, body: str, where: str) -> None:
+        key = core if sender_code(core) else NOT_A_CODE
+        out[key][where] += 1
+        out[key][_kind3(body)] += 1
+
+    for core, body, *_ in _rows(session, owner_id):
+        if text in core:
+            count(core, body, "stored")
+    for sms in iter_sms(paths or []):
+        if sms is None or skip_reason(sms) != "unregistered_sender":
+            continue
+        core = parse_sender(sms["address"])[0]
+        if text in core:
+            count(core, sms["body"], "skipped")
+    return out
 
 
 def generic_preview(session: Session, owner_id: uuid.UUID) -> dict[str, dict[str, Counter]]:

@@ -141,7 +141,7 @@ def test_the_device_token_calls_nothing_but_the_ingest(client, phone) -> None:
     paths = app.openapi()["paths"]
     routes = [(m, p) for p, ops in paths.items() if p.startswith("/api/v1") for m in ops]
     for method, path in routes:
-        if path == INGEST:
+        if path in (INGEST, "/api/v1/signup"):  # sign-up takes no token at all (5C)
             continue
         url = re.sub(r"\{[^}]+\}", str(uuid.uuid4()) if "device" in path else "1", path)
         answer = client.request(method.upper(), url, headers=bearer(phone), json={})

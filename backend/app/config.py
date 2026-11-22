@@ -29,14 +29,19 @@ class Settings(BaseSettings):
     owner_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
     # Supabase project URL (https://<ref>.supabase.co): login tokens are checked against its keys.
     supabase_url: str = ""
-    # Who may log in: "<auth user id>:<owner id>" pairs, comma-separated. Unset: data routes 503.
+    # The owner's login: "<auth user id>:<owner id>" pairs, comma-separated (D-078). Since 5C
+    # (D-129) logins live in app_users; an entry here is added there as an admin on its first
+    # request, so it is the seed and a fallback until the owner removes it. Malformed: 503.
     auth_users: str = ""
+    # The project's secret API key (sb_secret_..., D-128): server only, for the Auth Admin API
+    # (create a member's login from an invite, delete a login). Never logged, never sent out.
+    supabase_secret_key: str = ""
 
     _normalize_url = field_validator("database_url")(normalize_database_url)
 
     @property
     def auth_user_map(self) -> dict[str, UUID] | None:
-        """AUTH_USERS as {auth user id: owner id}; None when unset or malformed."""
+        """AUTH_USERS as {auth user id: owner id}; {} when unset, None when malformed."""
         out = {}
         for pair in filter(None, (p.strip() for p in self.auth_users.split(","))):
             sub, sep, owner = pair.partition(":")
@@ -46,7 +51,7 @@ class Settings(BaseSettings):
                 out[sub.strip()] = UUID(owner.strip())
             except ValueError:
                 return None
-        return out or None
+        return out
 
     @property
     def cors_origin_list(self) -> list[str]:
