@@ -1,7 +1,7 @@
 // Everything the owner sees lives in the URL hash, so a reload or a deep link restores it:
 // "#/home/category/people/Rohit%20V?m=2026-11&txn=1042". Pure, so it is tested in Node.
 
-export const TABS = ['home', 'transactions', 'todo', 'labels'] as const
+export const TABS = ['home', 'transactions', 'insights', 'todo', 'labels'] as const
 export type Tab = (typeof TABS)[number] | 'dev'
 /** App-wide sheets, a flag in the URL: "?speed" (Speed), "?unsaved" (not saved), "?sms" (Bank
  *  SMS); 5C: "?settings", "?members" (People who use Flash), "?delete" (Delete my account),

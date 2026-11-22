@@ -1897,3 +1897,22 @@ guess (`CR_person_signal`, still To confirm only) and the display links; joined 
 match as before; nothing matches on amount alone. Owner answers, Paid back, Net and Spent are
 untouched. Merchant keys and owner data do not change, so the recompute's key-change stop
 cannot fire.
+
+## D-146 Insights tab: Export, Profile, Admin (2026-11-23)
+
+5F (part). A fifth bottom tab, Insights (Home, Transactions, Insights, To-do, Labels; tab
+names at most 2.8vw so five fit 360 px). Export: `GET /api/v1/export?start=&end=&format=`
+(IST days, both included, at most about 3 years; a read, scoped to the login's owner, in the
+isolation test) builds on the server a CSV (UTF-8 with a BOM so Excel opens ₹ and names) or
+an Excel workbook written with `zipfile` and XML from the standard library: a Transactions
+sheet (date and time in IST, name, category, label, counted as, money in or out, the amount
+as a number, bank, account last 4, confirmed by you, a note) and a Summary sheet (Spent,
+Invested, Paid back, Net, Income, Spent by category, from the same totals as /summary and the
+owner's setting); bold header, frozen first row, column widths, an Indian-grouping number
+format. Never raw SMS text or a reference. A text cell starting with = + - @, a tab or a
+carriage return gets a leading ' (formula injection). On the web the file downloads; in the
+Android app it is written to the cache and opened in the share sheet through a FileProvider
+(`<cache-path>` exports only, read permission only; only the newest export is kept). Profile
+holds the owner's names, Bank SMS, Count investments in Spent, What Flash stores, Speed and
+sync, Delete my account and Sign out; Admin (the admin only) opens People who use Flash. No
+new package.

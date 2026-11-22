@@ -35,6 +35,17 @@
 
         </activity>
 
+        <!-- 5F (D-146): an export in the cache, shared through the Android share sheet. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- New SMS. Only the system can send this broadcast (BROADCAST_SMS). -->
         <receiver
             android:name=".SmsReceiver"

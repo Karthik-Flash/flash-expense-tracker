@@ -37,6 +37,9 @@ export interface Api {
   /** POST /account/delete (5C, D-131): needs a sign-in from the last 10 minutes. The
    *  server's answer as it is: 200, or 409 fresh_login_required / admin_cannot_delete. */
   deleteAccount(): Promise<SendAnswer>
+  /** GET /export (5F, D-146): the transactions of IST days `start` to `end` as a file the
+   *  server built. Online only; nothing is written. */
+  exportFile(start: string, end: string, format: 'csv' | 'xlsx'): Promise<Blob>
 }
 
 export class ApiError extends Error {

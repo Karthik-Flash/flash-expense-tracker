@@ -27,6 +27,7 @@ export interface FlashSms {
   syncNow(): Promise<SmsStatus>
   takeOpen(): Promise<{ open: OpenAt | null }>
   diagnostics(): Promise<{ text: string }>
+  shareFile(options: { name: string; mime: string; base64: string }): Promise<{ shared: boolean }>
   addListener(event: 'uploaded', listener: (e: { stored: number }) => void): Promise<PluginListenerHandle>
   addListener(event: 'open', listener: (e: OpenAt) => void): Promise<PluginListenerHandle>
 }
@@ -132,6 +133,12 @@ export async function openSleepingApps(): Promise<void> {
 /** "Copy diagnostics": the status and the last 100 events, codes and counts only (D-142). */
 export async function diagnostics(): Promise<string> {
   return plugin ? (await plugin.diagnostics()).text : ''
+}
+
+/** 5F (D-146): a file through the Android share sheet; false in a browser. */
+export async function shareFile(name: string, mime: string, base64: string): Promise<boolean> {
+  if (!plugin) return false
+  return (await plugin.shareFile({ name, mime, base64 })).shared
 }
 
 /** Sign-out (D-122; 5B-2, D-143): revoke this phone on the server (best effort, 5 s), then

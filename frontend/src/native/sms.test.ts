@@ -101,6 +101,7 @@ function fakePlugin(start: SmsStatus, firstOpen: OpenAt | null = null) {
       return { open }
     },
     diagnostics: async () => ({ text: 'Flash diagnostics' }),
+    shareFile: async () => ({ shared: true }),
     addListener: (async (event: string, f: (e: never) => void) => {
       if (event === 'open') opener = f as (e: OpenAt) => void
       else listener = f as (e: { stored: number }) => void
@@ -122,6 +123,7 @@ function api(sendFails = false) {
       return { status: 200, detail: null, message: '' }
     },
     createInvite: async () => ({ code: 'TEST-CODE-0001' }),
+    exportFile: async () => new Blob(),
     deleteAccount: async () => ({ status: 200, detail: null, message: '' }),
     async registerDevice(id, name) {
       registered.push([id, name])

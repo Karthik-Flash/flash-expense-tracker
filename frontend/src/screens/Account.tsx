@@ -37,7 +37,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
 
 /** "Count investments in Spent" (D-136), off by default; saved through the outbox. Only
  *  investments you confirmed move; ones still to confirm are in Spent either way. */
-function InvestmentsSetting({ server }: { server: Settings | undefined }) {
+export function InvestmentsSetting({ server }: { server: Settings | undefined }) {
   const { ops } = useOutbox()
   const on = shownSettings(ops, server).count_investments_in_spent
   const mark = settingsMark(ops)

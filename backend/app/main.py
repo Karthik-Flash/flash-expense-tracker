@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app import __version__
-from app.api import devices, health, snapshot, users, v1
+from app.api import devices, export, health, snapshot, users, v1
 from app.config import settings
 from app.requestlog import RequestLog
 
@@ -53,3 +53,4 @@ app.include_router(v1.router)
 app.include_router(snapshot.router)
 app.include_router(devices.router)
 app.include_router(users.router)
+app.include_router(export.router)
