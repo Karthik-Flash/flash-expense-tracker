@@ -20,7 +20,7 @@ from app.api.auth import Caller, current_owner, current_user
 from app.engine.categorise import UNCATEGORISED
 from app.engine.credits import PaybackRow, payback_links
 from app.engine.reconcile import IST, counted
-from app.models import Label, OwnerLinkDecision, Transaction, TxnLink
+from app.models import Label, OwnerLinkDecision, Transaction, TxnDerived, TxnLink
 from app.pipeline import owner_actions, statement, version
 from app.pipeline.recompute import VERSIONS
 
@@ -151,13 +151,25 @@ def todo_merchants(items: list[dict]) -> tuple[list[dict], int]:
     return list(groups.values()), unnamed
 
 
-def paybacks(items: list[dict]) -> list[dict]:
+def upi_ids(session, owner) -> dict[int, str]:
+    """Each transaction's UPI ID, masked or not, from its merchant key (D-145)."""
+    rows = session.execute(
+        select(TxnDerived.transaction_id, TxnDerived.merchant_key).where(
+            TxnDerived.owner_id == owner, TxnDerived.merchant_key.like("vpa:%")
+        )
+    )
+    return {i: key.removeprefix("vpa:") for i, key in rows}
+
+
+def paybacks(items: list[dict], vpas: dict[int, str] | None = None) -> list[dict]:
     """Which payment each payback pays back (D-134), for the transaction sheet. Display only:
-    Paid back is the sum of confirmed paybacks, linked or not."""
+    Paid back is the sum of confirmed paybacks, linked or not. `vpas`: UPI IDs, so a masked
+    sender meets the payee whose full UPI ID fits it (D-145)."""
+    vpas = vpas or {}
     rows = [
         PaybackRow(
             i["id"], i["direction"], i["amount_paise"], datetime.fromisoformat(i["time_utc"]),
-            i["person_id"], i["role"],
+            i["person_id"], i["role"], vpas.get(i["id"]),
         )
         for i in items
     ]  # fmt: skip
@@ -248,7 +260,7 @@ def build(session, owner, caller: Caller | None = None) -> dict:
             "suggestions": v1.suggestions(session, owner, names, found),
         },
         # 5B-1 (D-134): payback -> the payment it pays back, linked or a candidate.
-        "paybacks": paybacks(items),
+        "paybacks": paybacks(items, upi_ids(session, owner)),
         "profile": {
             "names": list(names),
             "settings": owner_actions.owner_settings(session, owner),  # D-136

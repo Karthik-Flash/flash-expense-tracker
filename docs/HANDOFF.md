@@ -72,10 +72,10 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   the push was verified and the git backup deleted (D-121). Enable the hook
   once per clone: `git config core.hooksPath .githooks`.
 - Engine versions: parsers `hdfc-1.2.0`, `sbi-1.0.0` and `generic-1.0.0`
-  (other banks), `merchant-1.1.1`, `reconcile-1.7.0`, `categorise-1.3.0`;
+  (other banks), `merchant-1.1.1`, `reconcile-1.7.1`, `categorise-1.3.0`;
   statement reader `stmt-hdfc-1.1.0`.
 - Alembic head: `0017` (raw_messages.origin, data_versions; `0011` was not used).
-- Decisions: D-001 to D-144 ([DECISIONS.md](DECISIONS.md)).
+- Decisions: D-001 to D-145 ([DECISIONS.md](DECISIONS.md)).
 - Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
   lint/typecheck/tests/build, the cross-origin check
   (`node scripts/cross-origin-check.mjs` from `frontend\`, which covers the

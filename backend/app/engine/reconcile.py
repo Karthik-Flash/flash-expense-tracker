@@ -27,7 +27,8 @@ Only when none of these matched:
   CR_person_party     credit from an owner party of kind person             payback
                       (a party of kind unsure gives no opinion: the rules below apply)
   CR_person_signal    credit, engine says person on a strong signal, and the owner paid
-                      that person (same party, else same merchant key) at most 90 days
+                      that person (same party, else same merchant key; 1.7.1: or the one
+                      payee whose full UPI ID fits the credit's masked one) at most 90 days
                       before (reconcile-1.7.0)                              payback
   CR_no_debit         the same, with no such payment: a person who never got money from
                       the owner is no payback guess (pocket money, a gift, a sale)  uncertain
@@ -70,7 +71,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from app.engine.merchant import MERCHANT_VERSION, Merchant, channel_for, normalise_merchant, parts
 
-RECONCILE_VERSION = "reconcile-1.7.0"
+RECONCILE_VERSION = "reconcile-1.7.1"
 VERSIONS = {"merchant": MERCHANT_VERSION, "reconcile": RECONCILE_VERSION}
 
 ROLES = (
@@ -367,15 +368,18 @@ def derive(
         for t in rows
     }  # fmt: skip
     paid: dict[tuple, list[datetime]] = defaultdict(list)  # a person -> times the owner paid
+    payees: list[tuple[tuple, datetime, str]] = []  # (person, time, UPI ID) of each payment
     for t in rows:
         if t.direction == "debit" and who[t.id] is not None:
             paid[who[t.id]].append(t.txn_time_utc)
+            if vpa := _vpa(t.counterparty_raw):
+                payees.append((who[t.id], t.txn_time_utc, vpa))
     for t in rows:
         position = matched.get(t.id)
         own = None if position is None else entries[position]
         paid_before = any(
             when <= t.txn_time_utc <= when + PAYBACK_WINDOW for when in paid.get(who[t.id], ())
-        )
+        ) or (t.direction == "credit" and _masked_payee(t, payees) is not None)
         run.matches[t.id] = list(_own_evidence(t, own, own_upi, card_spends)) or [
             _default(t, run.merchants[t.id], own, paid_before)
         ]
@@ -533,6 +537,37 @@ def _check_decision(t: Txn, role: str) -> None:
 def _vpa(text: str | None) -> str | None:
     p = parts(text)
     return p.vpa if p else None
+
+
+def masked_fits(masked: str, full: str) -> bool:
+    """A masked UPI ID ("*ahad@oksbi", as HDFC writes the sender of a credit) fits a full one
+    ("rahad@oksbi", as a payment names the payee): the same handle, and the full local part
+    ends with the visible end of the masked one. A mask with nothing visible fits nothing
+    (reconcile-1.7.1, D-145)."""
+    m_local, _, m_handle = masked.casefold().partition("@")
+    f_local, _, f_handle = full.casefold().partition("@")
+    visible = m_local.rpartition("*")[2]
+    return (
+        "*" in m_local
+        and "*" not in f_local
+        and bool(visible)
+        and m_handle == f_handle
+        and f_local.endswith(visible)
+    )
+
+
+def _masked_payee(t: Txn, payees: list[tuple[tuple, datetime, str]]) -> tuple | None:
+    """The one person the owner paid in the PAYBACK_WINDOW before this credit whose UPI ID
+    fits the credit's masked one; None when there is no such person, or more than one."""
+    vpa = _vpa(t.counterparty_raw)
+    if not vpa or "*" not in vpa:
+        return None
+    found = {
+        person
+        for person, when, full in payees
+        if when <= t.txn_time_utc <= when + PAYBACK_WINDOW and masked_fits(vpa, full)
+    }
+    return found.pop() if len(found) == 1 else None
 
 
 def _fits_own_upi(counterparty: str | None, own_upi: list[str]) -> bool:

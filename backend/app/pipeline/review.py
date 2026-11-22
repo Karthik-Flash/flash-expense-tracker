@@ -75,6 +75,11 @@ def _person(d, merchant) -> str | None:
     return f"k:{merchant.merchant_key}" if merchant.merchant_key else None
 
 
+def _upi(key: str | None) -> str | None:
+    """The UPI ID of a merchant key ("vpa:..."), masked or not; None for a name."""
+    return key[4:] if key and key.startswith("vpa:") else None
+
+
 def answer_of(role: str, basis: str) -> str | None:
     if role == "payback":
         return "owner_confirmed" if basis == "owner" else "engine_suggested"
@@ -88,7 +93,8 @@ def payback_review(session: Session, owner: uuid.UUID) -> PaybackReview:
     roles, merchants = p.result.roles, p.result.merchants
     links = payback_links(
         PaybackRow(t.id, t.direction, t.amount_paise, t.txn_time_utc,
-                   _person(roles[t.id], merchants[t.id]), roles[t.id].role)
+                   _person(roles[t.id], merchants[t.id]), roles[t.id].role,
+                   _upi(merchants[t.id].merchant_key))
         for t in p.txns
     )  # fmt: skip
     pays_back: dict[int, list] = {}

@@ -7,7 +7,7 @@ from pathlib import Path
 from app.cli import REPO
 from app.pipeline import review
 from tests.apiclient import FRIEND_PAID, get
-from tests.smsdata import full_rows, write_backup
+from tests.smsdata import WHEN, full_rows, write_backup
 from tests.test_self_investment import sent
 from tests.test_storage import PAIR
 
@@ -76,7 +76,7 @@ def test_payback_review_counts_by_month_and_links(run, tmp_path) -> None:
     loaded(run, tmp_path)
     out = tmp_path / "paybacks.csv"
     printed = run("payback-review", "--out", str(out))
-    assert "payback-review (reconcile-1.7.0, read-only" in printed
+    assert "payback-review (reconcile-1.7.1, read-only" in printed
     rows = read(out)
     by = {r["answer"] for r in rows}
     assert by <= {"owner_confirmed", "engine_suggested", "unanswered"}
@@ -95,3 +95,35 @@ def test_both_refuse_an_out_path_inside_the_repo(run, tmp_path) -> None:
         assert not inside.exists()
         missing = tmp_path / "no-such-folder" / "x.csv"
         assert "does not exist" in run(command, "--out", str(missing), code=2)
+
+
+# A payment to a payee whose full UPI ID fits the masked sender of fixture H02 ("*test@oksbi",
+# 7 Jan, Rs 2,50,000): reconcile-1.7.1 (D-145) makes that credit a payback guess, linked to it
+# (the payment is larger: a smaller one would make it a candidate, more_than_paid).
+MASKED_PAID = (
+    "HDFCBK",
+    "Sent Rs.3,33,333.00\nFrom HDFC Bank A/C *0001\nTo mytest@oksbi\nOn 02/01/26\n"
+    "Ref 000000000078\nNot You?\nCall 18000000001/SMS BLOCK UPI to 9000000001\n",
+    WHEN.replace(day=2),
+)
+
+
+def test_payback_review_counts_move_with_a_masked_payee(run, tmp_path, db_engine) -> None:
+    from sqlalchemy.orm import sessionmaker
+
+    from app.config import settings
+
+    loaded(run, tmp_path)
+    with sessionmaker(db_engine)() as s:
+        before = review.payback_review(s, settings.owner_id)
+    run("import-sms", "--input", str(write_backup(tmp_path / "m.xml", [MASKED_PAID])))
+    with sessionmaker(db_engine)() as s:
+        after = review.payback_review(s, settings.owner_id)
+    print(
+        f"\nfixtures: {dict(before.counts)} {dict(before.links)}"
+        f" -> {dict(after.counts)} {dict(after.links)}"
+    )
+    assert after.counts["engine_suggested"] == before.counts["engine_suggested"] + 1
+    assert after.counts["unanswered"] == before.counts["unanswered"] - 1
+    assert after.links["linked"] == before.links["linked"] + 1
+    assert after.counts["owner_confirmed"] == before.counts["owner_confirmed"] == 0
