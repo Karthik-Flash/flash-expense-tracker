@@ -52,7 +52,7 @@ screen with an event log; a 304 snapshot without building it (D-139 to D-144;
 the phone test plan: cheat sheet, "After the 5B-2 deploy". **5F part 1 done 23 Nov**
 (not pushed): an Insights tab with Export (CSV and Excel), Profile and Admin (D-146);
 Analytics and "Learn from the owner" still to come.
-**Premium run done 23 Nov** (not pushed; owner steps: cheat sheet, "After the premium
+**Premium run done 23 Nov** (pushed 23 Nov; owner steps: cheat sheet, "After the premium
 deploy"): part A pre-push safety (admin privacy test, Profile
 facts, duplicate checks, export range tests, a cross-origin check that waits for the page;
 D-147); part B Analytics at the top of Insights (D-148); part C rules and per-credit
@@ -536,8 +536,9 @@ In this order. Steps 1 to 3 once; step 4 for every new version.
    APK is signed with this laptop's debug key
    (`%USERPROFILE%\.android\debug.keystore`): keep it; another key means
    uninstall and install again (the phone's queue and token go).
-6. **First run on the phone**: open Flash, sign in. Home says "Read bank SMS
-   on this phone · Set up": tap it, then "Allow SMS access".
+6. **First run on the phone**: open Flash, sign in. Home shows "Getting
+   started" (D-152): tap Set up next to "Set up Bank SMS", then "Allow SMS
+   access". The list ticks itself and goes away once all four lines are done.
    - If Android says "Restricted setting" (or nothing happens): "Open App
      info", ⋮ (top right) > Allow restricted settings, then Permissions >
      SMS > Allow; back in Flash, "Check again".
@@ -558,6 +559,44 @@ Phones, Revoke. Signing out on the phone revokes it and wipes its token and
 queue. Kotlin checks (from `mobile\android\`): `.\gradlew.bat
 testDebugUnitTest`; on a connected phone only: `.\gradlew.bat
 connectedDebugAndroidTest`.
+
+### The app at a glance (after the premium run)
+
+Five tabs at the bottom, the same on the phone and on the web:
+
+| Tab | What it holds |
+| --- | --- |
+| Home | The month: Net, Spent, Paid back, Invested; spending by category (list or ring); People. "Getting started" until the phone is set up. The version line opens Speed and sync. |
+| Transactions | Every payment by day, with category, label and name filters. Tap one for its sheet: change category ("Just this payment" or "All payments to <name>"), label, Not a payment, and on money in "Paid back?" ("Just this one" or "Always for <name>"). |
+| Insights | Analytics (this month, 3, 6, 12 months or chosen months: monthly bars and table, categories over time, biggest changes, top places and people, numbers); Export (Excel or CSV); Profile (account facts, phones, Your rules with Undo, names, Bank SMS, investments setting, What Flash stores, Speed and sync, Delete my account, Sign out); About (versions, privacy note); Admin (the admin only: People who use Flash, invites). |
+| To-do | Questions only you can answer: who sent money, categories for new payees, transfers, investments, "Is this you?", checks of rows read automatically. |
+| Labels | Your own groupings (a trip, a project) with their totals. |
+
+Every line under a header says how fresh the data is and how many changes wait to sync;
+"Not saved" opens the list of refused changes. Analytics and Export need the server; the
+rest works offline from the phone's copy.
+
+### Android Studio: what it is for here
+
+Android Studio is installed for its parts, not as the build tool:
+- **Its JDK** (`D:\Applications2\AndroidStudio\jbr`, Java 25) runs Gradle. Set
+  `$env:JAVA_HOME = 'D:\Applications2\AndroidStudio\jbr'` before running `gradlew.bat` by hand.
+- **The Android SDK** at `D:\Android\Sdk` (platform 36, build tools, and `platform-tools\adb.exe`).
+  `mobile\android\local.properties` (git-ignored) points Gradle at it: `sdk.dir=D:\\Android\\Sdk`.
+  Keep these up to date with Studio's SDK Manager.
+- **Builds** go through `npm run android:apk` from `frontend\` (web app, `cap sync`, Gradle
+  with the versionCode), never Studio's Run button, so the version and the bundled web app are
+  always right. Install with `adb install -r ...` (cheat sheet, "Android app").
+- **Logcat** (optional, for a problem on the phone): File > Open > `mobile\android`, wait for the
+  Gradle sync, plug in the phone, View > Tool Windows > Logcat, filter
+  `package:app.flashexpense.android`. Bank SMS > "Copy diagnostics" in the app is usually
+  enough and safe to paste; Logcat lines can hold SMS text, so never paste them.
+- **When Studio offers to upgrade** the Android Gradle Plugin or Gradle: say no. The versions
+  are pinned (AGP 9.5.1, Gradle 9.9.2, Capacitor 8.6.2); an upgrade is a planned change.
+- **Kotlin tests** without Studio: from `mobile\android\`, `.\gradlew.bat testDebugUnitTest`.
+  Stop the background Gradle process afterwards with `.\gradlew.bat --stop`.
+- **Unplugging the phone**: safe whenever no `adb install` is running. `adb kill-server`
+  stops the idle adb background process if you want it gone.
 
 ### Several users: invites, testers, deleting an account (5C, D-128 to D-132)
 
