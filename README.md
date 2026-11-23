@@ -4,10 +4,12 @@ Personal expense tracker. It turns bank, card and UPI SMS alerts into clean
 transactions, then categorises and analyses them, and checks itself against
 the bank statement. Minimal UI, algorithm-heavy Python engine.
 
-Status: Phase 4 done (21 Nov 2026), Phase 5 (the Android app) next. New here?
-Start with [docs/OVERVIEW.md](docs/OVERVIEW.md), a one-page tour. Then
-[NOTES.md](NOTES.md), [docs/PLAN.md](docs/PLAN.md) and the Phase 4 retro
-[docs/retro/phase-4.md](docs/retro/phase-4.md).
+Status (23 Nov 2026): Phase 5 in use. The Android app reads bank SMS on the phone and
+uploads them as they arrive; the web app and the phone share one account; Insights adds
+analytics, exports and your rules. New here? Start with
+[docs/OVERVIEW.md](docs/OVERVIEW.md), a one-page tour. Then [docs/HANDOFF.md](docs/HANDOFF.md),
+[NOTES.md](NOTES.md) (status, the cheat sheet, "The app at a glance") and
+[docs/PLAN.md](docs/PLAN.md).
 
 ## Screens
 
@@ -31,6 +33,12 @@ sheet, light, dark and at 200 % text: [docs/design/screens-4h.html](docs/design/
 - **The owner decides**: To-do asks who sent money (Friend, Family, It's
   me…), which category a payee gets, whether two payments are a transfer;
   the engine only suggests.
+- **Android app**: a Capacitor shell with a small Kotlin plugin reads only bank SMS on
+  the phone, uploads each one at once (and catches up hourly), and notifies new payments.
+- **Insights**: monthly bars, categories over time, top places and people, Excel or CSV
+  export, and "All payments to <name>" rules you can undo; every number from the server.
+- **Several users**: invite codes, each person sees only their own data, Delete my
+  account removes everything.
 - **Checks itself against the bank**: `statement-check` compares the HDFC
   statement with the app per month and names the likely cause of every gap;
   safe-to-paste output is counts and rupee sums only.
@@ -41,6 +49,8 @@ sheet, light, dark and at 200 % text: [docs/design/screens-4h.html](docs/design/
   pytest, ruff. Hosted on Render (free).
 - **frontend/**: React, Vite, TypeScript, Tailwind CSS, installable PWA
   (vite-plugin-pwa). Hosted on Vercel.
+- **mobile/android/**: Capacitor 8 Android project, Kotlin SMS plugin, WorkManager;
+  built with Gradle 9.9.2 on Android Studio's JDK (see NOTES, "Android Studio").
 - **Database**: SQLite locally, Supabase Postgres in production.
 
 ## Quick start (Windows PowerShell)
@@ -63,6 +73,14 @@ Copy-Item .env.example .env
 npm run dev
 ```
 
+Android APK (needs the Android SDK and Android Studio's JDK; NOTES, "Android app" and
+"Android Studio"):
+
+```powershell
+cd frontend; npm run android:apk     # prints the APK path and its versionCode
+adb install -r ..\mobile\android\app\build\outputs\apk\debug\app-debug.apk
+```
+
 Checks (the same ones CI runs):
 
 ```powershell
@@ -80,7 +98,7 @@ frontend/   Vite React PWA
 scripts/    redact_sms.py (makes a safe SMS sample from a backup)
 infra/      render.yaml and hosting guide (Vercel, Render, Supabase, cron-job.org)
 docs/       HANDOFF.md, PLAN.md, DECISIONS.md, engine and data-model guides
-mobile/     Capacitor Android shell (later phase)
+mobile/     Capacitor Android app (Kotlin SMS plugin), built from frontend/
 data/       gitignored; see data/README.md
 ```
 
