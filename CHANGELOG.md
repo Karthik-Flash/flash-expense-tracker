@@ -4,6 +4,21 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Premium run: Analytics, rules, robustness, polish (23 Nov 2026)
+
+- Analytics at the top of Insights: Spent per month with Invested, Paid back and Net,
+  categories over time, the biggest changes, top places and people, and a few numbers; a
+  bar or a row opens its payments (D-148).
+- "All payments to <name>" is a rule you can see and undo in Profile; Paid back on one
+  credit can be "Just this one" (D-149).
+- Profile shows your account, your phones and their last upload; About shows the app's
+  and server's versions; Home shows "Getting started" until the phone is set up (D-147,
+  D-152).
+- Safer before the push: the admin never sees amounts, names or SMS; large ids and bodies
+  get clear errors; `doctor` checks the data read-only; an emoji no longer makes a second
+  copy of one SMS; the snapshot reads its rows once (D-147, D-150).
+- Text wraps at large sizes and every tap target is at least 44 px (D-151).
+
 ## Phase 5F, part 1: Insights (23 Nov 2026)
 
 - A new Insights tab. Export a month or any dates as Excel or CSV, built on the server;
