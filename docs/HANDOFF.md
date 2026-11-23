@@ -5,10 +5,17 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
 [PLAN.md](PLAN.md).
 
-## Current state (Phase 5B-2 done, 5F part 1, 23 Nov 2026)
+## Current state (premium run done, 23 Nov 2026)
 
+- **Premium run is done, not pushed** (D-147 to D-152): pre-push safety (admin privacy,
+  Profile facts, duplicate and export checks, a steadier cross-origin check), Analytics in
+  Insights (`GET /api/v1/analytics`), rules ("All payments to <name>", Your rules with Undo)
+  and per-credit Paid back answers (`owner_roles.scope`, migration `0018`), robustness (last
+  X-Forwarded-For hop, input limits, `app.cli doctor`, emoji copies of one SMS, the snapshot
+  reads once: 47 statements), the visual audit at 360 and 1280 px, the first-run checklist
+  and About. Alembic head `0018`. Owner steps: NOTES, "After the premium deploy".
 - **5F part 1 is done, not pushed** (D-146): the Insights tab (Export as CSV or Excel from
-  `GET /api/v1/export`, Profile, Admin). Not built: Analytics, "Learn from the owner".
+  `GET /api/v1/export`, Profile, Admin).
 
 - **Phase 5B-2 is done, not pushed** (D-139 to D-144,
   [design/phase-5b2-phone.md](design/phase-5b2-phone.md)): the phone uploads a new bank
@@ -77,8 +84,8 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 - Engine versions: parsers `hdfc-1.2.0`, `sbi-1.0.0` and `generic-1.0.0`
   (other banks), `merchant-1.1.1`, `reconcile-1.7.1`, `categorise-1.3.0`;
   statement reader `stmt-hdfc-1.1.0`.
-- Alembic head: `0017` (raw_messages.origin, data_versions; `0011` was not used).
-- Decisions: D-001 to D-146 ([DECISIONS.md](DECISIONS.md)).
+- Alembic head: `0018` (0017 raw_messages.origin, data_versions; 0018 owner_roles.scope; `0011` was not used).
+- Decisions: D-001 to D-152 ([DECISIONS.md](DECISIONS.md)).
 - Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
   lint/typecheck/tests/build, the cross-origin check
   (`node scripts/cross-origin-check.mjs` from `frontend\`, which covers the

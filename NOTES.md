@@ -52,7 +52,8 @@ screen with an event log; a 304 snapshot without building it (D-139 to D-144;
 the phone test plan: cheat sheet, "After the 5B-2 deploy". **5F part 1 done 23 Nov**
 (not pushed): an Insights tab with Export (CSV and Excel), Profile and Admin (D-146);
 Analytics and "Learn from the owner" still to come.
-**Premium run, 23 Nov** (not pushed): part A pre-push safety (admin privacy test, Profile
+**Premium run done 23 Nov** (not pushed; owner steps: cheat sheet, "After the premium
+deploy"): part A pre-push safety (admin privacy test, Profile
 facts, duplicate checks, export range tests, a cross-origin check that waits for the page;
 D-147); part B Analytics at the top of Insights (D-148); part C rules and per-credit
 Paid back answers (migration 0018, D-149); part D robustness (last X-Forwarded-For hop,
@@ -592,6 +593,54 @@ After the planner's review, in this order:
 Owner commands now work on one owner's data: `--owner <owner_id>` before the
 command, else the admin, else `OWNER_ID`. For your own data nothing changes.
 
+### After the premium deploy (D-147 to D-152), in this order
+
+All from PowerShell. Counts only unless marked PRIVATE.
+1. **Backup** (from the repo root): `powershell -ExecutionPolicy Bypass -File scripts\backup_db.ps1`
+2. **Push**: `git push`. Render builds and runs `alembic upgrade head` (migrations `0017` and
+   `0018`); Vercel builds the web app.
+3. **Deploy check**: `curl.exe -s https://flash-expense-tracker.onrender.com/health` shows
+   `"status":"ok"` (wait about a minute if it is waking). The web app's Insights > About shows
+   the same server version.
+4. **Alembic** (from `backend\`, your real DATABASE_URL in `backend\.env` as for every owner
+   command): `.\.venv\Scripts\alembic.exe current` shows `0018 (head)`.
+5. **Recompute** (no parser changed: no reparse needed):
+   `.\.venv\Scripts\python.exe -m app.cli recompute`
+6. **Doctor**: `.\.venv\Scripts\python.exe -m app.cli doctor`. Pass: "problems 0" and
+   "doctor: healthy". Paste the counts if not.
+7. **Duplicates**: `.\.venv\Scripts\python.exe -m app.cli reconcile-stats`. Pass: the
+   duplicate role count is still 4 (nothing in this run joins stored payments).
+8. **Paybacks** (PRIVATE CSV): `.\.venv\Scripts\python.exe -m app.cli payback-review --out D:\FlashPrivate\review\payback-review.csv`
+9. **APK** (from `frontend\`, the real Supabase values in `frontend\.env`):
+   `npm run android:apk`, then
+   `adb install -r D:\Projects\FinancesApp\mobile\android\app\build\outputs\apk\debug\app-debug.apk`.
+   It prints the versionCode; Insights > About shows the same number.
+
+### After the premium deploy: phone and web test plan (what "pass" looks like)
+
+Web (laptop, Edge or Chrome):
+1. Insights tab: Analytics loads for 6 months. Pass: the bars and table show; Nov's Spent
+   in the table equals Home's Spent for Nov; tapping Nov's bar opens Transactions for Nov.
+2. Change the period to 12 months and back. Pass: the second time it shows at once.
+3. Transactions: change a payment's category, "All payments to <name>". Pass: every payment
+   to them shows the new category; Insights > Profile > Your rules lists it; Undo puts the
+   old category back (one-off answers stay).
+4. A credit from a friend: Paid back > Just this one. Pass: Net drops by that credit only;
+   To-do still asks about the others; "Use the answer for <name>" brings it back.
+5. Export Excel for Last month. Pass: it opens in Excel with Transactions and Summary
+   sheets, and Summary's Spent equals Home's Spent for that month.
+6. Insights > Profile: email, role, member since, payments, data range, last sync, your
+   phone and its last upload. About: app version, "web app", the server version.
+
+Phone (the APK from step 9):
+7. Home shows "Getting started" until Bank SMS, notifications, battery Unrestricted and a
+   first sync are done; each line ticks itself. Pass: the card disappears when all are done.
+8. Pay Rs 1 twice to the same payee within a minute. Pass: two notifications, two payments.
+9. Airplane mode, change a category, airplane mode off. Pass: "waiting to sync" shows on
+   the tab, then clears; the change is on the laptop after a refresh.
+10. Insights > About shows the versionCode the build printed.
+11. Five tabs fit the screen with no cut labels at normal and large text.
+
 ### After the 5B-2 deploy: paybacks again (reconcile-1.7.1, D-145)
 
 From `backend\`, after the push (no parser changed, so no reparse: a recompute is enough;
@@ -1102,6 +1151,21 @@ From 5A (Android):
     the server end to end, the cross-origin replay of the WebView's requests.
 5c. Done (D-150): a bank SMS with an emoji outside the basic plane, which SMS
     Backup & Restore writes as two U+FFFD, is now one SMS whichever copy comes first.
+
+From the premium run (D-147 to D-152):
+
+5d. Render's docs do not say whether its proxy appends or replaces X-Forwarded-For; the
+    sign-up limit uses the last hop, right either way with one proxy. If the API ever sits
+    behind Cloudflare (a proxied custom domain), check the hops first.
+5e. Not seen on a real phone: Getting started, About's versionCode, per-credit answers,
+    Your rules, Analytics; the share sheet for exports. Checked in headless Edge (demo data,
+    360 and 1280 px, light, dark, 200 % text) and by tests.
+5f. In To-do a sender's buttons still answer for every credit from them; "Just this one"
+    is in the credit's sheet ("Answer one credit" opens the newest). A rule undo keeps the
+    party (only its category goes).
+5g. The cross-origin check failed twice in about 15 runs this run, each the first run after
+    other heavy work (the page never drew in a cold headless Edge); it now logs and reloads
+    once after 45 s. Every CORS line passed in those runs too.
 
 Ongoing:
 
