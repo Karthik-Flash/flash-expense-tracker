@@ -53,3 +53,9 @@ export function takeCategoryOpen(txnId: number): boolean {
   atCategory = null
   return yes
 }
+
+/** Forget every tap (sign-out or another login, D-158). */
+export function clearOpens(): void {
+  provisional.clear()
+  atCategory = null
+}

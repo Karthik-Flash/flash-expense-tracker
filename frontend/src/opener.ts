@@ -7,9 +7,12 @@
 // the sheet opens from them at once (provisional.ts) and the full row replaces them when the
 // background refresh brings it. Opening waits for the first paint.
 
-import { noteOpen, type OpenItem } from './provisional.ts'
+import { onReset } from './data/store.ts'
+import { clearOpens, noteOpen, type OpenItem } from './provisional.ts'
 import { navigate } from './state.tsx'
 import { HOME } from './view.ts'
+
+onReset(clearOpens) // a sign-out forgets taps that were for the old login (D-158)
 
 const afterPaint = (go: () => void) => requestAnimationFrame(() => requestAnimationFrame(go))
 

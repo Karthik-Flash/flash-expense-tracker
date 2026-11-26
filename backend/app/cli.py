@@ -1635,12 +1635,46 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cd.add_argument("--out", type=Path, required=True, help="the CSV, outside the repository")
     sub.add_parser("doctor", help="read-only health checks of the owner's data (counts only)")
+    sub.add_parser("no-parser", help="messages no parser reads, by sender code and bank (counts)")
     pr = sub.add_parser(
         "payback-review",
         help="paybacks confirmed, suggested and unanswered (counts; rows to a PRIVATE CSV)",
     )
     pr.add_argument("--out", type=Path, required=True, help="the CSV, outside the repository")
     return parser
+
+
+def cmd_no_parser(session: Session, args: argparse.Namespace) -> int:
+    """5G (D-158). Messages no parser reads yet (no parser for their bank), by sender code and
+    bank: how many and the newest IST month, so the planner can choose the next parser.
+    Counts only; read-only."""
+    from app.engine.reconcile import IST
+    from app.engine.senders import bank_for
+
+    rows = session.execute(
+        select(RawMessage.sender_core, func.count(), func.max(RawMessage.received_at))
+        .join(ParseResult, ParseResult.raw_message_id == RawMessage.id)
+        .where(
+            RawMessage.owner_id == settings.owner_id,
+            ParseResult.is_current,
+            ParseResult.unknown_reason == "no_parser_for_bank",
+        )
+        .group_by(RawMessage.sender_core)
+    ).all()
+    session.rollback()
+    print("no-parser (read-only, counts only): messages no parser reads, by sender code")
+    print(f"  {'code':<20}{'bank':<12}{'messages':>9}  newest")
+    by_bank: Counter = Counter()
+    for core, n, newest in sorted(rows, key=lambda r: (-r[1], r[0])):
+        bank = bank_for(core) or "-"
+        by_bank[bank] += n
+        when = newest.astimezone(IST).strftime("%Y-%m") if newest else "-"
+        print(f"  {core:<20}{bank:<12}{n:>9}  {when}")
+    print("by bank")
+    for bank, n in sorted(by_bank.items(), key=lambda b: (-b[1], b[0])):
+        line(bank, n, 2)
+    line("messages", sum(by_bank.values()))
+    return 0
 
 
 def cmd_doctor(session: Session, args: argparse.Namespace) -> int:
@@ -1662,6 +1696,7 @@ def cmd_doctor(session: Session, args: argparse.Namespace) -> int:
 
 COMMANDS = {
     "doctor": cmd_doctor,
+    "no-parser": cmd_no_parser,
     "import-sms": cmd_import,
     "reparse": cmd_reparse,
     "stats": cmd_stats,

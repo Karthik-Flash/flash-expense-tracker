@@ -1105,13 +1105,27 @@ opened or shared by its URL, for example `#/home/category/people?m=2026-11`.
 
 ### Back up and restore (you run these; agents never do)
 
-Back up (Docker Desktop running; reads `DATABASE_URL` from `backend\.env`,
-prints only the file name and size):
+Back up (reads `DATABASE_URL` from `backend\.env`, prints only the file name and size;
+since 5G it starts Docker Desktop itself and waits up to 3 minutes, keeps the newest 12
+dumps and deletes only older `flash-YYYYMMDD-HHmm.dump` files, and adds one line per run to
+`D:\FlashPrivate\backups\backup.log`; exit code 1 when no dump was made, D-157):
 
 ```powershell
 cd D:\Projects\FinancesApp
 powershell -ExecutionPolicy Bypass -File scripts\backup_db.ps1
 # flash-20261117-2210.dump  0.4 MB   -> D:\FlashPrivate\backups\
+```
+
+Weekly, by itself (once; every Sunday 21:00 while you are logged in; a missed run starts
+when the laptop is next awake):
+
+```powershell
+cd D:\Projects\FinancesApp
+powershell -ExecutionPolicy Bypass -File scripts\register_backup_task.ps1
+Start-ScheduledTask -TaskName 'Flash weekly backup'                         # test it now
+Get-ScheduledTask -TaskName 'Flash weekly backup' | Get-ScheduledTaskInfo   # LastTaskResult 0 = OK
+Get-Content D:\FlashPrivate\backups\backup.log -Tail 5
+Unregister-ScheduledTask -TaskName 'Flash weekly backup' -Confirm:$false    # to remove it
 ```
 
 Use the Session pooler URL (port 5432), as the app does; the transaction
