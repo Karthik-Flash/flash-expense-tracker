@@ -163,6 +163,7 @@ function CheckRow({ t }: { t: Txn }) {
 
 /** The answer as the server has it (role, and the income label it saved). */
 function answerText(s: Sender): string {
+  if (s.status === 'left') return 'Left as is: not asked'
   if (s.role === 'payback') return 'Friend: counts as paid back'
   if (s.role === 'income') return `Income: ${s.income_label ?? 'no label'}`
   if (s.role === 'ignored') return 'Ignored: not counted'
@@ -223,6 +224,10 @@ function SenderRow({ s, answered = false, warn }: { s: Sender; answered?: boolea
               </>
             )}
             {s.person_id && <button type="button" className={QUIET} onClick={() => seePayments(s.person_id!)}>See payments</button>}
+            {/* D-156: stop asking; nothing is counted differently. Undo: the payment's sheet. */}
+            {s.txn_id && (
+              <button type="button" className={QUIET} onClick={() => void enqueue(actions.leaveQuestion({ id: s.txn_id! }, 'sender', s.display_name ?? 'Bank transfer in', { senders: [s.id] }))}>Leave as is</button>
+            )}
             {/* D-149: the buttons above answer for every credit from them; this opens the
                 newest credit, where Paid back can be "Just this one". */}
             {s.txn_id && s.count > 1 && (
@@ -291,11 +296,11 @@ function MerchantRow({ m, cats, chips, who }: { m: Snapshot['todo']['merchants']
       <div className="mt-1.5">
         <CategoryChips chips={chips} cats={cats} onPick={pick} label={`${m.name}, ${when}`} />
       </div>
-      {who && (
-        <div className="flex justify-end">
-          <button type="button" className={QUIET} onClick={() => seePayments(who)}>See payments</button>
-        </div>
-      )}
+      <div className="flex flex-wrap justify-end gap-x-3">
+        {/* D-156: stop asking for this payee; it stays Uncategorised, nothing else moves. */}
+        <button type="button" className={QUIET} onClick={() => void enqueue(actions.leaveQuestion({ id: m.txn_id }, 'category', m.name, { merchants: [m.name] }))}>Leave as is</button>
+        {who && <button type="button" className={QUIET} onClick={() => seePayments(who)}>See payments</button>}
+      </div>
     </div>
   )
 }

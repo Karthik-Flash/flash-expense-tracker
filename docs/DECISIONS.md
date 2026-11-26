@@ -2102,3 +2102,23 @@ rent words and platforms go there and no category is added. Tests: 194 FAKE paye
 now compares 1.3.0 with 1.4.0 (the 1.2.0 copy is gone). Expected on the owner's data:
 Food & Drinks, Groceries, Travel, Rent & Hostel, Health, Bills & Recharges and Investments
 grow, mostly out of Uncategorised; People and every total stay the same.
+
+## D-156 To-do clean-up: Leave as is, This is income, Payee, investments in Spent (2026-11-26)
+
+5G part D. "Leave as is" on "Pick a category" and "Who sent you money?" stops that question
+for the payee: `PUT /transactions/{id}/leave {"question": "category"|"sender"}` (the
+outbox) sets `parties.category_left_at` or `sender_left_at` (migration 0019, nullable; the
+party is made from the payment's text when there is none, as for a category rule). No
+amount, role or category moves. A left sender's status is "left" in every list and count
+(To-do, `/senders`, the month's "senders to confirm"); it shows among the answered ones.
+The payment's sheet says so, with "Ask again" (`DELETE /transactions/{id}/leave`, both
+questions back). "Not a payment" stays separate and differently worded: it changes totals.
+A credit's sheet now offers "This is income" beside Paid back and Not paid back, with "Just
+this one" (a per-credit owner answer, role income, D-149's `scope` "one") or "Always from
+<name>" (the To-do Income answer, label "Income"); it counts in Income. The sheet says
+"Payee" instead of "Person" unless the payment is People or the money in was answered
+Friend. "Count investments in Spent" is now on for everyone who has not chosen (the
+owner's request, and the safer side of "a guess never lowers Net"); no migration: a stored
+choice wins, no row means on. The plain-English description of To-do is
+[todo.md](todo.md). Not in the owner export (like answered_at and display names today):
+the left flags; open item.

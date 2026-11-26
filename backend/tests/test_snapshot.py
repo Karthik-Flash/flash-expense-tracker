@@ -49,7 +49,7 @@ def test_shape(client, data) -> None:
         "transactions", "todo", "labels", "categories", "people", "profile", "devices", "sms",
         "account", "admin", "paybacks",
     }  # fmt: skip
-    assert s["profile"]["settings"] == {"count_investments_in_spent": False}  # D-136 default
+    assert s["profile"]["settings"] == {"count_investments_in_spent": True}  # D-156 default
     # The FAKE friend credit (H02, test.user@okaxis) pays back the one payment to them.
     assert [x["status"] for x in s["paybacks"]] == ["linked"]
     assert s["account"]["role"] == "admin"  # AUTH_USERS' login, the seed (D-129)
@@ -60,7 +60,7 @@ def test_shape(client, data) -> None:
     assert [m["month"] for m in s["months"]] == sorted(m["month"] for m in s["months"])
     assert set(s["months"][0]) == {"month", "summary", "changes", "chart", "merchants", "people"}
     assert set(s["todo"]) == {
-        "senders", "answered", "merchants", "unnamed", "transfers", "suggestions"
+        "senders", "answered", "merchants", "unnamed", "transfers", "suggestions", "left"
     }  # fmt: skip
     assert len(s["categories"]) == 20
 

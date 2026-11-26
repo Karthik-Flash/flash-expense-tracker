@@ -75,9 +75,15 @@ class CategoryAnswer(Body):
 
 
 class CreditAnswer(Body):
-    """Paid back or Not paid back for this one credit (D-149)."""
+    """Paid back, Not paid back or Income for this one credit (D-149, D-156)."""
 
-    answer: Literal["paid_back", "not_paid_back"]
+    answer: Literal["paid_back", "not_paid_back", "income"]
+
+
+class LeaveAnswer(Body):
+    """ "Leave as is" (D-156): which To-do question stops for this payment's payee."""
+
+    question: Literal["category", "sender"]
 
 
 class NewLabel(Body):
@@ -270,6 +276,7 @@ class Preload:
     rows: list
     credits: list
     not_counted: list
+    sender_left: frozenset[int] = frozenset()  # D-156: parties left as is
 
     def between(self, items: list, start: datetime, end: datetime, time) -> list:
         return [x for x in items if start <= time(x) < end]
@@ -286,7 +293,10 @@ def preload(session: Session, owner: uuid.UUID) -> Preload:
         )
     )
     return Preload(
-        _stored(session, owner), owner_actions.stored_credit_rows(session, owner), list(times)
+        _stored(session, owner),
+        owner_actions.stored_credit_rows(session, owner),
+        list(times),
+        frozenset(owner_actions.left_parties(session, owner)[1]),
     )
 
 
@@ -376,7 +386,7 @@ def month_summary(
     )
     if pre is not None:
         credits = pre.between(pre.credits, start, end, lambda c: c.txn_time_utc)
-        everyone = credit_senders(credits, str(owner))
+        everyone = owner_actions.mark_left(credit_senders(credits, str(owner)), pre.sender_left)
     else:
         everyone = owner_actions.senders(session, owner, start, end)
     open_senders = [s for s in everyone if s.status == "to_confirm"]
@@ -595,6 +605,28 @@ def forget_credit_answer(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id):
     def action() -> dict:
         owner_actions.answer_credit(session, owner, txn_id, None, "app")
         return {"id": txn_id, "answer": None}
+
+    return ops.write(session, owner, op, action)
+
+
+@router.put("/transactions/{txn_id}/leave")
+def leave_question(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id, body: LeaveAnswer):
+    """Leave as is (D-156): To-do stops asking; no amount, role or category moves."""
+
+    def action() -> dict:
+        owner_actions.leave_question(session, owner, txn_id, body.question, "app")
+        return {"id": txn_id, "question": body.question}
+
+    return ops.write(session, owner, op, action, body.model_dump())
+
+
+@router.delete("/transactions/{txn_id}/leave")
+def ask_again(owner: Owner, session: Db, op: ops.OpDep, txn_id: Id):
+    """Undo Leave as is: To-do asks about this payee again."""
+
+    def action() -> dict:
+        owner_actions.ask_again(session, owner, txn_id)
+        return {"id": txn_id, "question": None}
 
     return ops.write(session, owner, op, action)
 

@@ -126,7 +126,8 @@ export interface Person {
   identifiers: { name: string | null; txn_id: number; from_file: boolean }[]
 }
 
-export type SenderStatus = 'to_confirm' | 'confirmed' | 'ignored'
+/** left: the owner chose Leave as is (D-156); not asked, nothing counted differently. */
+export type SenderStatus = 'to_confirm' | 'confirmed' | 'ignored' | 'left'
 
 export interface WriteResult<R> {
   result: R
@@ -234,6 +235,8 @@ export interface Snapshot {
     transfers?: Transfer[]
     /** Is this you? Is this an investment? (D-117, D-118). Absent before 4Z. */
     suggestions?: Suggestion[]
+    /** Payees left as is (D-156), by person key: which question stopped. Absent before 5G. */
+    left?: { person_id: string; category: boolean; sender: boolean }[]
   }
   /** "Your name as banks show it" (D-117). Absent before 4Z. Settings: 5B-1 (D-136). */
   profile?: {
@@ -271,7 +274,7 @@ export interface Rule {
   payments: number
 }
 
-export type CreditAnswer = 'paid_back' | 'not_paid_back'
+export type CreditAnswer = 'paid_back' | 'not_paid_back' | 'income'
 
 /** A phone that uploads bank SMS (D-122). Never its token. */
 export interface Device {

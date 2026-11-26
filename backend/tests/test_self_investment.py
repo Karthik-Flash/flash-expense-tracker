@@ -68,7 +68,7 @@ def test_suggest_answer_and_undo(client, run, tmp_path) -> None:
 
     broker = suggested["investment"]["txn_id"]
     assert put(client, f"/api/v1/people/{broker}/kind", {"kind": "investment"}).status_code == 200
-    assert month(client)["spent_paise"] == 500_00
+    assert month(client)["spent_paise"] == 3_500_00  # 5G: investments stay in Spent (D-156)
     roles = {t["amount_paise"]: t["role"] for t in snap(client)["transactions"]}
     assert roles[3_000_00] == "investment"
     assert snap(client)["todo"]["suggestions"] == []  # answered: not asked again

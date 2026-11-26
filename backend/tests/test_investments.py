@@ -66,38 +66,42 @@ def setting(client, on: bool, key: str | None = None):
 def test_invested_totals_tag_and_setting_over_the_api(client, run, tmp_path) -> None:
     run("import-sms", "--input", str(write_backup(tmp_path / "a.xml", ROWS)))
     start = month(client)
+    # 5G (D-156): investments count in Spent until the owner says otherwise.
+    assert start["investments_in_spent"] is True
+    assert snap(client)["profile"]["settings"] == {"count_investments_in_spent": True}
     # Suggested only: in Spent, shown as Invested (to confirm); tagged "suggested".
     assert (start["spent_paise"], start["invested_paise"]) == (5_500_00, 0)
     assert start["invested_to_confirm_paise"] == 3_000_00
-    assert start["investments_in_spent"] is False
     tags = {t["amount_paise"]: t["investment"] for t in snap(client)["transactions"]}
     assert tags == {2_000_00: None, 3_000_00: "suggested", 500_00: None, 4_000_00: None}
 
     broker = snap(client)["todo"]["suggestions"][0]["txn_id"]
     assert put(client, f"/api/v1/people/{broker}/kind", {"kind": "investment"}).status_code == 200
-    confirmed = month(client)
-    assert (confirmed["spent_paise"], confirmed["invested_paise"]) == (2_500_00, 3_000_00)
-    assert confirmed["invested_to_confirm_paise"] == 0
+    on = month(client)  # confirmed, and counted in Spent by default
+    assert (on["spent_paise"], on["invested_paise"], on["investments_in_spent"]) == (
+        5_500_00, 3_000_00, True,
+    )  # fmt: skip
+    assert on["invested_to_confirm_paise"] == 0
+    assert sum(c["amount_paise"] for c in on["categories"]) == on["spent_paise"]
+    assert {c["slug"]: c["amount_paise"] for c in on["categories"]}["investments"] == 3_000_00
     assert {t["amount_paise"]: t["investment"] for t in snap(client)["transactions"]}[
         3_000_00
     ] == "confirmed"
 
-    # The setting: through the outbox (an Idempotency-Key), the snapshot carries it.
+    # The setting off: through the outbox (an Idempotency-Key), the snapshot carries it.
     key = str(uuid.uuid4())
-    answer = setting(client, True, key)
+    answer = setting(client, False, key)
     assert answer.status_code == 200, answer.text
-    assert answer.json()["settings"] == {"count_investments_in_spent": True}  # no recompute
-    assert setting(client, True, key).json() == answer.json()  # a replay writes nothing
-    on = month(client)
-    assert (on["spent_paise"], on["invested_paise"], on["investments_in_spent"]) == (
-        5_500_00, 3_000_00, True,
+    assert answer.json()["settings"] == {"count_investments_in_spent": False}  # no recompute
+    assert setting(client, False, key).json() == answer.json()  # a replay writes nothing
+    off = month(client)
+    assert (off["spent_paise"], off["invested_paise"], off["investments_in_spent"]) == (
+        2_500_00, 3_000_00, False,
     )  # fmt: skip
-    assert sum(c["amount_paise"] for c in on["categories"]) == on["spent_paise"]
-    assert {c["slug"]: c["amount_paise"] for c in on["categories"]}["investments"] == 3_000_00
-    assert snap(client)["profile"]["settings"] == {"count_investments_in_spent": True}
-    assert get(client, "/api/v1/summary", month="2026-03").json() == on  # the route agrees
-    assert setting(client, False).status_code == 200
-    assert month(client) == confirmed
+    assert snap(client)["profile"]["settings"] == {"count_investments_in_spent": False}
+    assert get(client, "/api/v1/summary", month="2026-03").json() == off  # the route agrees
+    assert setting(client, True).status_code == 200  # and on again, chosen this time
+    assert month(client) == on
 
 
 def test_the_setting_is_per_user_and_checked(client, data) -> None:
@@ -105,10 +109,10 @@ def test_the_setting_is_per_user_and_checked(client, data) -> None:
 
     headers = bearer(token(SUB_B)) | {"Idempotency-Key": str(uuid.uuid4())}
     assert client.put("/api/v1/profile/settings", headers=headers,
-                      json={"count_investments_in_spent": True}).status_code == 200  # fmt: skip
+                      json={"count_investments_in_spent": False}).status_code == 200  # fmt: skip
     assert get(client, "/api/v1/sync/snapshot").json()["profile"]["settings"] == {
-        "count_investments_in_spent": False
-    }  # A's is untouched
+        "count_investments_in_spent": True
+    }  # A's is untouched (the default)
     for bad in ({}, {"count_investments_in_spent": "yes"}, {"x": True}):
         response = client.put("/api/v1/profile/settings", headers=bearer(token()), json=bad)
         assert response.status_code == 422

@@ -336,6 +336,9 @@ class Party(Base):
     # When the owner last answered Friend or Family for this party (4F-B); null: never, or
     # before 4F-B. payback-audit never calls an answered party silent.
     answered_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    # "Leave as is" (D-156): To-do stops asking for a category / who sent money. Null: asked.
+    category_left_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    sender_left_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     # Who gave display_name (D-116): app, terminal, file or statement; null: no name, or a
     # name from before 4A. statement-names never overwrites a name the owner gave.
     name_source: Mapped[str | None] = mapped_column(String(10))

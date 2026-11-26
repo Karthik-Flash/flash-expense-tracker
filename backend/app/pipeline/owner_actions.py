@@ -10,6 +10,7 @@ never deleted for a join, and texts from the owner file are left to the file.
 """
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, func, select
@@ -43,7 +44,7 @@ SCOPES = ("merchant", "transaction")
 MAX_NAME = LABEL_MAX  # a label, income label or name, trimmed, spaces joined (D-097)
 ANSWER_ROLES = ("ignored", "payback", "income")  # the role decisions a sender answer writes
 ONE = "one"  # owner_roles.scope of a per-credit Paid back / Not paid back answer (D-149)
-CREDIT_ANSWERS = {"paid_back": "payback", "not_paid_back": "ignored"}
+CREDIT_ANSWERS = {"paid_back": "payback", "not_paid_back": "ignored", "income": "income"}
 PERSON_ROLES = ("friend", "income", "ignore", "none")  # a person's answer; none: to confirm
 FROM_FILE = "this identifier is set in the owner file: change it there"
 
@@ -83,7 +84,59 @@ def stored_credit_rows(
 
 
 def senders(session: Session, owner_id: uuid.UUID, start=None, end=None) -> list[Sender]:
-    return credit_senders(stored_credit_rows(session, owner_id, start, end), str(owner_id))
+    everyone = credit_senders(stored_credit_rows(session, owner_id, start, end), str(owner_id))
+    return mark_left(everyone, left_parties(session, owner_id)[1])
+
+
+def left_parties(session: Session, owner_id: uuid.UUID) -> tuple[set[int], set[int]]:
+    """ "Leave as is" (D-156): the parties To-do no longer asks a category for, and the ones it
+    no longer asks "Who sent you money?" for."""
+    rows = session.execute(
+        select(Party.id, Party.category_left_at, Party.sender_left_at).where(
+            Party.owner_id == owner_id,
+            (Party.category_left_at.is_not(None)) | (Party.sender_left_at.is_not(None)),
+        )
+    ).all()
+    return {i for i, c, _ in rows if c is not None}, {i for i, _, x in rows if x is not None}
+
+
+def mark_left(everyone: list[Sender], left: set[int]) -> list[Sender]:
+    """A sender still to confirm whose party the owner left as is: status "left" (not asked;
+    its credits keep their roles and amounts)."""
+    return [
+        replace(x, status="left") if x.status == "to_confirm" and x.party_id in left else x
+        for x in everyone
+    ]
+
+
+QUESTIONS = ("category", "sender")
+
+
+def leave_question(
+    session: Session, owner_id: uuid.UUID, txn_id: int, question: str, source: str
+) -> Party:
+    """ "Leave as is" (D-156): stop asking `question` ("category" or "sender") about this
+    payment's payee. No amount, role or category changes."""
+    if question not in QUESTIONS:
+        raise ActionError("invalid", "question must be category or sender")
+    party = party_for(session, owner_id, txn_id, source)
+    now = datetime.now(UTC)
+    if question == "category":
+        party.category_left_at = party.category_left_at or now
+    else:
+        party.sender_left_at = party.sender_left_at or now
+    session.flush()
+    return party
+
+
+def ask_again(session: Session, owner_id: uuid.UUID, txn_id: int) -> None:
+    """Undo "Leave as is" for this payment's payee: both questions come back."""
+    _transaction(session, owner_id, txn_id)
+    d = session.get(TxnDerived, txn_id)
+    party = session.get(Party, d.party_id) if d is not None and d.party_id is not None else None
+    if party is not None:
+        party.category_left_at = party.sender_left_at = None
+        session.flush()
 
 
 def clean_name(name: str | None, what: str) -> str:
@@ -274,7 +327,7 @@ def answer_credit(
         if row is not None and row.scope == ONE:
             session.delete(row)
     elif answer not in CREDIT_ANSWERS:
-        raise ActionError("invalid", "answer must be paid_back or not_paid_back")
+        raise ActionError("invalid", "answer must be paid_back, not_paid_back or income")
     else:
         _role(session, owner_id, txn_id, CREDIT_ANSWERS[answer], source, ONE)
     session.flush()
@@ -416,9 +469,11 @@ def answer_transfer(
 
 
 def owner_settings(session: Session, owner_id: uuid.UUID) -> dict:
-    """The owner's settings (D-136); every default when the owner never changed one."""
+    """The owner's settings (D-136); every default when the owner never changed one. Since
+    5G (D-156) investments count in Spent unless the owner turned that off: the safer side of
+    "a guess never lowers Net" (an investment the engine is unsure of stays in Spent)."""
     row = session.get(OwnerSetting, owner_id)
-    return {"count_investments_in_spent": bool(row and row.count_investments_in_spent)}
+    return {"count_investments_in_spent": True if row is None else row.count_investments_in_spent}
 
 
 def set_owner_settings(

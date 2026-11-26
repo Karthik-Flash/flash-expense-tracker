@@ -599,7 +599,7 @@ export function newestFirst<T>(items: T[], time: (x: T) => string | undefined, i
 export function todoView(todo: Snapshot['todo'], ops: Op[]) {
   const live = ops.filter((o) => o.state !== 'failed')
   const senders = new Set(live.flatMap((o) => o.targets.senders ?? []))
-  const merchants = new Set(live.filter((o) => o.path.endsWith('/category')).flatMap((o) => o.targets.merchants ?? []))
+  const merchants = new Set(live.filter((o) => o.path.endsWith('/category') || o.path.endsWith('/leave')).flatMap((o) => o.targets.merchants ?? []))
   const moved = new Set(live.filter(isTransfer).map((o) => o.path))
   const asked = new Set(live.filter(isKind).flatMap((o) => o.targets.people ?? []))
   const byTxn = <T extends { last_time_utc?: string; txn_id?: number }>(xs: T[]) => newestFirst(xs, (x) => x.last_time_utc, (x) => x.txn_id)
@@ -613,7 +613,7 @@ export function todoView(todo: Snapshot['todo'], ops: Op[]) {
       ...live.filter(
         (o) =>
           o.targets.senders?.length ||
-          (o.targets.merchants?.length && (o.kind.startsWith('All payments to') || o.kind.startsWith('All from'))) ||
+          (o.targets.merchants?.length && (o.kind.startsWith('All payments to') || o.kind.startsWith('All from') || o.kind === 'Leave as is')) ||
           (isCheck(o) && o.method === 'PUT') ||
           isTransfer(o) ||
           isKind(o),
@@ -768,10 +768,18 @@ export const actions = {
   },
   /** Paid back / Not paid back for this one credit (D-149); null forgets it. */
   answerCredit(t: Pick<Txn, 'id'>, answer: CreditAnswer | null, item: string): NewOp {
-    const choice = answer === null ? 'Same as the person' : answer === 'paid_back' ? 'Paid back' : 'Not paid back'
+    const choice = answer === null ? 'Same as the person' : answer === 'paid_back' ? 'Paid back' : answer === 'income' ? 'Income' : 'Not paid back'
     return answer === null
       ? { kind: 'Just this one: forget', item, choice, method: 'DELETE', path: `/transactions/${t.id}/payback`, body: null, targets: { txns: [t.id] } }
       : { kind: `Just this one: ${choice}`, item, choice, method: 'PUT', path: `/transactions/${t.id}/payback`, body: { answer }, targets: { txns: [t.id] } }
+  },
+  /** Leave as is (D-156): To-do stops asking `question` about this payment's payee. */
+  leaveQuestion(t: { id: number }, question: 'category' | 'sender', item: string, target: Targets): NewOp {
+    return { kind: 'Leave as is', item, choice: 'Left as is', method: 'PUT', path: `/transactions/${t.id}/leave`, body: { question }, targets: target }
+  },
+  /** Undo Leave as is: To-do asks about this payee again. */
+  askAgain(t: { id: number }, item: string): NewOp {
+    return { kind: 'Ask again', item, choice: 'Asked again', method: 'DELETE', path: `/transactions/${t.id}/leave`, body: null, targets: { txns: [t.id] } }
   },
   /** Undo "All payments to <name>" (D-149): the engine's category again. */
   undoRule(rule: Pick<Rule, 'party_id' | 'name' | 'category_name'>): NewOp {
