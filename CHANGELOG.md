@@ -4,6 +4,20 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## 5G: speed, back button, smarter categories, To-do, backups (26 Nov 2026)
+
+- A payment notification opens its sheet and the category list at once, before anything
+  downloads (D-153).
+- Android's back button closes a sheet first, then goes Home, and only leaves from Home,
+  with Android's predictive animation (D-154).
+- Many more payees get a category on their own: Indian brands and chains, rent platforms,
+  more keywords; a person's name is never overridden by a weak word (D-155).
+- To-do: "Leave as is" stops a question without changing any amount; a credit can be "This
+  is income"; shops are called Payee; investments count in Spent unless you turn it off
+  (D-156). What To-do shows and why: [docs/todo.md](docs/todo.md).
+- Backups start Docker themselves, keep the newest 12 and log each run; one command sets up a
+  weekly backup (D-157). A `no-parser` report shows which banks need a reader (D-158).
+
 ## Premium run: Analytics, rules, robustness, polish (23 Nov 2026)
 
 - Analytics at the top of Insights: Spent per month with Invested, Paid back and Net,
