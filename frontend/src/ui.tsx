@@ -11,6 +11,7 @@ import { syncLine, useOutbox } from './data/outbox.ts'
 import { expire, useAuth } from './auth.ts'
 import type { Category } from './api/types.ts'
 import { useNav } from './state.tsx'
+import { pushBack } from './back.ts'
 
 /** Under the month: "Updated 5 min ago · 3 saved on phone, syncing · 1 not saved", "Updating…",
  *  or "Offline · showing data from …". The failed count opens its sheet. */
@@ -271,7 +272,12 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
     panel.current?.focus()
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current()
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // 5G-B: Android's back button closes the topmost open sheet first (back.ts).
+    const forget = pushBack(() => close.current())
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      forget()
+    }
   }, [])
   return (
     <div className="fixed inset-0 z-30 flex items-end justify-center">

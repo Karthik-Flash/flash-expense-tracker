@@ -2054,3 +2054,21 @@ usually packs 6 to 10 times): for the owner's about 700 payments about 320 KB un
 about 40 KB on the wire, 10 full answers a day plus 304s about 0.4 MB a day, about 12 MB a
 month of Render bandwidth (100 GB free). The Supabase read estimate (0.6 GB a month, D-140)
 is unchanged: gzip is between Render and the phone.
+
+## D-154 The Android back button (2026-11-26)
+
+5G part B. Before: no code handled Back (Capacitor core registers nothing; the App plugin is
+not installed and is not added), so Back always left the app, even from a sheet. Now, in
+order: Back closes the topmost open sheet or dialog (every `Sheet` registers its close on
+mount, `back.ts`, URL sheets and others alike); else it steps out of a detail (`parentOf`);
+else any tab other than Home goes to Home; on Home with nothing open, Android's own back
+runs and leaves the app. Per Android's predictive back guidance (checked 26 Nov: targeting
+API 36, predictive back is on by default, `onBackPressed` and KEYCODE_BACK are no longer
+delivered, the AndroidX `OnBackPressedCallback` is the way, enabled only while the app
+intercepts so the system can play its back-to-home animation), the plugin registers one
+`OnBackPressedCallback`, off by default; the web app says ahead of time whether Back is its
+own (`setBackHandled`, on every change of view and of open sheets), the callback sends a
+"back" event, and if the web app finds nothing to do after all it calls `leave`
+(moveTaskToBack, as Android's back does). An APK from before keeps the old behaviour. The
+rules are pure and tested in Node; the Kotlin side has no logic of its own beyond the
+switch, so it has no unit test (it compiles in the build and the 20 JVM tests pass).
