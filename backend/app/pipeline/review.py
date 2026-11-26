@@ -4,8 +4,8 @@ Both read only: a fresh derive in memory (recompute.plan), never a write. They p
 only; the rows go to a PRIVATE CSV file the owner names, which must be outside the
 repository (the CLI refuses a path inside it).
 
-- category_diff: every active transaction categorised by the categorise-1.2.0 person rules
-  and by the current ones (1.3.0), on the same roles. Rows whose category differs.
+- category_diff: every active transaction categorised by categorise-1.3.0
+  and by the current rules (1.4.0), on the same roles. Rows whose category differs.
 - payback_review: every credit that is, or may be, money back from a person: paybacks the
   owner confirmed, ones the engine suggests (To confirm, never in Net), and credits with
   no answer (uncertain), with the payment each one pays back (credits.payback_links).
@@ -24,7 +24,7 @@ from app.pipeline.recompute import plan
 
 DIFF_COLUMNS = (
     "transaction_id", "time_ist", "direction", "amount_paise", "role", "name",
-    "counterparty", "category_1_2_0", "rule_1_2_0", "category_1_3_0", "rule_1_3_0",
+    "counterparty", "category_1_3_0", "rule_1_3_0", "category_1_4_0", "rule_1_4_0",
 )  # fmt: skip
 PAYBACK_COLUMNS = (
     "transaction_id", "time_ist", "amount_paise", "name", "counterparty", "answer", "rule",
@@ -34,8 +34,8 @@ PAYBACK_COLUMNS = (
 
 @dataclass
 class CategoryDiff:
-    before: Counter  # category -> transactions, under 1.2.0
-    after: Counter  # the same under 1.3.0
+    before: Counter  # category -> transactions, under 1.3.0
+    after: Counter  # the same under 1.4.0
     rows: list[dict]  # the changed transactions, DIFF_COLUMNS
 
 
@@ -45,7 +45,7 @@ def _ist(moment) -> str:
 
 def category_diff(session: Session, owner: uuid.UUID) -> CategoryDiff:
     p = plan(session, owner)
-    old = categorise(p.txns, p.owner, p.result, rules="1.2.0")
+    old = categorise(p.txns, p.owner, p.result, rules="1.3.0")
     new = p.categories
     rows = []
     for t in sorted(p.txns, key=lambda t: (t.txn_time_utc, t.id)):

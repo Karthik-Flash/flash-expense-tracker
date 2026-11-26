@@ -614,6 +614,7 @@ else by merchant key. Nothing changes for data without unsure parties.
 
 | Version | Was | What changed |
 | ------- | --- | ------------ |
+| `categorise-1.4.0` | 1.3.0 | Known names, more keywords, word stems and weak keywords from `app/engine/category_words.py` (D-155): owner answer > owner rule > brand > known name (`KNOWN`) > keyword (`KEYWORD`) > clearly personal name > weak keyword (`KEYWORD_weak`) > Uncategorised. Merchant keys and `brands.json` unchanged |
 | `categorise-1.3.0` | 1.2.0 | People only when clearly personal (below); rules `PERSON_name`, `PERSON_vpa` replace the merchant engine's kind and `NAME_person`; `PERSON` is only an owner party of kind person |
 | `reconcile-1.7.0` | 1.6.0 | `CR_person_signal` needs a payment to the same person in the 90 days before; else `CR_no_debit` (uncertain). `totals()` gains `invested_paise` and the `invest` setting |
 | `merchant-1.1.1` | unchanged | no brand, word list or key change, so no merchant key moves and recompute's key-change stop cannot fire |

@@ -1,4 +1,4 @@
-"""Categories guessed from names (categorise-1.3.0, D-119, D-133). FAKE names only."""
+"""Categories guessed from names (categorise-1.3.0 rules kept in 1.4.0, D-119, D-133). FAKE."""
 
 import json
 from datetime import UTC, datetime
@@ -27,7 +27,7 @@ def debits() -> list[Txn]:
 
 
 def test_every_fake_name_gets_its_category() -> None:
-    assert CATEGORISE_VERSION == "categorise-1.3.0"
+    assert CATEGORISE_VERSION == "categorise-1.4.0"
     assert len(NAMES) >= 150 and {c for _, c in NAMES} <= set(CATEGORIES)
     txns = debits()
     got = categorise(txns, OwnerData(), derive(txns))

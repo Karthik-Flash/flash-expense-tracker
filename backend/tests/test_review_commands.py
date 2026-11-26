@@ -52,19 +52,22 @@ def read(path: Path) -> list[dict]:
 
 def test_category_diff_counts_and_writes_the_changed_rows_only(run, tmp_path, db_engine) -> None:
     loaded(run, tmp_path)
+    # A rent platform the 1.3.0 rules left Uncategorised; 1.4.0 knows it (D-155).
+    rent = [sent("1,500.00", "RENTOK PAYMENTS", "612400000201", 3)]
+    run("import-sms", "--input", str(write_backup(tmp_path / "rent.xml", rent)))
     out = tmp_path / "diff.csv"
     printed = run("category-diff", "--out", str(out))
-    assert printed.startswith("category-diff (categorise-1.2.0 -> 1.3.0, read-only")
+    assert printed.startswith("category-diff (categorise-1.3.0 -> 1.4.0, read-only")
     rows = read(out)
     assert rows and list(rows[0]) == list(review.DIFF_COLUMNS)
     changed = int(
         next(x for x in printed.splitlines() if x.startswith("category changed")).split()[-1]
     )
-    assert changed == len(rows) >= 1  # "To TEST MERCHANT" (H01) is no person any more
-    assert {(r["category_1_2_0"], r["category_1_3_0"]) for r in rows} == {
-        ("people", "uncategorised")
+    assert changed == len(rows) >= 1
+    assert {(r["category_1_3_0"], r["category_1_4_0"]) for r in rows} == {
+        ("uncategorised", "rent_hostel")
     }
-    assert "people -> uncategorised" in printed
+    assert "uncategorised -> rent_hostel" in printed
     for r in rows:  # what the terminal shows is counts: never a name, amount or text
         assert r["counterparty"] not in printed and f" {r['amount_paise']}" not in printed
     again = tmp_path / "again.csv"
