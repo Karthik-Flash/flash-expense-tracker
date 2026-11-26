@@ -355,3 +355,16 @@ def test_the_snapshot_reads_do_not_grow_with_months(client, db_engine) -> None:
         upload(client, phone, sms(ref, when=WHEN - timedelta(days=31 * n), n=n + 1))
     assert len(body(client)["months"]) >= 10
     assert statements() == one <= 55
+
+
+def test_the_snapshot_is_gzipped_and_its_etag_still_gives_304(client, data) -> None:
+    """5G-A: GZipMiddleware compresses the answer; the ETag stays the same and If-None-Match
+    still answers 304 with no body."""
+    first = fetch(client, **{"Accept-Encoding": "gzip"})
+    assert first.status_code == 200 and first.headers["content-encoding"] == "gzip"
+    etag = first.headers["etag"]
+    assert etag.startswith('"v-')
+    again = fetch(client, **{"Accept-Encoding": "gzip", "If-None-Match": etag})
+    assert again.status_code == 304 and again.content == b"" and again.headers["etag"] == etag
+    plain = fetch(client, **{"Accept-Encoding": "identity"})
+    assert "content-encoding" not in plain.headers and plain.headers["etag"] == etag

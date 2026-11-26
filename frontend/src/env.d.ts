@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string
   /** "1": the demo adapter, local dev only. */
   readonly VITE_DEMO?: string
+  /** "1": test hooks for the speed check only (scripts/perf-check.mjs, D-153). */
+  readonly VITE_TEST_HOOKS?: string
 }
 
 interface ImportMeta {

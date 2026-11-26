@@ -98,9 +98,10 @@ def test_the_answer_lists_new_payments_only(client, db_engine, token) -> None:
     first = upload(client, token, sms(CARD, n=1)).json()
     (item,) = first["new_transactions"]
     assert set(item) == {
-        "device_msg_id", "id", "direction", "amount_paise", "display_name", "category",
-        "category_name", "role", "paid_back_question",
+        "device_msg_id", "id", "direction", "amount_paise", "time_utc", "display_name",
+        "category", "category_name", "role", "paid_back_question",
     }  # fmt: skip
+    assert item["time_utc"].endswith("Z")  # 5G-A: the sheet opens from the notification
     assert (item["device_msg_id"], item["direction"], item["amount_paise"]) == ("1", "debit", 3300)
     assert item["role"] == "spend" and item["display_name"] == "Test Kiosk"
     assert item["paid_back_question"] is False

@@ -235,3 +235,21 @@ test('premium F: the first-run checklist ticks itself and knows a browser from t
   // An app from before 5B-2 reports no notification state: that item is not asked.
   assert.deepEqual(firstRun({ ...done, notifications: undefined }, none).map((i) => i.key), ['sms', 'battery', 'sync'])
 })
+
+test('5G-A: a notification opens before a slow reconnect, and never for another login', async () => {
+  const fake = fakePlugin({ ...ON, user: 'user-a', connected: false, signedOut: true, cursorMs: 5 }, { txnId: 42, act: 'category' })
+  setPluginForTests(fake.plugin)
+  const opened: number[] = []
+  let release = () => {}
+  const slow = new Promise<void>((ok) => (release = ok))
+  const started = startSms(async () => {}, 'user-a', () => slow, (at) => opened.push(at.txnId))
+  for (let i = 0; i < 10 && !opened.length; i++) await Promise.resolve()
+  assert.deepEqual(opened, [42]) // while the reconnect still waits
+  release()
+  await started
+  const other = fakePlugin({ ...ON, user: 'user-a' }, { txnId: 43, act: 'sheet' })
+  setPluginForTests(other.plugin)
+  const seen: number[] = []
+  await startSms(async () => {}, 'user-b', undefined, (at) => seen.push(at.txnId))
+  assert.deepEqual(seen, []) // the phone belonged to user-a: not shown to user-b
+})

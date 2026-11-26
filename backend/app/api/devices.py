@@ -276,6 +276,8 @@ def new_items(session: Session, owner: uuid.UUID, created: dict[int, str]) -> li
             "id": t.id,
             "direction": t.direction,
             "amount_paise": t.amount_paise,
+            # 5G-A: when it was, so the phone's notification can open its sheet at once.
+            "time_utc": _iso(t.txn_time_utc),
             "display_name": d.display_name if d else engine_name(t),
             "category": d.category if d else None,
             "category_name": CATEGORIES.get(d.category) if d else None,

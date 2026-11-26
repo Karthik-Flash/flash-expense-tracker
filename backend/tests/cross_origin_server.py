@@ -28,7 +28,7 @@ from app.api import auth  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.db import Base, engine  # noqa: E402
 from tests.apiclient import KEY, jwk, token  # noqa: E402
-from tests.smsdata import full_rows, write_backup  # noqa: E402
+from tests.smsdata import bulk_rows, full_rows, write_backup  # noqa: E402
 
 settings.auth_users = f"user-a:{settings.owner_id}"
 auth.fetch_jwks = lambda url: {"keys": [jwk(KEY, "k1")]}
@@ -36,7 +36,9 @@ Base.metadata.create_all(engine)
 with open(os.devnull, "w") as quiet:
     stdout, sys.stdout = sys.stdout, quiet
     try:
-        cli.main(["import-sms", "--input", str(write_backup(folder / "a.xml", full_rows()))])
+        # FLASH_XO_BULK=<n>: n more FAKE payments, for the speed check (perf-check.mjs).
+        rows = full_rows() + bulk_rows(int(os.environ.get("FLASH_XO_BULK", "0")))
+        cli.main(["import-sms", "--input", str(write_backup(folder / "a.xml", rows))])
     finally:
         sys.stdout = stdout
 print(

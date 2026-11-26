@@ -41,6 +41,7 @@ Thumbs.db
 .claude/settings.local.json
 dist-xo/
 dist-android/
+dist-perf/
 screens-out/
 
 NOTE.TXT

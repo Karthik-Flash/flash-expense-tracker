@@ -752,6 +752,17 @@ Paid back and Net do not move.
    it says "Updated hh:mm"; a credit from a friend in Transactions has Paid
    back / Not paid back; Settings has "Count investments in Spent" (off).
 
+### Speed check (5G, D-153)
+
+```powershell
+cd frontend; node scripts/perf-check.mjs     # about 10 minutes: FAKE data (900 payments), Edge, CPU 4x, slow 3G
+```
+
+Prints, in ms from the tap to the frame that shows it: a row to its sheet and Change
+category to the list (warm), the same after a cold start from a deep link, a just-notified
+payment without and with the notification's basics, and each snapshot answer's size on the
+wire and unpacked. The list should open in under 300 ms in every case.
+
 ### Cross-origin check (the test routine since 4F-B, D-104)
 
 ```powershell

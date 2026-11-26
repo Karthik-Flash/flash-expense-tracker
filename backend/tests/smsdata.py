@@ -49,3 +49,32 @@ def write_backup(path: Path, rows: list[Row], mms: int = 0) -> Path:
 
 def full_rows() -> list[Row]:
     return hdfc_rows() + NEVER_STORED + [NO_PARSER_ROW]
+
+
+BULK_PAYEES = (
+    "TEST CAFE ONE",
+    "TEST GROCER",
+    "TEST KIOSK",
+    "RAHUL TESTNAME",
+    "TEST PHARMACY",
+    "TEST FUEL STN",
+    "PRIYA TESTNAME",
+    "TEST BAKERY",
+    "TEST CINEMA",
+    "TEST HOSTEL",
+)
+
+
+def bulk_rows(n: int, end: datetime = datetime(2026, 11, 20, 6, 0, tzinfo=UTC)) -> list[Row]:
+    """`n` FAKE HDFC UPI payments spread over a year, ten payees, distinct references: a
+    realistic-size dataset for the speed check (frontend/scripts/perf-check.mjs)."""
+    rows = []
+    for i in range(n):
+        when = end - timedelta(hours=9 * i + 1)
+        body = (
+            f"Sent Rs.{(i * 37) % 900 + 20}.00\nFrom HDFC Bank A/C *0001\n"
+            f"To {BULK_PAYEES[i % len(BULK_PAYEES)]}\nOn {when:%d/%m/%y}\n"
+            f"Ref {612400000000 + i}\nNot You?\nCall 18000000001/SMS BLOCK UPI to 9000000001\n"
+        )
+        rows.append(("VM-HDFCBK-S", body, when))
+    return rows
