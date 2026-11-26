@@ -304,3 +304,23 @@ test('D-149: a per-credit answer and undoing a rule are outbox writes with their
   const rule = actions.setCategory({ id: 9, display_name: 'Swiggy' }, { slug: 'groceries', name: 'Groceries' } as never, 'merchant', 'Swiggy')
   assert.ok(rule.kind.startsWith('All payments to Swiggy'))
 })
+
+test('D-156: Leave as is and This is income are outbox writes; To-do drops a left payee at once', () => {
+  const leave = actions.leaveQuestion({ id: 9 }, 'category', 'Test Shop', { merchants: ['Test Shop'] })
+  assert.deepEqual([leave.method, leave.path, leave.body, leave.kind], ['PUT', '/transactions/9/leave', { question: 'category' }, 'Leave as is'])
+  const again = actions.askAgain({ id: 9 }, 'Test Shop')
+  assert.deepEqual([again.method, again.path, again.body], ['DELETE', '/transactions/9/leave', null])
+  const income = actions.answerCredit({ id: 42 }, 'income', 'Rohit V')
+  assert.deepEqual([income.path, income.body, income.choice], ['/transactions/42/payback', { answer: 'income' }, 'Income'])
+  const op = { ...leave, seq: 1, op_id: '', created_at: '', state: 'pending', attempts: 0, last_error: '', key_reused: false, confirmed_at: null } as Op
+  const sent = { ...actions.leaveQuestion({ id: 7 }, 'sender', 'Ravi', { senders: ['s_1'] }), seq: 2, op_id: '', created_at: '', state: 'pending', attempts: 0, last_error: '', key_reused: false, confirmed_at: null } as Op
+  const todo = {
+    senders: [sender('s_1'), sender('s_2')], answered: [],
+    merchants: [{ name: 'Test Shop', total_paise: 1, count: 1, txn_id: 9 }, { name: 'Other Shop', total_paise: 1, count: 1, txn_id: 8 }],
+    unnamed: 0,
+  }
+  const v = todoView(todo, [op, sent])
+  assert.deepEqual(v.merchants.map((m) => m.name), ['Other Shop'])
+  assert.deepEqual(v.senders.map((x) => x.id), ['s_2'])
+  assert.equal(v.waiting.length, 2) // both show under "Waiting to sync"
+})

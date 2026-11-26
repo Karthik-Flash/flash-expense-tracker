@@ -31,6 +31,18 @@ export function isPersonTxn(t: Txn): boolean {
 /** The person of a row: the API's person id (one person under a name and a UPI ID once joined). */
 export const personKey = (t: Txn): string => t.person_id ?? `name:${nameOf(t)}`
 
+/** "Person" for someone the money went to or came from as a person (People, or money in
+ *  answered Friend), else "Payee" (5G-D, D-156): a shop is no person. */
+export function partyWord(t: Pick<Txn, 'category' | 'direction'>, p: Pick<Person, 'role'> | undefined): 'Person' | 'Payee' {
+  if (t.category === 'people' || p?.role === 'friend') return 'Person'
+  return 'Payee'
+}
+
+/** Leave as is (D-156): which To-do questions stopped for this payment's payee. */
+export function leftFor(t: Pick<Txn, 'person_id'>, todo: Pick<Snapshot['todo'], 'left'>): { category: boolean; sender: boolean } | undefined {
+  return t.person_id ? todo.left?.find((x) => x.person_id === t.person_id) : undefined
+}
+
 /** One IST month of the snapshot; undefined when nothing was recorded in it. */
 export function monthData(s: Snapshot, month: string): MonthData | undefined {
   return s.months.find((m) => m.month === month)

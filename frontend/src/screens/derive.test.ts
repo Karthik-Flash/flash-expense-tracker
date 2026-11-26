@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { Snapshot, Txn } from '../api/types.ts'
-import { identifiersText, isPersonTxn, labelName, matches, monthData, monthTxns, paymentsText, personKey, topCategories } from './derive.ts'
+import { identifiersText, isPersonTxn, labelName, leftFor, matches, monthData, monthTxns, partyWord, paymentsText, personKey, topCategories } from './derive.ts'
 
 const txn = (over: Partial<Txn>): Txn => ({
   id: 1,
@@ -95,4 +95,16 @@ test('4E: chips are the most used categories by count, the owner\'s own first, n
   assert.deepEqual(topCategories([], cats), [])
   assert.equal(identifiersText({ named: true, identifiers: [{ name: 'Rohit V' }, { name: '*r203@okhdfcbank' }] } as never), 'Rohit V · *r203@okhdfcbank')
   assert.equal(identifiersText({ named: false, identifiers: [{ name: 'Rohit V' }] } as never), '')
+})
+
+test('D-156: a shop is a Payee, a person a Person; a left payee is found by its key', () => {
+  assert.equal(partyWord(txn({ category: 'people' }), undefined), 'Person')
+  assert.equal(partyWord(txn({ category: 'food_drinks' }), { role: null }), 'Payee')
+  assert.equal(partyWord(txn({ direction: 'credit', category: 'other' }), { role: 'friend' }), 'Person')
+  assert.equal(partyWord(txn({ direction: 'credit', category: 'other' }), { role: 'income' }), 'Payee')
+  const todo = { left: [{ person_id: 'p_7', category: true, sender: false }] }
+  assert.deepEqual(leftFor(txn({ person_id: 'p_7' }), todo), { person_id: 'p_7', category: true, sender: false })
+  assert.equal(leftFor(txn({ person_id: 'p_8' }), todo), undefined)
+  assert.equal(leftFor(txn({ person_id: null }), todo), undefined)
+  assert.equal(leftFor(txn({ person_id: 'p_7' }), {}), undefined) // a copy from before 5G
 })

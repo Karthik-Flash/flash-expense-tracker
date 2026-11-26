@@ -124,12 +124,16 @@ def changes(summary: dict) -> dict:
     }
 
 
-def todo_merchants(items: list[dict]) -> tuple[list[dict], int]:
-    """Uncategorised spending by merchant name, biggest first, and the rows with no name."""
+def todo_merchants(items: list[dict], left: set[int] | None = None) -> tuple[list[dict], int]:
+    """Uncategorised spending by merchant name, newest first, and the rows with no name.
+    `left`: parties the owner left as is (D-156): not asked."""
     groups: dict[str, dict] = {}
     unnamed = 0
+    skip = {f"p_{i}" for i in left or ()}
     for item in items:
         if item["category"] != UNCATEGORISED or item["role"] not in ("spend", "card_bill_counted"):
+            continue
+        if item["person_id"] in skip:
             continue
         if not item["display_name"]:
             unnamed += 1
@@ -243,7 +247,8 @@ def build(session, owner, caller: Caller | None = None, acct: dict | None = None
             "people": people(mine),
         })  # fmt: skip
     senders = v1.senders(owner, session, "all")
-    todo, unnamed = todo_merchants(items)
+    category_left, sender_left = owner_actions.left_parties(session, owner)
+    todo, unnamed = todo_merchants(items, category_left)
     label_ids = session.scalars(
         select(Label.id).where(Label.owner_id == owner).order_by(Label.name)
     )
@@ -260,6 +265,11 @@ def build(session, owner, caller: Caller | None = None, acct: dict | None = None
             "unnamed": unnamed,
             "transfers": transfers(session, owner),
             "suggestions": v1.suggestions(session, owner, names, found),
+            # D-156: payees left as is, for "Ask again" in a payment's sheet.
+            "left": [
+                {"person_id": f"p_{i}", "category": i in category_left, "sender": i in sender_left}
+                for i in sorted(category_left | sender_left)
+            ],
         },
         # 5B-1 (D-134): payback -> the payment it pays back, linked or a candidate.
         "paybacks": paybacks(items, upi_ids(session, owner)),

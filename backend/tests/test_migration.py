@@ -105,7 +105,11 @@ def test_upgrade_check_downgrade_upgrade(url: str) -> None:
     def columns(table: str) -> set[str]:
         return {c["name"] for c in inspect(create_engine(url)).get_columns(table)}
 
-    command.downgrade(cfg, "0017")  # one step at a time: each downgrade works alone
+    command.downgrade(cfg, "0018")  # one step at a time: each downgrade works alone
+    assert "category_left_at" not in columns("parties") and "scope" in columns("owner_roles")
+    command.upgrade(cfg, "head")
+    assert {"category_left_at", "sender_left_at"} <= columns("parties")
+    command.downgrade(cfg, "0017")
     assert "scope" not in columns("owner_roles") and "origin" in columns("raw_messages")
     command.upgrade(cfg, "head")
     assert "scope" in columns("owner_roles")

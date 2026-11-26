@@ -199,6 +199,9 @@ export class FakeApi implements Api {
   private oneOff = new Map<number, string>()
   /** D-149 in the demo: per-credit answers (shown, not counted) and rule ids by name. */
   private creditAnswers = new Map<number, CreditAnswer>()
+  /** D-156 in the demo: payees left as is, by name (category) and by sender id. */
+  private leftNames = new Set<string>()
+  private leftSenders = new Set<string>()
   private ruleIds = new Map<string, number>()
   private roleAnswer = new Map<number, Role>()
   private incomeLabel = new Map<string, string>()
@@ -509,7 +512,8 @@ export class FakeApi implements Api {
           people: people(mine),
         }
       })
-      const senders = this.sendersOf(this.visible())
+      const senders = this.sendersOf(this.visible()).map((x) => (x.status === 'to_confirm' && this.leftSenders.has(x.id) ? { ...x, status: 'left' as const } : x))
+      const asked = todo(transactions)
       const labels = [...this.labelNames.entries()].map(([id, name]) => this.labelView(id, name)).sort((a, b) => a.name.localeCompare(b.name))
       const document: Omit<Snapshot, 'generated_at'> = {
         schema_version: SCHEMA_VERSION,
@@ -520,9 +524,11 @@ export class FakeApi implements Api {
         todo: {
           senders: senders.filter((s) => s.status === 'to_confirm'),
           answered: senders.filter((s) => s.status !== 'to_confirm'),
-          ...todo(transactions),
+          merchants: asked.merchants.filter((m) => !this.leftNames.has(m.name)),
+          unnamed: asked.unnamed,
           transfers: this.transfers(),
           suggestions: this.suggestions(),
+          left: [...new Set(transactions.filter((t) => t.person_id && t.display_name && this.leftNames.has(t.display_name)).map((t) => t.person_id!))].map((person_id) => ({ person_id, category: true, sender: false })),
         },
         profile: {
           names: [...this.ownerNames],
@@ -645,7 +651,7 @@ export class FakeApi implements Api {
   }
 
   /** The owner's settings (D-136); the demo keeps them and shows them, no total moves. */
-  private settings = { count_investments_in_spent: false }
+  private settings = { count_investments_in_spent: true } // D-156: on until the owner says
 
   private apply({ method, path, body }: SendRequest): void {
     const b = (body ?? {}) as Record<string, string | number | boolean | undefined>
@@ -682,6 +688,18 @@ export class FakeApi implements Api {
       return this.setLabel(Number(txn[1]), id)
     }
     if (txn?.[2] === 'label' && method === 'DELETE') return this.clearLabel(Number(txn[1]))
+    const leave = /^\/transactions\/(\d+)\/leave$/.exec(path)
+    if (leave) {
+      const row = this.rows.find((r) => r.id === Number(leave[1]))
+      if (!row) throw new ApiError(404, 'No such transaction.')
+      const sender = this.sendersOf(this.visible()).find((x) => x.txn_id === row.id || (x.display_name !== null && x.display_name === row.name))
+      if (method === 'DELETE') {
+        this.leftNames.delete(row.name ?? '')
+        if (sender) this.leftSenders.delete(sender.id)
+      } else if (b.question === 'category') this.leftNames.add(row.name ?? '')
+      else if (sender) this.leftSenders.add(sender.id)
+      return
+    }
     const credit = /^\/transactions\/(\d+)\/payback$/.exec(path)
     if (credit && method === 'PUT') return void this.creditAnswers.set(Number(credit[1]), b.answer as CreditAnswer)
     if (credit && method === 'DELETE') return void this.creditAnswers.delete(Number(credit[1]))
