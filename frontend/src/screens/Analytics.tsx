@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 
 import type { Analytics as Data } from '../api/types.ts'
 import { ApiError } from '../api/client.ts'
-import type { Load } from '../data/store.ts'
+import { onReset, type Load } from '../data/store.ts'
 import { SPANS, spanOf, type Span } from '../exportRange.ts'
 import { currentMonth, dayLabel, monthLabel } from '../lib/dates.ts'
 import { groupIndian, rupees } from '../lib/money.ts'
@@ -17,6 +17,8 @@ import { catColor } from './common.ts'
 const SLOW_MS = 3000
 /** The last answer per range, with its ETag: shown at once, then checked (a 304 keeps it). */
 const cache = new Map<string, { etag: string; data: Data }>()
+// 5G-F: another login on this device must never see these figures (sign-out, D-158).
+onReset(() => cache.clear())
 
 const percent = (bp: number) => (bp > 0 && bp < 100 ? '<1%' : `${Math.round(bp / 100)}%`)
 const short = (month: string) => monthLabel(month).slice(0, 3)

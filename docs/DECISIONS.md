@@ -2139,3 +2139,20 @@ Docker Desktop (Docker was running; stopping it would have ended the test databa
 StartWhenAvailable (a missed run starts when the laptop is next awake), only while logged
 in (Interactive, limited rights, no stored password), at most one hour, one at a time; it
 prints how to check, test and remove it. Agents never run it; it was only parsed.
+
+## D-158 Sweep: no-parser report, leaks on sign-out, audit (2026-11-26)
+
+5G part F. `python -m app.cli no-parser` (read-only, counts only) lists the messages no
+parser reads yet ("no parser for the bank"), by sender code and bank with the newest IST
+month, and the total per bank, for the planner to choose the next parser. The screenshot
+audit of the screens touched in 5G (To-do, a payment's sheet, a credit's sheet; 360 and 1280
+px, light, dark, 200 % text; 30 shots) found nothing. Bugs found and fixed on the way:
+(1) a payment notification opened "not in your data" and waited for a download (D-153);
+(2) the app took a tapped notification only after a possible phone reconnect over the
+network (D-153); (3) a notification from the login the phone belonged to before could open
+in another login's app (D-153); (4) Back always left the app, even from a sheet (D-154);
+(5) Analytics kept its last answers in memory across a sign-out, so another login on the
+same device could see them for a moment: cleared on every reset now; (6) the same for the
+notification's payment basics; (7) "senders to confirm" in the month's summary and
+`/senders` would have disagreed with To-do once a sender was left as is: one function now
+marks them everywhere (D-156).

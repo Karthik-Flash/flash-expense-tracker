@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { noteOpen, provisionalTxn, takeCategoryOpen, type OpenItem } from './provisional.ts'
+import { clearOpens, noteOpen, provisionalTxn, takeCategoryOpen, type OpenItem } from './provisional.ts'
 
 const item: OpenItem = { id: 901, time_utc: '2026-11-20T06:00:00Z', amount_paise: 3300, direction: 'debit', display_name: 'Test Kiosk', category: 'food_drinks', category_name: 'Food & Drinks', role: 'spend' }
 
@@ -19,4 +19,12 @@ test('5G-A: a notification opens its payment from the basics it carries, before 
   noteOpen({ txnId: 903, act: 'sheet', item })
   assert.equal(provisionalTxn(902), undefined)
   assert.equal(provisionalTxn(903), undefined)
+})
+
+test('5G-F: a sign-out forgets the taps of the old login', () => {
+  noteOpen({ txnId: 950, act: 'category', item: { ...item, id: 950 } })
+  assert.ok(provisionalTxn(950))
+  clearOpens()
+  assert.equal(provisionalTxn(950), undefined)
+  assert.equal(takeCategoryOpen(950), false)
 })

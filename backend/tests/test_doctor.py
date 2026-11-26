@@ -55,3 +55,16 @@ def test_a_view_that_disagrees_is_found(run, data, monkeypatch) -> None:
     monkeypatch.setattr(analytics, "build", off_by_one)
     out = run("doctor", code=1)
     assert value(out, "months that disagree") == 1
+
+
+def test_no_parser_counts_by_sender_code_and_bank(run, tmp_path) -> None:
+    """5G (D-158): what no parser reads yet, by sender code and bank; counts only."""
+    from tests.smsdata import NO_PARSER_ROW, WHEN, full_rows, write_backup
+
+    extra = [(NO_PARSER_ROW[0], NO_PARSER_ROW[1].replace("33", "44"), WHEN)]
+    run("import-sms", "--input", str(write_backup(tmp_path / "a.xml", full_rows() + extra)))
+    out = run("no-parser")
+    assert out.startswith("no-parser (read-only, counts only)")
+    assert re.search(r"^  PHONPE\s+PHONEPE\s+2  2026-01$", out, flags=re.M)
+    assert value(out, "messages") == 2
+    assert "debited" not in out and "33" not in out  # never the text
