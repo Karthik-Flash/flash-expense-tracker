@@ -1,11 +1,9 @@
-"""People only when clearly personal (categorise-1.3.0, D-133). FAKE counterparties only.
+"""People only when clearly personal (categorise-1.3.0, D-133; kept in 1.4.0, D-155). FAKE
+counterparties only.
 
-Under 1.2.0 a debit was People when the merchant engine said person (a consumer UPI handle
-alone, a mobile number UPI ID, an honorific, two to four plain words) and no business word
-was in the name, or when the engine was unsure and the name looked like a person's
-(NAME_person), even with a merchant QR UPI ID beside it. 1.3.0 asks for a clearly personal
-name or UPI ID and nothing business-like anywhere (business_like()); anything else is
-Uncategorised for the owner to answer, never People.
+1.3.0 asks for a clearly personal name or UPI ID and nothing business-like anywhere
+(business_like()); anything else is Uncategorised for the owner to answer, never People.
+1.4.0 adds known names and more keywords, and must leave this table exactly as it was.
 """
 
 from datetime import UTC, datetime
@@ -83,7 +81,7 @@ def both() -> tuple[list[Txn], dict, dict]:
     result = derive(txns)
     return (
         txns,
-        categorise(txns, OwnerData(), result, "1.2.0"),
+        categorise(txns, OwnerData(), result, "1.3.0"),
         categorise(txns, OwnerData(), result),
     )
 
@@ -104,24 +102,10 @@ def test_the_regression_table() -> None:
             assert new[i].rule in ("PERSON_name", "PERSON_vpa")
 
 
-def test_what_changed_from_1_2_0() -> None:
-    """The People bias: 1.2.0 called these business or ambiguous payees People."""
+def test_1_4_0_leaves_the_table_as_1_3_0_had_it() -> None:
+    """The People regression table (5B-1) is the same under 1.4.0: no person lost, none won."""
     _, old, new = both()
-    leaving = sorted(TABLE[i - 1][0] for i in old if old[i].category == "people" != new[i].category)
-    assert leaving == [
-        "*k77@okhdfcbank",  # a masked UPI ID says too little
-        "Anil Kumar bharatpe.9000000023@fbpe",  # a merchant QR scheme (NAME_person)
-        "Mohan Lal paytmqr1234567@paytm",  # the same (NAME_person)
-        "PAYTM*Ravi Kumar",  # a gateway prefix: a merchant
-        "Raju 9000000024@unknownpsp",  # a mobile number, but not at a consumer app's handle
-        "Sharma and Sons",  # "and sons": a business
-        "Suresh Kumar test.merchant@okbizaxis",  # a business handle (NAME_person)
-        "Test India Payments",  # business words
-        "test.shop.rzp@icici",  # a gateway (Razorpay) UPI ID (NAME_person)
-    ]
-    # The one payee that becomes People: a name handle at PhonePe's ibl, a consumer app.
-    entering = [TABLE[i - 1][0] for i in new if new[i].category == "people" != old[i].category]
-    assert entering == ["test.gopal@ibl"]
+    assert [(i, old[i].category) for i in old] == [(i, new[i].category) for i in new]
 
 
 def test_an_owner_answer_still_wins_both_ways() -> None:
@@ -134,7 +118,7 @@ def test_an_owner_answer_still_wins_both_ways() -> None:
     assert categorise([ravi], business, derive([ravi], business))[2].category == "uncategorised"
 
 
-@pytest.mark.parametrize("rules", ["1.2.0", "1.3.0"])
+@pytest.mark.parametrize("rules", ["1.3.0", "1.4.0"])
 def test_the_people_change_moves_no_role_link_or_total(rules) -> None:
     """Categories come after roles: a People change cannot touch a payback, a link or Net."""
     txns = debits()

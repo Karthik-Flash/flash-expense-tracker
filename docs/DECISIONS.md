@@ -2072,3 +2072,33 @@ own (`setBackHandled`, on every change of view and of open sheets), the callback
 (moveTaskToBack, as Android's back does). An APK from before keeps the old behaviour. The
 rules are pure and tested in Node; the Kotlin side has no logic of its own beyond the
 switch, so it has no unit test (it compiles in the build and the 20 JVM tests pass).
+
+## D-155 Smarter automatic categories: categorise-1.4.0 (2026-11-26)
+
+5G part C. A curated, Indian-focused dictionary in the categorise layer
+(`app/engine/category_words.py`, 640 entries across 14 categories) adds, after the merchant
+engine's brands (unchanged, so no merchant key moves and `brands.json` is untouched):
+- KNOWN: brand and chain names (Chaayos, RentOk, Stanza Living, Namma Yatri, Thyrocare,
+  Zerodha, Ferns N Petals, ...), as whole words or phrases, written as one word in a UPI ID
+  ("stanzaliving@..."), or for names of 6 letters or more at the start of a word
+  ("zolostays"); the longest name wins ("Green Trends", a salon, over "Trends").
+- KEYWORD: strong words ("pharmacy", "biryani", "fastag", "florist") and stems that no
+  Indian given name or surname starts with ("hunger...", "pharm...", "medical...",
+  "diagnos...").
+- KEYWORD_weak: words also found in names ("gift", "temple", "trust"). They decide only when
+  the payee is not clearly a person, or when two of them agree ("Temple Trust").
+Precedence: owner answer > owner rule > brand > known name > keyword > clearly personal name
+> weak keyword > Uncategorised (after the existing role and channel rules: ATM, card bill,
+EMI, bank charge). Choices: "hotel", "grab", "store", "shop", "centre", "point", "traders",
+"fees" and a bare "district" are ambiguous and decide nothing alone ("District" only as
+"District by Zomato"); "grab" and "go" are never part of a person's name. Stems that are
+the start of real names were left out ("medic" in Medicherla, "salon" in Saloni, "pizz" in
+Pizzaro); "pg", "sip" and "amc" are strong (initials arrive as separate letters). Words
+1.3.0 already had keep their category ("mart" stays Groceries, as the 5B-1 table expects).
+"Rent": the category already exists as "Rent & Hostel" (slug `rent_hostel`) in every list,
+filter, chart, export and icon; a second "Rent" would split the owner's answers, so the
+rent words and platforms go there and no category is added. Tests: 194 FAKE payees
+(traps included), the 154 earlier ones and the 5B-1 People table unchanged. `category-diff`
+now compares 1.3.0 with 1.4.0 (the 1.2.0 copy is gone). Expected on the owner's data:
+Food & Drinks, Groceries, Travel, Rent & Hostel, Health, Bills & Recharges and Investments
+grow, mostly out of Uncategorised; People and every total stay the same.

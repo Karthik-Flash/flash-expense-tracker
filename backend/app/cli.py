@@ -1467,7 +1467,7 @@ def _write_csv(target: Path, columns: tuple[str, ...], rows: list[dict]) -> None
 
 
 def cmd_category_diff(session: Session, args: argparse.Namespace) -> int:
-    """D-137. categorise-1.2.0 against 1.3.0 on the owner's data, in memory: counts by
+    """D-137. categorise-1.3.0 against 1.4.0 on the owner's data, in memory: counts by
     category before and after, the number changed; the changed rows to a PRIVATE CSV."""
     if _out_refused(args.out, "category-diff"):
         return 2
@@ -1478,14 +1478,14 @@ def cmd_category_diff(session: Session, args: argparse.Namespace) -> int:
         return 1
     finally:
         session.rollback()  # read only: nothing to keep
-    print("category-diff (categorise-1.2.0 -> 1.3.0, read-only, counts only)")
+    print("category-diff (categorise-1.3.0 -> 1.4.0, read-only, counts only)")
     line("transactions (active)", sum(diff.before.values()))
     line("category changed", len(diff.rows))
-    print("by category (1.2.0 -> 1.3.0)")
+    print("by category (1.3.0 -> 1.4.0)")
     for slug in CATEGORIES:
         if diff.before[slug] or diff.after[slug]:
             print(f"  {slug:<26}{diff.before[slug]:>6} -> {diff.after[slug]:<6}")
-    moves = Counter((r["category_1_2_0"], r["category_1_3_0"]) for r in diff.rows)
+    moves = Counter((r["category_1_3_0"], r["category_1_4_0"]) for r in diff.rows)
     if moves:
         print("moves")
         for (a, b), n in sorted(moves.items(), key=lambda m: (-m[1], m[0])):
@@ -1631,7 +1631,7 @@ def build_parser() -> argparse.ArgumentParser:
     sn.add_argument("--apply", action="store_true", help="name them (owner data, source statement)")
     cd = sub.add_parser(
         "category-diff",
-        help="categorise-1.2.0 vs 1.3.0 (counts; changed rows to a PRIVATE CSV, read-only)",
+        help="categorise-1.3.0 vs 1.4.0 (counts; changed rows to a PRIVATE CSV, read-only)",
     )
     cd.add_argument("--out", type=Path, required=True, help="the CSV, outside the repository")
     sub.add_parser("doctor", help="read-only health checks of the owner's data (counts only)")

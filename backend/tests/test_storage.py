@@ -442,7 +442,7 @@ def test_recompute_records_a_run_with_versions_and_counts(loaded: str, db_engine
         == {
             "merchant": MERCHANT_VERSION,
             "reconcile": RECONCILE_VERSION,
-            "categorise": "categorise-1.3.0",
+            "categorise": "categorise-1.4.0",
         }
     )
     assert run_row.started_at <= run_row.finished_at

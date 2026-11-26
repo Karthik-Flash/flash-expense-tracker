@@ -28,10 +28,16 @@ unlinked refund). The first match decides; each result has a rule code and a bas
                                                                   People        engine
   NONE            anything else: a business-looking or an ambiguous name (one word, five
                   words, a masked UPI ID): To-do asks             Uncategorised engine
-BRAND, KEYWORD, PERSON_name and PERSON_vpa are guesses from the name: the app says so
-(GUESS_RULES). Totals never depend on a category.
-categorise(rules="1.2.0") still gives the 1.2.0 answer (PERSON from the merchant engine's
-kind, NAME_person), for `category-diff` only.
+categorise-1.4.0 (D-155) adds, from the curated names and words in category_words.py:
+  KNOWN           a brand or chain the merchant engine does not know (after BRAND)
+  KEYWORD         strong keywords and word stems ("hungerhalt"), after KNOWN
+  KEYWORD_weak    a weak keyword ("pg", "rent", "temple"), only after the person rules: a
+                  clearly personal name is never overridden by a weak keyword
+So: owner answer > owner rule > brand > known name > keyword > clearly personal name >
+weak keyword > Uncategorised.
+BRAND, KNOWN, KEYWORD, KEYWORD_weak, PERSON_name and PERSON_vpa are guesses from the name:
+the app says so (GUESS_RULES). Totals never depend on a category.
+categorise(rules="1.3.0") still gives the 1.3.0 answer, for `category-diff` only.
 A linked refund takes the category (and basis) of its purchase: RF_linked. An unlinked
 refund is categorised by its own merchant (owner party, brand, keyword), else NONE.
 
@@ -48,6 +54,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from app.engine import category_words as words14
 from app.engine.merchant import BUSINESS_WORDS, HONORIFICS, brands, parts
 from app.engine.reconcile import (
     COUNTED,
@@ -60,7 +67,7 @@ from app.engine.reconcile import (
     totals,
 )
 
-CATEGORISE_VERSION = "categorise-1.3.0"
+CATEGORISE_VERSION = "categorise-1.4.0"
 
 # slug -> name. The slug is stored and never changes; a new category needs no migration.
 CATEGORIES = {
@@ -109,12 +116,13 @@ RULES = (
     "CH_emi",
     "HINT_fee",
     "BRAND",
+    "KNOWN",
     "KEYWORD",
     "KW_conflict",
     "PERSON",
     "PERSON_name",
     "PERSON_vpa",
-    "NAME_person",  # categorise-1.2.0 only (category-diff)
+    "KEYWORD_weak",
     "NONE",
     *(f"NS_{role}" for role in NOT_SPENDING),
 )
@@ -259,13 +267,13 @@ class Categorised:
 
 
 def categorise(
-    txns: Iterable[Txn], owner: OwnerData, result: Result, rules: str = "1.3.0"
+    txns: Iterable[Txn], owner: OwnerData, result: Result, rules: str = "1.4.0"
 ) -> dict[int, Categorised]:
     """One Categorised per transaction, keyed and ordered by transaction id.
 
-    `rules="1.2.0"`: the person rules of categorise-1.2.0, for category-diff only."""
-    if rules not in ("1.2.0", "1.3.0"):
-        raise ValueError("rules must be 1.2.0 or 1.3.0")
+    `rules="1.3.0"`: categorise-1.3.0, for category-diff only."""
+    if rules not in ("1.3.0", "1.4.0"):
+        raise ValueError("rules must be 1.3.0 or 1.4.0")
     stated = [p.category for p in owner.parties if p.category] + list(owner.categories.values())
     if any(slug not in CATEGORIES for slug in stated):
         raise ValueError("owner category: not a category of the list")
@@ -306,34 +314,78 @@ def _one(t: Txn, d: Derived, owner: OwnerData, result: Result, rules: str) -> Ca
         return Categorised(BRAND_CATEGORIES[merchant.brand_id], "BRAND", "engine")
     p = parts(t.counterparty_raw)
     words = (*p.tokens, *vpa_words(p.vpa)) if p else ()
-    found = {KEYWORD_CATEGORIES[w] for w in words if w in KEYWORD_CATEGORIES}
+    named = party.kind if party and party.kind in ("person", "business") else None
+    weak: set[str] = set()
+    if rules == "1.3.0":
+        found = {KEYWORD_CATEGORIES[w] for w in words if w in KEYWORD_CATEGORIES}
+    else:
+        if p and (known := known_name(p)):
+            return Categorised(known, "KNOWN", "engine")
+        found = {words14.STRONG_WORDS[w] for w in words if w in words14.STRONG_WORDS}
+        found |= {slug for w in words for stem, slug in words14.STEM_LIST if _stem(w, stem)}
+        weak_words = {w for w in words if w in words14.WEAK_WORDS}
+        weak = {words14.WEAK_WORDS[w] for w in weak_words}
+        if len(weak_words) >= 2 and len(weak) == 1:  # two weak words agree: a second signal
+            found, weak = weak, set()
     if len(found) == 1:
         return Categorised(found.pop(), "KEYWORD", "engine")
     if found:
         return Categorised(UNCATEGORISED, "KW_conflict", "engine")
-    named = party.kind if party and party.kind in ("person", "business") else None
-    if rules == "1.2.0":
-        return _person_120(t, named or merchant.kind, named, p)
     if t.direction == "debit" and named == "person":  # the owner answered: a party wins
         return Categorised("people", "PERSON", "engine")
-    if t.direction == "debit" and named is None and p and (rule := person_rule(p, merchant)):
+    ignore = WEAK_SET if weak else frozenset()
+    extra = words14.NOT_PERSON_14 if rules == "1.4.0" else frozenset()
+    if (
+        t.direction == "debit"
+        and named is None
+        and p
+        and (rule := person_rule(p, merchant, ignore, extra))
+    ):
         return Categorised("people", rule, "engine")
+    if len(weak) == 1:
+        return Categorised(weak.pop(), "KEYWORD_weak", "engine")
+    if weak:
+        return Categorised(UNCATEGORISED, "KW_conflict", "engine")
     return Categorised(UNCATEGORISED, "NONE", "engine")
 
 
-def _person_120(t: Txn, kind: str, named: str | None, p) -> Categorised:
-    """categorise-1.2.0, kept for category-diff: the merchant engine's kind decides, a
-    business word of the 1.2.0 list stops it, NAME_person for an unsure name."""
-    business_word = not named and bool(p and set(p.tokens) & _NOT_PERSON_120)
-    if t.direction == "debit" and kind == "person" and not business_word:
-        return Categorised("people", "PERSON", "engine")
-    if t.direction == "debit" and kind == "unsure" and p and _looks_like_person_120(p):
-        return Categorised("people", "NAME_person", "engine")
-    return Categorised(UNCATEGORISED, "NONE", "engine")
+WEAK_SET = frozenset(words14.WEAK_WORDS)
+
+
+def _stem(word: str, stem: str) -> bool:
+    """`word` starts with `stem` and is longer ("hungerhalt"; a stem alone is no match)."""
+    return len(word) > len(stem) and word.startswith(stem)
+
+
+def known_name(p) -> str | None:
+    """categorise-1.4.0: the category of the longest brand or chain name in the payee's name
+    (whole words), its UPI ID's words, or either written as one word; names of 6 letters or
+    more also at the start of a word ("zolostays"). Two names of one length that disagree:
+    None (keywords and the rest decide)."""
+    text = f" {' '.join(p.tokens)} "
+    joined = {*p.tokens, *vpa_words(p.vpa), "".join(p.tokens), *_local_compact(p.vpa)}
+    best: dict[int, set[str]] = {}
+    for phrase, slug in words14.KNOWN_PHRASES:
+        compact = phrase.replace(" ", "")
+        hit = f" {phrase} " in text or compact in joined
+        if not hit and len(compact) >= 6:
+            hit = any(w.startswith(compact) for w in joined)
+        if hit:
+            best.setdefault(len(compact), set()).add(slug)
+    if not best:
+        return None
+    top = best[max(best)]
+    return next(iter(top)) if len(top) == 1 else None
+
+
+def _local_compact(vpa: str | None) -> tuple[str, ...]:
+    """A UPI ID's local part without its separators ("chai.point" -> chaipoint)."""
+    compact = re.sub(r"[^a-z0-9]+", "", (vpa or "").partition("@")[0].casefold())
+    return (compact,) if compact else ()
 
 
 # Words that make a name a business's, on top of the merchant engine's list (D-119).
-_NOT_PERSON_120 = (
+_NOT_PERSON_BASE = (
     BUSINESS_WORDS
     | frozenset(KEYWORD_CATEGORIES)
     | frozenset(
@@ -343,7 +395,7 @@ _NOT_PERSON_120 = (
 )
 # categorise-1.3.0 (D-133): more words no Indian given name or surname is, so a name with one
 # is never People. Whole words of the name or of the UPI ID's local part.
-NOT_PERSON = _NOT_PERSON_120 | frozenset(
+NOT_PERSON = _NOT_PERSON_BASE | frozenset(
     """
     tech techno co and sons bros brothers india international global systems online digital
     payments pay media network networks infra exim plaza mall market complex palace bhavan
@@ -375,18 +427,24 @@ BUSINESS_REASONS = frozenset(
     "R4_card R4_autopay R5_keyword R5_domain R5_merchant_vpa R5_business_handle R5_digits "
     "R2_gateway R3_tie".split()
 )
-GUESS_RULES = frozenset({"BRAND", "KEYWORD", "PERSON_name", "PERSON_vpa", "NAME_person"})
+GUESS_RULES = frozenset({"BRAND", "KNOWN", "KEYWORD", "KEYWORD_weak", "PERSON_name", "PERSON_vpa"})
 
 
-def business_like(p, merchant) -> bool:
-    """Anything that says business: the 1.3.0 rules never call such a payee a person."""
+def business_like(
+    p, merchant, ignore: frozenset[str] = frozenset(), extra: frozenset[str] = frozenset()
+) -> bool:
+    """Anything that says business: the 1.3.0 rules never call such a payee a person.
+    `ignore`: weak keywords (1.4.0), which say nothing either way; `extra`: more words no
+    name is (1.4.0)."""
     if BUSINESS_REASONS & set(merchant.reasons):
         return True
     local, _, handle = (p.vpa or "").partition("@")
-    words = {*p.tokens, *vpa_words(p.vpa)}
+    words = {*p.tokens, *vpa_words(p.vpa)} - ignore
     handle_words = {w for w in re.split(r"[^a-z]+", handle) if w}
     return bool(
-        words & NOT_PERSON or (words | handle_words) & MERCHANT_VPA_WORDS or "biz" in handle
+        words & (NOT_PERSON | extra)
+        or (words | handle_words) & MERCHANT_VPA_WORDS
+        or "biz" in handle
     )
 
 
@@ -399,9 +457,13 @@ def personal_vpa(vpa: str | None) -> bool:
     return bool(_MOBILE_LOCAL.fullmatch(local) or _PERSONAL_LOCAL.fullmatch(local))
 
 
-def person_rule(p, merchant) -> str | None:
-    """PERSON_name, PERSON_vpa, or None (Uncategorised) for a debit no owner party names."""
-    if business_like(p, merchant):
+def person_rule(
+    p, merchant, ignore: frozenset[str] = frozenset(), extra: frozenset[str] = frozenset()
+) -> str | None:
+    """PERSON_name, PERSON_vpa, or None (Uncategorised) for a debit no owner party names.
+    `ignore`: weak keywords (1.4.0): not a business sign, still words of the name's shape
+    ("Gift Mathew" is two words); `extra`: more words no name is (1.4.0)."""
+    if business_like(p, merchant, ignore, extra):
         return None
     named = [w for w in p.tokens if w not in HONORIFICS]
     letters = bool(named) and all(w.isalpha() for w in named)
@@ -421,26 +483,6 @@ def vpa_words(vpa: str | None) -> tuple[str, ...]:
     """The words of a UPI ID's local part: "swiggy.food@x" -> swiggy, food."""
     local = (vpa or "").partition("@")[0]
     return tuple(w for w in re.split(r"[^a-z]+", local.casefold()) if len(w) > 1)
-
-
-_PERSONAL_HANDLE_120 = re.compile(r"ok\w+|axisbank|hdfcbank|icici|sbi|kotak|pnb|barodampay|upi")
-
-
-def _looks_like_person_120(p) -> bool:
-    """categorise-1.2.0's NAME_person: 2 to 4 words of letters (initials allowed),
-    honorifics ignored, no business word; or no name and a personal-looking UPI ID."""
-    named = [w for w in p.tokens if w not in HONORIFICS]
-    if named:
-        return (
-            2 <= len(named) <= 4
-            and all(w.isalpha() for w in named)
-            and any(len(w) >= 3 for w in named)
-            and not any(w in _NOT_PERSON_120 for w in named)
-        )
-    local, _, handle = (p.vpa or "").partition("@")
-    return bool(
-        handle and _PERSONAL_HANDLE_120.fullmatch(handle) and _PERSONAL_LOCAL.fullmatch(local)
-    )
 
 
 def breakdown(

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from app.engine import category_words as words14
 from app.engine import parse_message
 from app.engine.categorise import (
     BRAND_CATEGORIES,
@@ -174,11 +175,13 @@ def test_each_level(t, owner, category, rule, basis) -> None:
 
 def test_every_rule_and_every_category_is_reachable() -> None:
     reached_rules = {rule for *_, rule, _ in LEVELS} | {"RF_linked", "NS_duplicate"}
-    # The others: the refund and duplicate tests below; NAME_person only under rules 1.2.0.
-    assert reached_rules | {"NAME_person"} == set(RULES)
+    # The others: the refund and duplicate tests below; KNOWN and KEYWORD_weak in
+    # tests/test_categorise_14.py.
+    assert reached_rules | {"KNOWN", "KEYWORD_weak"} == set(RULES)
     by_engine = {c for *_, c, _, basis in LEVELS if basis == "engine"}
     by_engine |= set(BRAND_CATEGORIES.values()) | set(KEYWORD_CATEGORIES.values())
-    assert by_engine == set(CATEGORIES) - {"gifts_donations"}  # only the owner can give that one
+    by_engine |= set(words14.STRONG_WORDS.values()) | {s for _, s in words14.KNOWN_PHRASES}
+    assert by_engine == set(CATEGORIES)  # 1.4.0: Gifts & Donations too ("florist", "temple")
     for slug in CATEGORIES:  # the owner can give every category
         assert one(txn(), with_decision(OwnerData(), slug))[0] == slug
         assert one(txn(party="TEST SHOP"), party("TEST SHOP", slug))[0] == slug
