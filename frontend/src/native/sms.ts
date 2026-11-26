@@ -31,8 +31,13 @@ export interface FlashSms {
   takeOpen(): Promise<{ open: OpenAt | null }>
   diagnostics(): Promise<{ text: string }>
   shareFile(options: { name: string; mime: string; base64: string }): Promise<{ shared: boolean }>
+  /** 5G-B (D-154): whether the web app has something for Back to do (else Android's own
+   *  back, with its predictive animation), and leaving the app when it had not after all. */
+  setBackHandled?(options: { handled: boolean }): Promise<void>
+  leave?(): Promise<void>
   addListener(event: 'uploaded', listener: (e: { stored: number }) => void): Promise<PluginListenerHandle>
   addListener(event: 'open', listener: (e: OpenAt) => void): Promise<PluginListenerHandle>
+  addListener(event: 'back', listener: () => void): Promise<PluginListenerHandle>
 }
 
 let plugin: FlashSms | null = Capacitor.isNativePlatform() ? registerPlugin<FlashSms>('FlashSms') : null
@@ -137,6 +142,23 @@ export async function openSleepingApps(): Promise<void> {
 }
 
 /** "Copy diagnostics": the status and the last 100 events, codes and counts only (D-142). */
+/** 5G-B (D-154): tell the phone whether Back is the web app's to handle. An APK from before
+ *  has no such method: Back then leaves the app as it always did. */
+export async function setBackHandled(handled: boolean): Promise<void> {
+  await plugin?.setBackHandled?.({ handled }).catch(() => {})
+}
+
+/** Back on the phone, for the web app to act on; returns the function that stops listening. */
+export async function onBackButton(listener: () => void): Promise<() => void> {
+  if (!plugin?.setBackHandled) return () => {}
+  const handle = await plugin.addListener('back', listener)
+  return () => void handle.remove()
+}
+
+export async function leaveApp(): Promise<void> {
+  await plugin?.leave?.().catch(() => {})
+}
+
 export async function diagnostics(): Promise<string> {
   return plugin ? (await plugin.diagnostics()).text : ''
 }

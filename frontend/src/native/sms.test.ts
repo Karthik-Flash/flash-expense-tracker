@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 
 import type { Api, SendRequest } from '../api/client.ts'
-import { connectPhone, isNativeApp, loadSms, setPluginForTests, signOutPhone, startSms, type FlashSms, type OpenAt } from './sms.ts'
+import { connectPhone, isNativeApp, leaveApp, loadSms, onBackButton, setBackHandled, setPluginForTests, signOutPhone, startSms, type FlashSms, type OpenAt } from './sms.ts'
 import { bucketText, eventText, firstRun, needsBatteryHint, NOT_NATIVE, periodStart, phoneText, smsStep, statusRows, type SmsStatus } from './smsState.ts'
 
 const ON: SmsStatus = {
@@ -252,4 +252,37 @@ test('5G-A: a notification opens before a slow reconnect, and never for another 
   const seen: number[] = []
   await startSms(async () => {}, 'user-b', undefined, (at) => seen.push(at.txnId))
   assert.deepEqual(seen, []) // the phone belonged to user-a: not shown to user-b
+})
+
+test('5G-B: the web app tells the phone when Back is its own, and hears the button', async () => {
+  const fake = fakePlugin(ON)
+  const told: boolean[] = []
+  let pressed: (() => void) | undefined
+  let left = 0
+  const plugin = {
+    ...fake.plugin,
+    setBackHandled: async (o: { handled: boolean }) => void told.push(o.handled),
+    leave: async () => void left++,
+    addListener: (async (event: string, f: () => void) => {
+      if (event === 'back') pressed = f
+      return { remove: async () => (pressed = undefined) }
+    }) as FlashSms['addListener'],
+  }
+  setPluginForTests(plugin)
+  await setBackHandled(true)
+  await setBackHandled(false)
+  assert.deepEqual(told, [true, false])
+  let heard = 0
+  const stop = await onBackButton(() => heard++)
+  pressed?.()
+  assert.equal(heard, 1)
+  stop()
+  await leaveApp()
+  assert.equal(left, 1)
+  // An APK from before 5G has neither: nothing is asked, Back leaves the app as it did.
+  setPluginForTests(fake.plugin)
+  await setBackHandled(true)
+  const none = await onBackButton(() => heard++)
+  none()
+  assert.equal(heard, 1)
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
 import { welcomeDue } from './account.ts'
 import { api, API_URL, DEMO, demoApi } from './api/index.ts'
@@ -9,7 +9,7 @@ import { beforeSignOut, expire, refreshToken, signIn, signOut, useAuth } from '.
 import { checksView, startOutbox, syncState, todoView, unsynced, useOutbox } from './data/outbox.ts'
 import { clearData, refresh, startData, useData, useSnapshot } from './data/store.ts'
 import { AppContext, navigate, useNav, useScrollMemory, useView, type AppState } from './state.tsx'
-import { connectPhone, isNativeApp, signOutPhone, startSms } from './native/sms.ts'
+import { connectPhone, isNativeApp, leaveApp, onBackButton, setBackHandled, signOutPhone, startSms } from './native/sms.ts'
 import { DeleteSheet, MembersSheet, PrivacySheet, SettingsSheet, WelcomeSheet } from './screens/Account.tsx'
 import { BankSmsSheet } from './screens/BankSms.tsx'
 import { CategoryDetail, Home } from './screens/Home.tsx'
@@ -26,7 +26,8 @@ import { Transactions } from './screens/Transactions.tsx'
 import { openFromNotification } from './opener.ts'
 import { Button, Icon, PullToRefresh, Sheet } from './ui.tsx'
 import { UpdateBar } from './update.ts'
-import { HOME, type Tab, type View } from './view.ts'
+import { HOME, parseHash, type Tab, type View } from './view.ts'
+import { backAction, closeTop, openSheets, subscribeBack } from './back.ts'
 
 const SIGNED_IN = 'flash-demo-signed-in'
 // Sign-out revokes this phone's device token while the login still works (5A, D-122).
@@ -56,9 +57,39 @@ function setDemoSignedIn(on: boolean): void {
   }
 }
 
+/** 5G-B (D-154): the Android back button. The phone asks the web app only while there is
+ *  something to do (back.ts); on Home with nothing open, Android's own back leaves the app. */
+function useBackButton(view: View, back: () => void) {
+  const sheets = useSyncExternalStore(subscribeBack, openSheets)
+  const handled = backAction(view, sheets).kind !== 'leave'
+  const backNow = useRef(back)
+  useEffect(() => {
+    backNow.current = back
+  })
+  useEffect(() => {
+    void setBackHandled(handled)
+  }, [handled])
+  useEffect(() => {
+    let live = true
+    let stop = () => {}
+    void onBackButton(() => {
+      const now = backAction(parseHash(location.hash), openSheets())
+      if (now.kind === 'close') closeTop()
+      else if (now.kind === 'parent') backNow.current()
+      else if (now.kind === 'home') navigate(now.view, 'replace')
+      else void leaveApp()
+    }).then((f) => (live ? (stop = f) : f()))
+    return () => {
+      live = false
+      stop()
+    }
+  }, [])
+}
+
 export default function App() {
   const view = useView()
   const { back } = useNav()
+  useBackButton(view, back)
   const auth = useAuth()
   const [demoIn, setDemoIn] = useState(demoSignedIn)
   const [asking, setAsking] = useState(0)

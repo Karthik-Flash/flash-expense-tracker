@@ -655,6 +655,15 @@ All from PowerShell. Counts only unless marked PRIVATE.
    `adb install -r D:\Projects\FinancesApp\mobile\android\app\build\outputs\apk\debug\app-debug.apk`.
    It prints the versionCode; Insights > About shows the same number.
 
+### After the 5G deploy: phone checks (D-153, D-154)
+
+1. **Notification to category**: pay Rs 1; tap the notification's "Change category". Pass:
+   the category list is on screen at once (well under a second), even with mobile data off
+   right after the notification arrives; the choice syncs later.
+2. **Back button**: open a payment's sheet, press Back: the sheet closes. Back again on
+   Transactions: Home. Back on Home: the app goes away with Android's animation. Open
+   Insights > Profile > What Flash stores, press Back: only the sheet closes.
+
 ### After the premium deploy: phone and web test plan (what "pass" looks like)
 
 Web (laptop, Edge or Chrome):

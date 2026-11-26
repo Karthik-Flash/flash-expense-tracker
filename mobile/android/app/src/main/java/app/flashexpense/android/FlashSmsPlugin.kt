@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.activity.OnBackPressedCallback
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.PermissionState
@@ -37,10 +38,23 @@ class FlashSmsPlugin : Plugin() {
     /** A notification tap that started the app (cold start), until the web app asks for it. */
     private var pendingOpen: JSObject? = null
 
+    /**
+     * 5G-B (D-154): Back is the web app's only while it has something to do (a sheet to close,
+     * a layer to leave, a tab other than Home). The web app says so ahead of time
+     * (setBackHandled); while it has not, this callback is off and Android's own back runs,
+     * with its predictive back-to-home animation (API 36: onBackPressed is never called).
+     */
+    private val back = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            notifyListeners("back", JSObject())
+        }
+    }
+
     override fun load() {
         Events.listener = { stored -> notifyListeners("uploaded", JSObject().put("stored", stored)) }
         Notify.channel(context)
         pendingOpen = openOf(activity?.intent)
+        activity?.let { a -> a.runOnUiThread { a.onBackPressedDispatcher.addCallback(a, back) } }
         if (Store(context).cursorMs != null) {
             Work.catchUp(context)
             Work.upload(context, "start")
@@ -68,6 +82,24 @@ class FlashSmsPlugin : Plugin() {
         // 5G-A: the payment's basics, so the sheet opens before the app downloads anything.
         intent?.getStringExtra(Notify.EXTRA_ITEM)?.let { item -> runCatching { open.put("item", JSObject(item)) } }
         return open
+    }
+
+    /** 5G-B: whether Back is the web app's to handle now. */
+    @PluginMethod
+    fun setBackHandled(call: PluginCall) {
+        val handled = call.getBoolean("handled") ?: false
+        activity?.runOnUiThread { back.isEnabled = handled }
+        call.resolve()
+    }
+
+    /** 5G-B: Back reached the web app with nothing left to do: leave as Android's back would. */
+    @PluginMethod
+    fun leave(call: PluginCall) {
+        activity?.runOnUiThread {
+            back.isEnabled = false
+            activity?.moveTaskToBack(true)
+        }
+        call.resolve()
     }
 
     /** The payment a notification opened the app at (cold start), once. */
