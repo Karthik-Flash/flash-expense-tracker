@@ -2122,3 +2122,20 @@ owner's request, and the safer side of "a guess never lowers Net"); no migration
 choice wins, no row means on. The plain-English description of To-do is
 [todo.md](todo.md). Not in the owner export (like answered_at and display names today):
 the left flags; open item.
+
+## D-157 Automatic weekly backups (2026-11-26)
+
+5G part E. `scripts\backup_db.ps1` now starts Docker Desktop when it is not running (the
+per-user or the machine-wide install) and waits up to 3 minutes; keeps the newest 12 dumps
+and deletes only older files named `flash-YYYYMMDD-HHmm.dump` in the backup folder, never
+anything else; appends one line per run to `backup.log` there (time, OK or FAILED, file and
+size or the reason; never the URL); removes an empty dump; exits 1 whenever no dump was
+made. Tested against a temporary folder and a throwaway local Postgres 17 only (a FAKE env
+file, never `backend\.env`): 14 old dumps plus 3 other files became the newest 12 dumps and
+the same 3 files; a missing URL and an unreachable database each exit 1, keep nothing and
+log FAILED; `pg_restore --list` reads the new dump. Not tested: the branch that starts
+Docker Desktop (Docker was running; stopping it would have ended the test database).
+`scripts\register_backup_task.ps1` registers "Flash weekly backup": Sundays 21:00,
+StartWhenAvailable (a missed run starts when the laptop is next awake), only while logged
+in (Interactive, limited rights, no stored password), at most one hour, one at a time; it
+prints how to check, test and remove it. Agents never run it; it was only parsed.
