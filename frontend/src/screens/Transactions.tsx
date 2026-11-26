@@ -5,7 +5,7 @@ import { actions, creditMark, discard, enqueue, isStuck, markFor, markText, pers
 import { OpSheet } from './Sync.tsx'
 import { usePeople, useSnapshot } from '../data/store.ts'
 import { currentMonth, dayKey, dayLabel, fullLabel } from '../lib/dates.ts'
-import { takeCategoryOpen } from '../opener.ts'
+import { provisionalTxn, takeCategoryOpen } from '../provisional.ts'
 import { useNav } from '../state.tsx'
 import { Button, CategoryTile, Empty, Freshness, Icon, Loaded, Money, MonthSwitcher, RowButton, Section, Sheet } from '../ui.tsx'
 import { asksPaidBack, countsInSpent, inCategory, investmentTag, labelName, matches, monthTxns, paybackLines, personKey, senderOfCredit } from './derive.ts'
@@ -97,7 +97,9 @@ export function TxnList({ txns, title, empty = 'No transactions.' }: { txns: Txn
   const { ops } = useOutbox()
   // A deep link to a transaction that is not in this list finds it in the whole snapshot.
   const all = load.status === 'ready' ? load.data.transactions : []
-  const current = view.txn === null ? undefined : (txns.find((t) => t.id === view.txn) ?? all.find((t) => t.id === view.txn))
+  // 5G-A: a payment a notification just announced is not in the phone's copy yet: its sheet
+  // opens from the notification's basics until the refresh brings the full row.
+  const current = view.txn === null ? undefined : (txns.find((t) => t.id === view.txn) ?? all.find((t) => t.id === view.txn) ?? provisionalTxn(view.txn))
   const sheet =
     view.txn !== null &&
     (current ? (

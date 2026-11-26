@@ -29,6 +29,9 @@ data class NewPayment(
     val categoryName: String?,
     val role: String?,
     val paidBackQuestion: Boolean,
+    /** 5G-A: the category slug and the time, so a tap opens the sheet before any download. */
+    val category: String? = null,
+    val timeUtc: String? = null,
 )
 
 /**
@@ -171,8 +174,27 @@ object Wire {
                 categoryName = m["category_name"] as? String,
                 role = m["role"] as? String,
                 paidBackQuestion = m["paid_back_question"] == true,
+                category = m["category"] as? String,
+                timeUtc = m["time_utc"] as? String,
             )
         }
+    }
+
+    /** 5G-A: the payment as the notification's tap hands it to the web app (JSON), so its sheet
+     *  and category list open from it at once; null without a time (an older server). */
+    fun openItem(p: NewPayment): String? {
+        val time = p.timeUtc ?: return null
+        val parts = listOf(
+            "\"id\":${p.id}",
+            "\"time_utc\":${quote(time)}",
+            "\"amount_paise\":${p.amountPaise}",
+            "\"direction\":${quote(p.direction)}",
+            "\"display_name\":${p.name?.let(::quote) ?: "null"}",
+            "\"category\":${quote(p.category ?: "uncategorised")}",
+            "\"category_name\":${quote(p.categoryName ?: "Uncategorised")}",
+            "\"role\":${quote(p.role ?: if (p.direction == "credit") "uncertain" else "spend")}",
+        )
+        return parts.joinToString(",", "{", "}")
     }
 
     /** "₹1,23,456" or "₹1,234.50": Indian grouping, paise only when not zero. */

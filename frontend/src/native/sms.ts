@@ -6,12 +6,15 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor
 import { useSyncExternalStore } from 'react'
 
 import type { Api } from '../api/client.ts'
+import type { OpenItem } from '../provisional.ts'
 import { NOT_NATIVE, periodStart, type Period, type SmsStatus } from './smsState.ts'
 
 /** A notification tap (5B-2, D-142): open this payment's sheet, or its category list. */
 export interface OpenAt {
   txnId: number
   act: 'sheet' | 'category'
+  /** 5G-A: the payment's basics from the notification (an APK from before: absent). */
+  item?: OpenItem | null
 }
 
 export interface FlashSms {
@@ -77,20 +80,23 @@ export async function startSms(
 ): Promise<void> {
   if (!plugin) return
   const s = await loadSms()
+  // 5G-A (D-153): a notification tap opens first, before any network (a reconnect can wait
+  // a minute for a sleeping server), and only for the login this phone uploads for.
+  const mine = (at: OpenAt) => !status.user || status.user === user ? open?.(at) : undefined
+  if (open) {
+    const first = await plugin.takeOpen().catch(() => ({ open: null }))
+    if (first.open) mine(first.open)
+  }
   if (s.user && s.user !== user) set(await plugin.disconnect())
   else if (s.user === user && !s.connected && s.cursorMs !== undefined && s.permission === 'granted' && reconnect) {
     await reconnect().catch(() => {}) // offline: the next start tries again; the queue waits
-  }
-  if (open) {
-    const first = await plugin.takeOpen().catch(() => ({ open: null }))
-    if (first.open) open(first.open)
   }
   if (wired) return
   wired = await plugin.addListener('uploaded', (e) => {
     void loadSms()
     if (e.stored > 0) void refresh()
   })
-  if (open) await plugin.addListener('open', (e) => open(e))
+  if (open) await plugin.addListener('open', (e) => mine(e))
 }
 
 export async function allowSms(): Promise<SmsStatus> {

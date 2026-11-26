@@ -2027,3 +2027,30 @@ build as `FLASH_BUILD_CODE`; "web app" in a browser), the server's version from 
 `GET /health`, and three plain sentences: only banks' payment SMS, what Flash reads from them
 and the owner's answers are kept, on a server only they can reach; every other SMS stays on
 the phone; Delete my account removes all of it, with a link to What Flash stores.
+
+## D-153 Opening a notified payment at once (2026-11-26)
+
+5G part A. `frontend/scripts/perf-check.mjs` measures the production build against the API
+with about 900 FAKE payments, in headless Edge with the CPU 4x slower and "slow 3G" (2 s
+latency, 50 KB/s), timing each step inside the page from the tap to the frame that shows it.
+Inside the app nothing was slow: tap a row to its sheet 22 to 32 ms, Change category to the
+list 24 to 42 ms, the same after a cold start (the sheet 405 ms after the page starts, with
+the app's code on the device as in the APK; long tasks 114 and 83 ms). The real cause: a
+payment notification is about a payment the phone has just uploaded, so the phone's copy
+of the snapshot does not hold it; the sheet said "not in your data" and Change category
+waited for a full snapshot over the network (6.7 s with the code also downloading, 2.7 s
+without, more with a waking server). Also the app took the tapped notification only after a
+possible reconnect of the phone (a POST that can wait a minute for a sleeping server). Now
+the ingest answer's `new_transactions` items carry `time_utc` (additive), the phone puts
+the payment's basics into the notification (`Wire.openItem`, intent extra `flash_item`),
+and the web app opens the sheet and its category list from them at once (`provisional.ts`;
+99 ms measured, the list 33 ms), until the background refresh brings the full row. The
+tap is taken before any reconnect, only for the login this phone uploads for, and the
+sheet opens after the first paint. The phone's copy was already shown at once on a cold
+start (D-089, D-095). Gzip: Starlette's GZipMiddleware has compressed every answer since
+4B-1; a test now checks a gzipped snapshot keeps its ETag and 304. Measured on the FAKE set
+the snapshot is 408 KB unpacked and 16.5 KB on the wire (FAKE data repeats a lot; real JSON
+usually packs 6 to 10 times): for the owner's about 700 payments about 320 KB unpacked and
+about 40 KB on the wire, 10 full answers a day plus 304s about 0.4 MB a day, about 12 MB a
+month of Render bandwidth (100 GB free). The Supabase read estimate (0.6 GB a month, D-140)
+is unchanged: gzip is between Render and the phone.

@@ -21,6 +21,7 @@ object Notify {
     const val CHANNEL = "payments"
     const val EXTRA_TXN = "flash_txn"
     const val EXTRA_ACT = "flash_act"
+    const val EXTRA_ITEM = "flash_item" // 5G-A: the payment's basics (Wire.openItem), JSON
     private const val GROUP = "flash-payments"
     private const val SUMMARY_ID = 1
 
@@ -57,7 +58,7 @@ object Notify {
                     .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                     .setPublicVersion(public)
                     .apply { if (grouped) setGroup(GROUP) }
-                    .addAction(0, "Change category", open(context, p.id, "category"))
+                    .addAction(0, "Change category", open(context, p, "category"))
                 manager.notify(notificationId(p.id), n.build())
             }
             if (grouped) {
@@ -83,15 +84,17 @@ object Notify {
             .setSmallIcon(R.drawable.ic_stat_flash)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setContentIntent(open(context, p.id, null))
+            .setContentIntent(open(context, p, null))
 
     /** Opens the app at this payment (cold or warm start); `act` "category": its category list. */
-    private fun open(context: Context, txnId: Long, act: String?): PendingIntent {
+    private fun open(context: Context, p: NewPayment, act: String?): PendingIntent {
+        val txnId = p.id
         val intent = Intent(context, MainActivity::class.java)
             .setAction("app.flashexpense.android.OPEN_${txnId}_${act ?: "sheet"}") // one PendingIntent each
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra(EXTRA_TXN, txnId)
             .putExtra(EXTRA_ACT, act ?: "sheet")
+        Wire.openItem(p)?.let { intent.putExtra(EXTRA_ITEM, it) }
         return PendingIntent.getActivity(context, notificationId(txnId) + if (act == null) 0 else 1, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }

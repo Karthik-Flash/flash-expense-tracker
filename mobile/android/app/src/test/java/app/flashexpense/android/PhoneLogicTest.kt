@@ -68,7 +68,7 @@ class PhoneLogicTest {
             "\"category\":null,\"category_name\":null,\"role\":null,\"paid_back_question\":true}]}"
         val made = Wire.newPayments(answer)
         assertEquals(2, made.size)
-        assertEquals(NewPayment("live-3", 42, "debit", 3300, "Test \"Kiosk\" ₹", "Uncategorised", "spend", false), made[0])
+        assertEquals(NewPayment("live-3", 42, "debit", 3300, "Test \"Kiosk\" ₹", "Uncategorised", "spend", false, "uncategorised"), made[0])
         assertEquals(null, made[1].name)
         assertTrue(made[1].paidBackQuestion)
         assertEquals(emptyList<NewPayment>(), Wire.newPayments("{\"results\":[]}")) // a server before 5B-2
@@ -90,5 +90,22 @@ class PhoneLogicTest {
         val cases = Fixtures.objects("backend/tests/fixtures/body_normalise.json")
         assertTrue(cases.size >= 6)
         for (case in cases) assertEquals(case["name"] as String, case["out"], Wire.normalBody(case["in"] as String))
+    }
+
+    @Test
+    fun aNotificationCarriesThePaymentsBasics() {
+        val p = NewPayment("1", 42, "debit", 3300, "Test \"Kiosk\"", "Food & Drinks", "spend", false, "food_drinks", "2026-11-20T06:00:00Z")
+        val item = MiniJson.parse(Wire.openItem(p)!!) as Map<*, *>
+        assertEquals(42L, (item["id"] as Number).toLong())
+        assertEquals("Test \"Kiosk\"", item["display_name"])
+        assertEquals("food_drinks", item["category"])
+        assertEquals("2026-11-20T06:00:00Z", item["time_utc"])
+        assertEquals(3300L, (item["amount_paise"] as Number).toLong())
+        // An older server sends no time: no item, the sheet waits for the download as before.
+        assertEquals(null, Wire.openItem(p.copy(timeUtc = null)))
+        val bare = MiniJson.parse(Wire.openItem(p.copy(name = null, category = null, categoryName = null, role = null, direction = "credit"))!!) as Map<*, *>
+        assertEquals(null, bare["display_name"])
+        assertEquals("uncategorised", bare["category"])
+        assertEquals("uncertain", bare["role"])
     }
 }

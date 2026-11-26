@@ -64,7 +64,10 @@ class FlashSmsPlugin : Plugin() {
         val txn = intent?.getLongExtra(Notify.EXTRA_TXN, -1L) ?: -1L
         if (txn <= 0) return null
         intent?.removeExtra(Notify.EXTRA_TXN) // a later resume does not open it again
-        return JSObject().put("txnId", txn).put("act", intent?.getStringExtra(Notify.EXTRA_ACT) ?: "sheet")
+        val open = JSObject().put("txnId", txn).put("act", intent?.getStringExtra(Notify.EXTRA_ACT) ?: "sheet")
+        // 5G-A: the payment's basics, so the sheet opens before the app downloads anything.
+        intent?.getStringExtra(Notify.EXTRA_ITEM)?.let { item -> runCatching { open.put("item", JSObject(item)) } }
+        return open
     }
 
     /** The payment a notification opened the app at (cold start), once. */
