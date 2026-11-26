@@ -5,7 +5,14 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
 [NOTES.md](../NOTES.md) (status, cheat sheet, log) and the phase in
 [PLAN.md](PLAN.md).
 
-## Current state (premium run done, 23 Nov 2026)
+## Current state (5G done, 26 Nov 2026)
+
+- **5G is done, not pushed** (D-153 to D-158): a notified payment's sheet and category list
+  open from the notification at once; the Android back button (sheet, then Home, then out;
+  predictive back); categorise-1.4.0 with `app/engine/category_words.py`; To-do Leave as is
+  (`parties.*_left_at`, migration `0019`), This is income, Payee wording, investments in
+  Spent by default; `scripts\backup_db.ps1` and `register_backup_task.ps1`; `app.cli
+  no-parser`. Alembic head `0019`. Owner steps: NOTES, "After the 5G deploy".
 
 - **Premium run is done, not pushed** (D-147 to D-152): pre-push safety (admin privacy,
   Profile facts, duplicate and export checks, a steadier cross-origin check), Analytics in
@@ -82,10 +89,10 @@ first, then [OVERVIEW.md](OVERVIEW.md) (the one-page tour),
   the push was verified and the git backup deleted (D-121). Enable the hook
   once per clone: `git config core.hooksPath .githooks`.
 - Engine versions: parsers `hdfc-1.2.0`, `sbi-1.0.0` and `generic-1.0.0`
-  (other banks), `merchant-1.1.1`, `reconcile-1.7.1`, `categorise-1.3.0`;
+  (other banks), `merchant-1.1.1`, `reconcile-1.7.1`, `categorise-1.4.0`;
   statement reader `stmt-hdfc-1.1.0`.
-- Alembic head: `0018` (0017 raw_messages.origin, data_versions; 0018 owner_roles.scope; `0011` was not used).
-- Decisions: D-001 to D-152 ([DECISIONS.md](DECISIONS.md)).
+- Alembic head: `0019` (0017 raw_messages.origin, data_versions; 0018 owner_roles.scope; 0019 parties.category_left_at, sender_left_at; `0011` was not used).
+- Decisions: D-001 to D-158 ([DECISIONS.md](DECISIONS.md)).
 - Test routine: backend on SQLite and Postgres 17, scripts, ruff, frontend
   lint/typecheck/tests/build, the cross-origin check
   (`node scripts/cross-origin-check.mjs` from `frontend\`, which covers the

@@ -52,6 +52,10 @@ screen with an event log; a 304 snapshot without building it (D-139 to D-144;
 the phone test plan: cheat sheet, "After the 5B-2 deploy". **5F part 1 done 23 Nov**
 (not pushed): an Insights tab with Export (CSV and Excel), Profile and Admin (D-146);
 Analytics and "Learn from the owner" still to come.
+**5G done 26 Nov** (not pushed): a notified payment opens at once, the Android back
+button, categorise-1.4.0 (Indian known names and keywords), To-do Leave as is and This is
+income, investments in Spent by default, weekly backups, the no-parser report (D-153 to
+D-158). Owner steps: cheat sheet, "After the 5G deploy".
 **Premium run done 23 Nov** (pushed 23 Nov; owner steps: cheat sheet, "After the premium
 deploy"): part A pre-push safety (admin privacy test, Profile
 facts, duplicate checks, export range tests, a cross-origin check that waits for the page;
@@ -655,7 +659,31 @@ All from PowerShell. Counts only unless marked PRIVATE.
    `adb install -r D:\Projects\FinancesApp\mobile\android\app\build\outputs\apk\debug\app-debug.apk`.
    It prints the versionCode; Insights > About shows the same number.
 
-### After the 5G deploy: phone checks (D-153, D-154)
+### After the 5G deploy (D-153 to D-158), in this order
+
+All from PowerShell; counts only unless marked PRIVATE.
+1. **Backup** (from the repo root): `powershell -ExecutionPolicy Bypass -File scripts\backup_db.ps1`
+   (it starts Docker Desktop itself now).
+2. **Push**: `git push`. Render runs `alembic upgrade head` (migration `0019`:
+   `parties.category_left_at`, `sender_left_at`).
+3. **Deploy check**: `curl.exe -s https://flash-expense-tracker.onrender.com/health` shows
+   `"status":"ok"` (wait about a minute if it is waking).
+4. **Alembic** (from `backend\`): `.\.venv\Scripts\alembic.exe current` shows `0019 (head)`.
+5. **Recompute** (categorise-1.4.0; no parser changed, so no reparse):
+   `.\.venv\Scripts\python.exe -m app.cli recompute`
+6. **Category diff** (counts here; rows PRIVATE):
+   `.\.venv\Scripts\python.exe -m app.cli category-diff --out D:\FlashPrivate\review\category-diff.csv`.
+   Expect most moves out of `uncategorised` into food_drinks, groceries, travel,
+   rent_hostel, health, bills_recharges, investments; `people` should not change.
+7. **Doctor**: `.\.venv\Scripts\python.exe -m app.cli doctor`. Pass: "problems 0".
+8. **No parser yet**: `.\.venv\Scripts\python.exe -m app.cli no-parser` (paste it to the planner).
+9. **APK** (from `frontend\`, the real Supabase values in `frontend\.env`): `npm run android:apk`,
+   then `adb install -r D:\Projects\FinancesApp\mobile\android\app\build\outputs\apk\debug\app-debug.apk`.
+10. **Weekly backup task** (once): `powershell -ExecutionPolicy Bypass -File scripts\register_backup_task.ps1`,
+    then `Start-ScheduledTask -TaskName 'Flash weekly backup'` and
+    `Get-Content D:\FlashPrivate\backups\backup.log -Tail 3` (a new "OK" line).
+
+### After the 5G deploy: phone and web checks (what "pass" looks like)
 
 1. **Notification to category**: pay Rs 1; tap the notification's "Change category". Pass:
    the category list is on screen at once (well under a second), even with mobile data off
@@ -663,6 +691,20 @@ All from PowerShell. Counts only unless marked PRIVATE.
 2. **Back button**: open a payment's sheet, press Back: the sheet closes. Back again on
    Transactions: Home. Back on Home: the app goes away with Android's animation. Open
    Insights > Profile > What Flash stores, press Back: only the sheet closes.
+3. **Categories**: Transactions for this month. Pass: fewer Uncategorised rows than before
+   the deploy; a friend's name is still People; nothing in Spent or Net changed (Home's
+   figures before and after the recompute are the same, except the investments setting
+   below).
+4. **Leave as is**: To-do > Pick a category > Leave as is on one payee. Pass: it leaves To-do
+   at once; its payment's sheet says "To-do does not ask a category for this payee" with
+   Ask again, which brings it back. The same for Who sent you money.
+5. **This is income**: a credit's sheet > This is income > Just this one. Pass: Home's
+   Income goes up by that amount; Net does not move.
+6. **Payee**: a shop's sheet says "Payee", a friend's "Person".
+7. **Investments**: Insights > Profile: "Count investments in Spent" is ticked (unless you
+   turned it off before); Spent includes confirmed investments.
+8. **Backups**: after a Sunday 21:00 (or `Start-ScheduledTask`), `backup.log` has a new OK
+   line and `D:\FlashPrivate\backups` holds at most 12 dumps.
 
 ### After the premium deploy: phone and web test plan (what "pass" looks like)
 
@@ -1239,6 +1281,17 @@ From the premium run (D-147 to D-152):
 5g. The cross-origin check failed twice in about 15 runs this run, each the first run after
     other heavy work (the page never drew in a cold headless Edge); it now logs and reloads
     once after 45 s. Every CORS line passed in those runs too.
+
+From 5G (D-153 to D-158):
+
+5h. "Leave as is" flags are not in the owner export (nor, already, display names and
+    answered times); a restore from an owner export brings those questions back.
+5i. Not run: the backup script's branch that starts Docker Desktop (Docker was running in
+    the test), and the scheduled task itself (agents never register it).
+5j. Not seen on a real phone: the notification's instant sheet, the back button with
+    predictive back, Leave as is, This is income. Checked in headless Edge and by tests.
+5k. categorise-1.4.0's effect on the real data is unmeasured until `category-diff` runs on
+    it; the dictionary is curated by hand (640 entries) and will need additions.
 
 Ongoing:
 
