@@ -2,7 +2,7 @@
 
 Survey of senders `HDFCBK` and `HDFCBN` in the redacted sample (14 Nov 2026):
 **135 messages, 15 shapes, 135 matched** (100%). Produced with
-`scripts/shape_survey.py`; regenerate with the command in [NOTES.md](../../NOTES.md).
+`scripts/shape_survey.py`; regenerate with the command in [docs/operations.md](../operations.md), "Template survey".
 
 This file holds shapes only. No message text or value from the sample is
 copied here. Fixtures with fake values: `backend/tests/fixtures/sms/hdfc.json`.

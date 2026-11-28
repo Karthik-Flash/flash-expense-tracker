@@ -44,4 +44,23 @@ dist-android/
 dist-perf/
 screens-out/
 
+
+# --- Private and generated files (Phase 5 wrap-up) ------------------------------
+# Database dumps and their log, exports and review CSVs (they belong in D:\FlashPrivate\).
+*.dump
+backup.log
+*.csv
+FlashPrivate/
+# Android release artefacts and signing keys (Phase 6: never in git).
+*.apk
+*.aab
+*.keystore
+*.jks
+*.p12
+*.pem
+# Screenshot and harness output (kept outside the repo; demo images live in docs/images/).
+shots*/
+perf-out/
+# The owner's own notes.
 NOTE.TXT
+NOTE*.txt

@@ -4,6 +4,28 @@ What shipped in each phase. Decision numbers refer to
 [docs/DECISIONS.md](docs/DECISIONS.md). Phases follow the prompt labels:
 Phase 1 is parsing, Phase 2 is the database and import.
 
+## Phase 5: Flash on Android, several users, Insights (22 to 28 Nov 2026)
+
+Phase 5 in one place (tags `phase-5-done`, `phase-5-final`, `phase-5-wrapped`; the
+parts follow below):
+
+- **Android app** (5A, 5B-2): a Capacitor shell with a Kotlin plugin that reads only bank
+  SMS on the phone, uploads each at once and catches up hourly, keeps everything while
+  offline or signed out, notifies new payments and opens them at once; the back button
+  closes a sheet, then goes Home (D-122 to D-127, D-139 to D-144, D-153, D-154).
+- **Several users** (5C): invite codes, sign-up, an isolation test over every route, Delete
+  my account, "What Flash stores" (D-128 to D-132).
+- **Daily-use correctness** (5B-1): refresh every minute, People only when clearly
+  personal, payback links, Invested (D-133 to D-138).
+- **Insights** (5F, premium run): analytics, CSV and Excel export, Profile, Admin, About,
+  rules with undo, per-credit answers, a first-run checklist, a visual audit (D-146 to
+  D-152).
+- **5G**: categorise-1.4.0 with Indian known names, Leave as is, This is income,
+  investments in Spent by default, weekly backups, the no-parser report (D-155 to D-158).
+- **Wrap-up**: the docs reorganised: [Flashexpensetracker_Explained.md](Flashexpensetracker_Explained.md)
+  and [docs/operations.md](docs/operations.md) replace the handoff, overview and plan
+  files; no app change.
+
 ## 5G: speed, back button, smarter categories, To-do, backups (26 Nov 2026)
 
 - A payment notification opens its sheet and the category list at once, before anything
@@ -14,7 +36,7 @@ Phase 1 is parsing, Phase 2 is the database and import.
   more keywords; a person's name is never overridden by a weak word (D-155).
 - To-do: "Leave as is" stops a question without changing any amount; a credit can be "This
   is income"; shops are called Payee; investments count in Spent unless you turn it off
-  (D-156). What To-do shows and why: [docs/todo.md](docs/todo.md).
+  (D-156). What To-do shows and why: [docs/todo-screen.md](docs/todo-screen.md).
 - Backups start Docker themselves, keep the newest 12 and log each run; one command sets up a
   weekly backup (D-157). A `no-parser` report shows which banks need a reader (D-158).
 
@@ -139,7 +161,7 @@ Phase 1 is parsing, Phase 2 is the database and import.
 
 - History: the AI attribution lines were removed from every commit message
   (history rewritten; old to new SHAs in
-  [docs/history-rewrite-20261121.md](docs/history-rewrite-20261121.md)) and
+  `docs/history-rewrite-20261121.md`, removed at the Phase 5 wrap-up and kept in git at tag `phase-5-final`) and
   are kept out by a commit hook and the project settings (D-109).
 - The person sheet changes how a person's payments count (a category for
   all of them), what money from them is (Friend, Family, Ignore, Income) and
@@ -346,7 +368,7 @@ Phase 1 is parsing, Phase 2 is the database and import.
   real data. Verified by the owner: login and saving on the phone, owner
   corrections kept through reparse and recompute, a backup.
 - Open, carried to Phase 4 as its first item: the bank statement check.
-- [docs/OVERVIEW.md](docs/OVERVIEW.md): a one-page tour for new readers.
+- `docs/OVERVIEW.md`: a one-page tour for new readers (folded into [Flashexpensetracker_Explained.md](Flashexpensetracker_Explained.md) at the Phase 5 wrap-up).
 
 ## Phase 3F: screens (17 Nov 2026)
 
