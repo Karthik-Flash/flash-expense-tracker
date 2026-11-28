@@ -411,3 +411,18 @@ import or the phone; the Bank SMS sheet starts a first scan a day before it).
     category); 404 for a party that is not the owner's. Repeating it is the same answer.
   - Snapshot `profile.rules[]` (`party_id`, `name`, `category`, `category_name`, `payments`)
     and `profile.credit_answers` (`{"<txn id>": "paid_back" | "not_paid_back"}`).
+
+## 5G additions (D-153, D-156)
+
+- `POST /api/v1/ingest/sms`: each `new_transactions` item adds `time_utc` (additive; older
+  phones ignore it), so a notification can open its payment before any download.
+- `PUT /api/v1/transactions/{id}/payback` also takes `{"answer": "income"}`: this one credit
+  counts as Income (role income, a per-credit answer).
+- `PUT /api/v1/transactions/{id}/leave` `{"question": "category" | "sender"}` and `DELETE`
+  the same path (both questions back): "Leave as is" for the payment's payee, through the
+  outbox. No amount, role or category changes. A left sender has `status` `left` in
+  `/senders`, the snapshot's `todo.answered`, and is not counted in the month's
+  `to_confirm.senders`.
+- Snapshot: `todo.left` (`[{person_id, category, sender}]`) for "Ask again" in a payment's
+  sheet; `profile.settings.count_investments_in_spent` is `true` unless the owner turned it
+  off.

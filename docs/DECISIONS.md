@@ -1276,8 +1276,8 @@ built-in git (`git filter-branch --msg-filter … --tag-name-filter cat`,
 branches and tags): 116 of 160 commits lost such a line and the blank lines
 it left at the end; nothing else changed (same trees, authors, dates,
 parents' shape, 160 commits, 9 tags). A mirror backup is outside the repo;
-old to new SHAs and how to restore are in
-[history-rewrite-20261121.md](history-rewrite-20261121.md). SHAs quoted in
+old to new SHAs and how to restore were in `docs/history-rewrite-20261121.md`
+(removed at the Phase 5 wrap-up; in git at tag `phase-5-final`). SHAs quoted in
 older notes are the old ones. Prevention: `attribution` (`commit` and `pr`
 empty, `sessionUrl` false) in `.claude/settings.json`; `.githooks/commit-msg`
 rejects such lines (enable per clone with `git config core.hooksPath
@@ -2120,7 +2120,7 @@ this one" (a per-credit owner answer, role income, D-149's `scope` "one") or "Al
 Friend. "Count investments in Spent" is now on for everyone who has not chosen (the
 owner's request, and the safer side of "a guess never lowers Net"); no migration: a stored
 choice wins, no row means on. The plain-English description of To-do is
-[todo.md](todo.md). Not in the owner export (like answered_at and display names today):
+[todo-screen.md](todo-screen.md). Not in the owner export (like answered_at and display names today):
 the left flags; open item.
 
 ## D-157 Automatic weekly backups (2026-11-26)
